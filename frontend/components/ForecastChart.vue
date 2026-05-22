@@ -7,31 +7,49 @@ const props = defineProps<{
 
 // Minimal configuration leveraging the modular ECharts components we registered
 const chartOption = computed(() => {
+  const dates = props.data?.map(t => {
+    if(!t.date) return ''
+    const [_, month, day] = t.date.split('-')
+    return `${day}/${month}`
+  }) || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun']
+  
+  const balances = props.data?.map(t => t.projected_balance) || [0, 0, 0, 0, 0, 0]
+
   return {
     tooltip: {
       trigger: 'axis'
     },
     grid: {
-      left: '0%',
-      right: '0%',
+      left: '1%',
+      right: '1%',
       bottom: '0%',
       containLabel: true
     },
     xAxis: {
       type: 'category',
-      data: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun']
+      data: dates
     },
     yAxis: {
       type: 'value'
     },
     series: [
       {
-        name: 'Saldo',
+        name: 'Saldo Projetado',
         type: 'line',
-        data: [1200, 1350, 1100, 1800, 1750, 2100],
+        data: balances,
         smooth: true,
         itemStyle: {
           color: '#10b981' // emerald-500
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(16, 185, 129, 0.4)' },
+              { offset: 1, color: 'rgba(16, 185, 129, 0.0)' }
+            ]
+          }
         },
         markLine: {
           data: [
