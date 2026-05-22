@@ -11,7 +11,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
     const now = new Date();
 
     // 1. Busca todos os contratos (bolsas, salários, assinaturas) ativos
-    const incomes = await pb.collection('recurring_incomes').getFullList({
+    const incomes = await pb.collection('recurrences').getFullList({
       filter: "status = 'active'"
     });
 
@@ -19,14 +19,14 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
       // 2. Verifica se a bolsa/contrato já expirou
       if (income.end_date && now > new Date(income.end_date)) {
         // Atualiza status para 'ended' no banco para não processar mais
-        await pb.collection('recurring_incomes').update(income.id, { status: 'ended' });
+        await pb.collection('recurrences').update(income.id, { status: 'ended' });
         console.log(`⏸️  Contrato [${income.name}] expirado. Ignorando.`);
         continue;
       }
 
       // 3. A Regra de Idempotência: Já geramos essa transação este mês?
       const existingTxns = await pb.collection('transactions').getFullList({
-        filter: `recurring_income_id = '${income.id}' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`,
+        filter: `recurrence_id = '${income.id}' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`,
         $cancelKey: `check_${income.id}` // Evita cancelamento automático de requests paralelos pelo SDK do PB
       });
 
@@ -42,11 +42,13 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
       await pb.collection('transactions').create({
         title: `${income.name} - ${month + 1}/${year}`,
         amount: income.amount,
-        type: 'income', // Assumindo que recurring_incomes são receitas. Se houver despesas, crie um campo 'type' na coleção pai
+        type: income.type, // Agora ele sabe se a internet é despesa e a bolsa é receita
         status: 'pending',
         expected_date: expectedDate,
         is_recurring: true,
-        recurring_income_id: income.id
+        recurrence_id: income.id,
+        account_id: income.account_id || null, // Se for Pix/Débito automático
+        card_id: income.card_id || null        // Se for a Apple caindo no cartão
       });
 
       processed++;
