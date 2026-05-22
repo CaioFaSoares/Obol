@@ -1,85 +1,71 @@
-Como seu PO, declaro o sprint zero oficialmente concluído com a criação do repositório e da infraestrutura base.
+Como seu PO, aqui está o **Status Report Executivo** do nosso projeto.
 
-Para chegarmos ao "Done" — o momento em que você vai abrir o app no seu celular e lançar o primeiro gasto real — precisamos de uma ordem de execução cirúrgica. Se pularmos etapas, vamos quebrar a tipagem de ponta a ponta ou reescrever código.
+Nós desenhamos a fundação estrutural e definimos as regras do jogo. Ao adotarmos a abordagem de Infraestrutura como Código no Sprint Zero, garantimos que o alicerce está sólido.
 
-Aqui está o nosso mapa de voo, do banco de dados até o deploy final:
+Aqui está o mapa geral da nossa trilha, consolidando o que já temos e os próximos passos, sem aprofundar no código ainda.
 
-**1.Modelagem de Dados:** PocketBase.
+---
 
-Onde definimos a "física" do nosso sistema.
+## 📊 Status Geral do Projeto: Fase de Fundação (Concluída)
 
-- [x] Criar script de migração automática JS para PocketBase v0.23+.
-- [x] Criar o superusuário admin de forma silenciosa e "Zero-Touch".
-- [x] Definir as 6 coleções base: `accounts`, `cards`, `categories`, `recurring_incomes`, `projects`, e `transactions`.
-- [x] Garantir as relações no modelo "Pai-Filho" usando two-pass validation e trancar as API Rules (`null`).
-    
+### ✅ O Que Já Está Feito (Sprint 0)
 
-**2.Fundação do BFF e Tipagem:** ElysiaJS.
+* **Inicialização dos Repositórios:** Projetos base criados para o Frontend (Nuxt) e BFF (Elysia).
+* **Orquestração (Docker Compose):** Ambiente de desenvolvimento definido com isolamento de rede, englobando:
+  * Frontend (Nuxt exposto na porta 3000).
+  * BFF (ElysiaJS rodando isolado).
+  * Database (PocketBase isolado e persistente).
+  * Laboratório de Docs (SilverBullet/Markdown exposto na porta 3030).
 
-O cérebro começa a operar e a expor os primeiros contratos.
+* **Modelagem de Dados & IaC (PocketBase):** Script de migração automática escrito para criar o usuário Admin via variáveis de ambiente e gerar as seguintes coleções, todas com acesso público bloqueado:
+  * `accounts` (Contas Bancárias)
+  * `cards` (Cartões de Crédito com regras de fechamento)
+  * `categories` (Potes e orçamentos)
+  * `projects` (Freelas/Contratos)
+  * `recurring_incomes` (Bolsas e Salários fixos)
+  * `transactions` (O coração do sistema, linkando tudo)
 
-*   Conectar o Elysia ao PocketBase usando o SDK oficial do servidor.
-    
-*   Criar as rotas de CRUD básicas para contas, cartões e projetos.
-    
-*   Validar as entradas (Payloads) usando o sistema de validação embutido do Elysia (t.Object, t.String, etc.) para gerar os tipos do TypeScript automaticamente.
-    
+---
 
-**3.Motor Financeiro:** ElysiaJS.
+## 🗺️ Roadmap de Desenvolvimento (O Que Falta e Como Será Feito)
 
-Implementação da lógica de negócios pesada.
+### ⏳ Fase 1: O Motor de Negócios (ElysiaJS / BFF)
 
-*   **Roteador de Faturas:** Criar a função que avalia a data de uma transação e o "closing\_day" do cartão para decidir em qual fatura o gasto vai cair.
-    
-*   **Motor de Projeção:** Escrever o endpoint /api/forecast que calcula as receitas e despesas pendentes e devolve um array com o saldo projetado dia a dia.
-    
-*   **Automação:** Configurar um cron job no Bun/Elysia para rodar de madrugada e "clonar" as transações marcadas como is\_recurring para o mês seguinte.
-    
+*Nesta fase, criamos o cérebro do sistema. O frontend ainda não existe visualmente.*
 
-**4.A Ponte e a Infraestrutura Front:** Nuxt 3.
+1. **Conexão Segura:** Configurar o Elysia para conversar com o PocketBase usando o token administrativo gerado na migração.
+2. **Definição de Contratos (Tipagem):** Criar as rotas de CRUD básicas e validar todas as entradas/saídas para que o TypeScript saiba exatamente o formato dos dados.
+3. **Lógica de Faturas de Cartão:** Implementar o interceptador que avalia se uma transação no cartão cai no mês atual ou no próximo, baseando-se no "closing_day".
+4. **Algoritmo de Projeção:** Desenvolver o endpoint de "Forecast", que varre as transações futuras, as faturas e saldos atuais, e cospe um array contínuo de saldos diários.
 
-Conectando os mundos e preparando o terreno visual.
+### ⏳ Fase 2: Automação do Tempo (Cron Jobs)
 
-*   Importar o Eden Treaty do Elysia para dentro do Nuxt. Essa é a mágica que fará o frontend saber exatamente quais rotas existem no BFF e qual o formato dos dados.
-    
-*   Configurar o Nuxt UI (tema, cores base).
-    
-*   Instalar e configurar o vue-echarts para o gráfico de projeção.
-    
-*   Adicionar o plugin client-side da biblioteca pretext para garantir o controle tipográfico responsivo sem quebrar a hidratação (SSR).
-    
+*Nesta fase, ensinamos o sistema a lidar com a passagem dos meses.*
 
-**5.Estado Global e Componentes Base:** Nuxt 3 + Pinia.
+1. **O "Motor do Tempo":** Criar um script agendado no Elysia (rodando diariamente) para varrer a tabela `recurring_incomes`.
+2. **Geração Automática:** Se estivermos perto do dia de pagamento de uma Bolsa/Salário e não houver transação gerada para aquele mês, o script cria uma transaction pendente automaticamente.
 
-Preparando o cache de dados para atrito zero.
+### ⏳ Fase 3: Infraestrutura Visual (Nuxt 3)
 
-*   Criar stores no Pinia para manter os saldos das contas em cache.
-    
-*   Criar o componente "Global Fab" (Floating Action Button) ou atalho de teclado que abre o **Modal Rápido de Lançamentos** de qualquer lugar do app.
-    
-*   Desenhar o formulário de lançamento com os selects puxando cartões e contas do backend.
-    
+*Nesta fase, conectamos o frontend ao cérebro e preparamos as ferramentas de UI.*
 
-**6.As Telas Principais:** Nuxt 3.
+1. **Integração RPC (Eden Treaty):** Conectar o Nuxt ao Elysia para termos tipagem ponta a ponta. Se o backend mudar, o Nuxt aponta o erro na hora.
+2. **Configuração do Design System:** Injetar o Nuxt UI e definir os tokens de design (cores, espaçamentos).
+3. **Motores Visuais:** Configurar o pretext (no client-side) para tipografia avançada e o vue-echarts para o gráfico responsivo.
+4. **Gestão de Estado:** Criar as stores do Pinia para guardar em cache o saldo atual das contas, evitando carregamentos lentos.
 
-Construindo as views que você vai usar todo dia.
+### ⏳ Fase 4: Interfaces e Fluxos de Usuário (Nuxt UI)
 
-*   **Dashboard:** Implementar o gráfico da linha do tempo (vue-echarts) e os cards indicando o "Caixa Atual" e "Previsão Fim do Mês".
-    
-*   **Projetos & Freelas:** A tela de gestão "pai-filho", onde você vê o valor total de um freela e pode adicionar um recebimento parcial com um clique.
-    
-*   **Potes & Orçamentos:** A interface visual que mostra quanto limite ainda resta no seu orçamento de "Jantares" ou "Remédios".
-    
+*Nesta fase, construímos as telas que você usará no dia a dia.*
 
-**7.Polimento e Deploy:**
+1. **Dashboard de Previsão:** A tela principal consumindo o endpoint de Forecast e desenhando o ECharts.
+2. **Modal "Fast-Entry":** O formulário de atrito zero para lançar um café ou Uber em menos de 3 segundos, acessível de qualquer lugar do app.
+3. **Painel de Contratos e Bolsas:** A tela para visualizar seus freelas ativos, suas bolsas (pais) e dar o "Check" de recebido nos pagamentos (filhos).
+4. **Painel de Potes:** Interface para visualizar quanto do limite de cada categoria foi consumido no mês atual.
 
-O ajuste final antes de ir para a vida real.
+### ⏳ Fase 5: Go-Live
 
-*   Auditoria de responsividade (garantir que o dashboard e os modais funcionam perfeitamente na tela do seu celular).
-    
-*   Tratamento de erros: Adicionar toasts do Nuxt UI quando a rede falha ou a API do Elysia recusa algo.
-    
-*   Ajustar as variáveis de ambiente (.env) e rodar o docker-compose up -d na sua máquina de produção (NixOS/Coolify).
-    
+*O polimento final.*
 
-O projeto atinge a definição de "Done" para a versão 1.0 no exato momento em que você concluir a Etapa 7 e conseguir registrar o seu primeiro gasto do dia a dia diretamente pelo celular, alimentando o gráfico de projeção.
+1. **Auditoria Mobile:** Testar o uso das telas e modais em proporção de celular.
+2. **Deploy Produtivo:** Subir os containers finais na sua infraestrutura self-hosted via NixOS/Coolify.

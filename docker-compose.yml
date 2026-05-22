@@ -24,6 +24,8 @@ services:
     container_name: finance-elysia
     environment:
       - POCKETBASE_URL=http://database:8090 # Comunicação interna com o banco
+      - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
+      - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
     networks:
       - finance_net
     depends_on:
