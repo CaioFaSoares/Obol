@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Bun
+node_modules/
+dist/
+.output/
+.nuxt/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Docker / PocketBase Data
+data/pb_data/
+!data/pb_migrations/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
