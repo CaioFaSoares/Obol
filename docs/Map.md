@@ -1,71 +1,40 @@
-Como seu PO, aqui está o **Status Report Executivo** do nosso projeto.
+# 🗺️ Mapa Atualizado do Projeto Obol
 
-Nós desenhamos a fundação estrutural e definimos as regras do jogo. Ao adotarmos a abordagem de Infraestrutura como Código no Sprint Zero, garantimos que o alicerce está sólido.
+## ✅ FASES CONCLUÍDAS (O Alicerce e o Cérebro)
 
-Aqui está o mapa geral da nossa trilha, consolidando o que já temos e os próximos passos, sem aprofundar no código ainda.
+### Sprint 0: Fundação & IaC (✅ 100%)
+- **Docker Compose** orquestrando as redes.
+- **PocketBase** persistente com Admin via `.env`.
+- **Migrations** automáticas rodando (DDL) e travando a segurança pública (Regras de API restritas).
 
----
-
-## 📊 Status Geral do Projeto: Fase de Fundação (Concluída)
-
-### ✅ O Que Já Está Feito (Sprint 0)
-
-* **Inicialização dos Repositórios:** Projetos base criados para o Frontend (Nuxt) e BFF (Elysia).
-* **Orquestração (Docker Compose):** Ambiente de desenvolvimento definido com isolamento de rede, englobando:
-  * Frontend (Nuxt exposto na porta 3000).
-  * BFF (ElysiaJS rodando isolado).
-  * Database (PocketBase isolado e persistente).
-  * Laboratório de Docs (SilverBullet/Markdown exposto na porta 3030).
-
-* **Modelagem de Dados & IaC (PocketBase):** Script de migração automática escrito para criar o usuário Admin via variáveis de ambiente e gerar as seguintes coleções, todas com acesso público bloqueado:
-  * `accounts` (Contas Bancárias)
-  * `cards` (Cartões de Crédito com regras de fechamento)
-  * `categories` (Potes e orçamentos)
-  * `projects` (Freelas/Contratos)
-  * `recurring_incomes` (Bolsas e Salários fixos)
-  * `transactions` (O coração do sistema, linkando tudo)
+### Fase 1: Motor de Negócios BFF (✅ 100%)
+- **ElysiaJS** rodando no Bun conectado via SDK com top-level await.
+- **Tipagem estrita** E2E configurada (DTOs no TypeBox).
+- **Interceptador de Transações** (Regras de cartão e saldo em tempo real).
+- **A Joia da Coroa**: O Forecast Engine gerando a linha do tempo matemática diária.
 
 ---
 
-## 🗺️ Roadmap de Desenvolvimento (O Que Falta e Como Será Feito)
+## ⏳ FASES PENDENTES (O Tempo e a Interface)
 
-### ⏳ Fase 1: O Motor de Negócios (ElysiaJS / BFF)
+### Fase 2: O Motor do Tempo (Automação)
+*O cérebro já sabe calcular o futuro, mas precisa saber virar o mês sozinho.*
+- **Cron Job**: Implementar um agendador interno no Elysia (ex: rodando toda madrugada).
+- **Gerador de Recorrência**: O script varre as bolsas, salários e assinaturas ativas (`recurring_incomes`) e cria as transações pendentes automaticamente para o mês corrente, caso ainda não existam.
 
-*Nesta fase, criamos o cérebro do sistema. O frontend ainda não existe visualmente.*
+### Fase 3: A Ponte Frontend (Nuxt 3 Foundation)
+*Conectando os mundos e preparando as ferramentas visuais.*
+- **Setup Inicial**: Iniciar o Nuxt 3 e plugar o Eden Treaty usando o tipo `App` exportado pelo Elysia.
+- **Ferramentas Base**: Instalar o Nuxt UI para componentes, `vue-echarts` para renderizar nossa projeção, e configurar o `pretext` no client-side para responsividade tipográfica.
+- **Estado Global**: Criar a store do Pinia para armazenar saldos e faturas em cache, garantindo navegação instantânea.
 
-1. **Conexão Segura:** Configurar o Elysia para conversar com o PocketBase usando o token administrativo gerado na migração.
-2. **Definição de Contratos (Tipagem):** Criar as rotas de CRUD básicas e validar todas as entradas/saídas para que o TypeScript saiba exatamente o formato dos dados.
-3. **Lógica de Faturas de Cartão:** Implementar o interceptador que avalia se uma transação no cartão cai no mês atual ou no próximo, baseando-se no "closing_day".
-4. **Algoritmo de Projeção:** Desenvolver o endpoint de "Forecast", que varre as transações futuras, as faturas e saldos atuais, e cospe um array contínuo de saldos diários.
+### Fase 4: Telas e Fluxos (A Experiência)
+*A interface de atrito zero para o seu dia a dia.*
+- **Dashboard Mestre**: A tela principal consumindo a rota de Forecast e desenhando o ECharts com o seu saldo projetado.
+- **O "Fast-Entry"**: Modal acessível globalmente (atalho ou FAB) para registrar um gasto em menos de 3 segundos.
+- **Gestão de Potes & Contratos**: Telas para você dar "Check" na sua bolsa do IFCE, receber seus freelas e monitorar quanto sobrou do orçamento de jantares.
 
-### ⏳ Fase 2: Automação do Tempo (Cron Jobs)
-
-*Nesta fase, ensinamos o sistema a lidar com a passagem dos meses.*
-
-1. **O "Motor do Tempo":** Criar um script agendado no Elysia (rodando diariamente) para varrer a tabela `recurring_incomes`.
-2. **Geração Automática:** Se estivermos perto do dia de pagamento de uma Bolsa/Salário e não houver transação gerada para aquele mês, o script cria uma transaction pendente automaticamente.
-
-### ⏳ Fase 3: Infraestrutura Visual (Nuxt 3)
-
-*Nesta fase, conectamos o frontend ao cérebro e preparamos as ferramentas de UI.*
-
-1. **Integração RPC (Eden Treaty):** Conectar o Nuxt ao Elysia para termos tipagem ponta a ponta. Se o backend mudar, o Nuxt aponta o erro na hora.
-2. **Configuração do Design System:** Injetar o Nuxt UI e definir os tokens de design (cores, espaçamentos).
-3. **Motores Visuais:** Configurar o pretext (no client-side) para tipografia avançada e o vue-echarts para o gráfico responsivo.
-4. **Gestão de Estado:** Criar as stores do Pinia para guardar em cache o saldo atual das contas, evitando carregamentos lentos.
-
-### ⏳ Fase 4: Interfaces e Fluxos de Usuário (Nuxt UI)
-
-*Nesta fase, construímos as telas que você usará no dia a dia.*
-
-1. **Dashboard de Previsão:** A tela principal consumindo o endpoint de Forecast e desenhando o ECharts.
-2. **Modal "Fast-Entry":** O formulário de atrito zero para lançar um café ou Uber em menos de 3 segundos, acessível de qualquer lugar do app.
-3. **Painel de Contratos e Bolsas:** A tela para visualizar seus freelas ativos, suas bolsas (pais) e dar o "Check" de recebido nos pagamentos (filhos).
-4. **Painel de Potes:** Interface para visualizar quanto do limite de cada categoria foi consumido no mês atual.
-
-### ⏳ Fase 5: Go-Live
-
-*O polimento final.*
-
-1. **Auditoria Mobile:** Testar o uso das telas e modais em proporção de celular.
-2. **Deploy Produtivo:** Subir os containers finais na sua infraestrutura self-hosted via NixOS/Coolify.
+### Fase 5: Go-Live
+*Auditoria e deploy final.*
+- **Revisão de responsividade** mobile (UX no celular).
+- **Ajustes finais** no Coolify/NixOS para o uso diário real.

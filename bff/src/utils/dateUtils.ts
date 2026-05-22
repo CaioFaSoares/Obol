@@ -19,3 +19,23 @@ export function calculateCardDueDate(transactionDateStr: string, closingDay: num
 
   return dueDate.toISOString(); 
 }
+
+export function getCurrentMonthBoundaries() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth(); // 0-11
+  
+  // O dia '0' do mês seguinte nos dá o último dia do mês atual
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+  const startOfMonth = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0)).toISOString();
+  const endOfMonth = new Date(Date.UTC(year, month, lastDay, 23, 59, 59, 999)).toISOString();
+
+  return { startOfMonth, endOfMonth, year, month, lastDay };
+}
+
+export function calculateClampedDate(year: number, month: number, targetDay: number, lastDayOfMonth: number) {
+  // Se o targetDay é 31 e estamos em Fev (28), o Math.min garante que retorne 28.
+  const safeDay = Math.min(targetDay, lastDayOfMonth);
+  return new Date(Date.UTC(year, month, safeDay, 0, 0, 0, 0)).toISOString();
+}

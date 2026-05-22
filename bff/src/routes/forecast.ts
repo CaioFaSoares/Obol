@@ -1,11 +1,10 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
 import { ForecastQueryDTO, ForecastResponseDTO } from '../schemas/models';
-import type PocketBase from 'pocketbase';
 
 export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
   .use(pbPlugin)
-  .get('/', async ({ query, pb, set }: { query: any, pb: PocketBase, set: any }) => {
+  .get('/', async ({ query, pb, set }) => {
     try {
       const { startDate, endDate } = query;
 
@@ -57,11 +56,14 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
 
       return timeline;
 
-    } catch (error: any) {
+    } catch (err: any) {
       set.status = 500;
-      return { error: 'Falha ao gerar projeção', details: error.message };
+      return { error: 'Falha ao gerar projeção', details: err.message };
     }
   }, {
     query: ForecastQueryDTO, // Valida entrada
-    response: { 200: ForecastResponseDTO } // Tipagem restrita da saída
+    response: { 
+      200: ForecastResponseDTO,
+      500: t.Object({ error: t.String(), details: t.Optional(t.String()) })
+    } 
   });

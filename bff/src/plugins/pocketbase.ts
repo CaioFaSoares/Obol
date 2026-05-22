@@ -2,7 +2,7 @@ import PocketBase from 'pocketbase';
 import { Elysia } from 'elysia';
 
 // Instância global Singleton
-const pb = new PocketBase(process.env.POCKETBASE_URL);
+export const pb = new PocketBase(process.env.POCKETBASE_URL);
 
 // Autentica no startup do container usando top-level await (suportado no Bun)
 try {

@@ -2,12 +2,14 @@ import { Elysia } from 'elysia';
 import { pbPlugin } from './plugins/pocketbase';
 import { transactionRoutes } from './routes/transactions';
 import { forecastRoutes } from './routes/forecast';
+import { jobsRoutes } from './routes/jobs';
 
 const port = process.env.PORT || 8080;
 const app = new Elysia()
   .use(pbPlugin) // Injeta o contexto { pb } em todas as rotas abaixo
   .use(transactionRoutes) // <-- Rota inteligente acoplada
   .use(forecastRoutes) // <-- Motor de Projeção no ar
+  .use(jobsRoutes) // <-- Gatilho e Motor de Recorrência (Cron)
   
   // Rota de Health Check para testar a ponte
   .get('/', async ({ pb }) => {
