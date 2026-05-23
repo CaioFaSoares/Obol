@@ -50,7 +50,25 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         data.status = 'pending'; // Gastos de cartão SEMPRE nascem pendentes
       }
 
-      // Salva a transação final (seja da Regra 1 ou 2, ou outras puras)
+      // ---------------------------------------------------------
+      // REGRA 3: TRANSFERÊNCIA ENTRE CONTAS
+      // ---------------------------------------------------------
+      if (data.type === 'transfer' && data.account_id && data.destination_account_id && data.status === 'realized') {
+        const sourceAcc = await pb.collection('accounts').getOne(data.account_id);
+        const destAcc = await pb.collection('accounts').getOne(data.destination_account_id);
+        
+        const newSourceBalance = sourceAcc.initial_balance - data.amount;
+        const newDestBalance = destAcc.initial_balance + data.amount;
+        
+        await pb.collection('accounts').update(sourceAcc.id, { initial_balance: newSourceBalance });
+        await pb.collection('accounts').update(destAcc.id, { initial_balance: newDestBalance });
+        
+        data.category_id = null;
+        data.card_id = null;
+        if (!data.realized_date) data.realized_date = new Date().toISOString();
+      }
+
+      // Salva a transação final (seja da Regra 1, 2, 3 ou puras)
       const transaction = await pb.collection('transactions').create(data);
       
       set.status = 201;
@@ -84,15 +102,22 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       const oldTxn = await pb.collection('transactions').getOne(params.id);
 
       if (oldTxn.account_id && oldTxn.status === 'realized') {
-        const account = await pb.collection('accounts').getOne(oldTxn.account_id);
-        let revertedBalance = account.initial_balance;
-        
-        if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
-        if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
+        if (oldTxn.type === 'transfer' && oldTxn.destination_account_id) {
+          const sourceAcc = await pb.collection('accounts').getOne(oldTxn.account_id);
+          const destAcc = await pb.collection('accounts').getOne(oldTxn.destination_account_id);
+          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance + oldTxn.amount });
+          await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance - oldTxn.amount });
+        } else {
+          const account = await pb.collection('accounts').getOne(oldTxn.account_id);
+          let revertedBalance = account.initial_balance;
+          
+          if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
+          if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
 
-        await pb.collection('accounts').update(oldTxn.account_id, { 
-          initial_balance: revertedBalance 
-        });
+          await pb.collection('accounts').update(oldTxn.account_id, { 
+            initial_balance: revertedBalance 
+          });
+        }
       }
 
       await pb.collection('transactions').delete(params.id);
@@ -112,11 +137,18 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
 
       // Estorno original se era conta e realizada
       if (oldTxn.account_id && oldTxn.status === 'realized') {
-        const account = await pb.collection('accounts').getOne(oldTxn.account_id);
-        let revertedBalance = account.initial_balance;
-        if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
-        if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
-        await pb.collection('accounts').update(oldTxn.account_id, { initial_balance: revertedBalance });
+        if (oldTxn.type === 'transfer' && oldTxn.destination_account_id) {
+          const sourceAcc = await pb.collection('accounts').getOne(oldTxn.account_id);
+          const destAcc = await pb.collection('accounts').getOne(oldTxn.destination_account_id);
+          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance + oldTxn.amount });
+          await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance - oldTxn.amount });
+        } else {
+          const account = await pb.collection('accounts').getOne(oldTxn.account_id);
+          let revertedBalance = account.initial_balance;
+          if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
+          if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
+          await pb.collection('accounts').update(oldTxn.account_id, { initial_balance: revertedBalance });
+        }
       }
 
       // ---------------------------------------------------------
@@ -140,6 +172,21 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         const projectedDueDate = calculateCardDueDate(data.expected_date, card.closing_day, card.due_day);
         data.expected_date = projectedDueDate;
         data.status = 'pending'; 
+      }
+
+      // ---------------------------------------------------------
+      // APLICA NOVA REGRA 3: TRANSFERÊNCIA
+      // ---------------------------------------------------------
+      if (data.type === 'transfer' && data.account_id && data.destination_account_id && data.status === 'realized') {
+        const sourceAcc = await pb.collection('accounts').getOne(data.account_id);
+        const destAcc = await pb.collection('accounts').getOne(data.destination_account_id);
+        
+        await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance - data.amount });
+        await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance + data.amount });
+        
+        data.category_id = null;
+        data.card_id = null;
+        if (!data.realized_date) data.realized_date = new Date().toISOString();
       }
 
       const transaction = await pb.collection('transactions').update(params.id, data);

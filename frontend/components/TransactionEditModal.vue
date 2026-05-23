@@ -15,6 +15,7 @@ const realizedDate = ref('')
 
 const source = ref<'account' | 'card'>('account')
 const sourceId = ref('')
+const destinationAccountId = ref('')
 const categoryId = ref('')
 
 const isSubmitting = ref(false)
@@ -36,6 +37,10 @@ watch(editingTransaction, (txn) => {
     } else {
       source.value = 'account'
       sourceId.value = txn.account_id || ''
+    }
+    
+    if (txn.type === 'transfer') {
+      destinationAccountId.value = txn.destination_account_id || ''
     }
     
     categoryId.value = txn.category_id || ''
@@ -62,18 +67,26 @@ const submit = async () => {
       payload.realized_date = new Date(realizedDate.value).toISOString()
     }
 
-    if (source.value === 'account' && sourceId.value) {
+    if (type.value === 'transfer') {
       payload.account_id = sourceId.value
+      payload.destination_account_id = destinationAccountId.value
       payload.card_id = null
-    } else if (source.value === 'card' && sourceId.value) {
-      payload.card_id = sourceId.value
-      payload.account_id = null
-    }
-
-    if (categoryId.value) {
-      payload.category_id = categoryId.value
-    } else {
       payload.category_id = null
+    } else {
+      if (source.value === 'account' && sourceId.value) {
+        payload.account_id = sourceId.value
+        payload.card_id = null
+      } else if (source.value === 'card' && sourceId.value) {
+        payload.card_id = sourceId.value
+        payload.account_id = null
+      }
+
+      if (categoryId.value) {
+        payload.category_id = categoryId.value
+      } else {
+        payload.category_id = null
+      }
+      payload.destination_account_id = null
     }
 
     const transactionId = editingTransaction.value.id as string
@@ -134,28 +147,33 @@ const deleteTransaction = async () => {
 
         <div class="grid grid-cols-2 gap-4">
           <UFormGroup label="Tipo">
-            <USelect v-model="type" :options="[{label:'Despesa', value:'expense'}, {label:'Receita', value:'income'}]" />
+            <USelect v-model="type" :options="[{label:'Despesa', value:'expense'}, {label:'Receita', value:'income'}, {label:'Transferência', value:'transfer'}]" />
           </UFormGroup>
           <UFormGroup label="Status">
             <USelect v-model="status" :options="[{label:'Pendente', value:'pending'}, {label:'Realizado', value:'realized'}]" />
           </UFormGroup>
         </div>
 
-        <UFormGroup label="Forma de Pagamento">
+        <UFormGroup v-if="type !== 'transfer'" label="Forma de Pagamento">
           <div class="flex gap-4">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-if="type === 'expense'" v-model="source" value="card" label="Cartão" />
           </div>
         </UFormGroup>
 
-        <UFormGroup v-if="source === 'account'" label="Selecione a Conta">
+        <UFormGroup v-if="source === 'account' || type === 'transfer'" :label="type === 'transfer' ? 'Conta de Origem' : 'Selecione a Conta'">
           <USelect v-model="sourceId" :options="accountOptions" />
         </UFormGroup>
-        <UFormGroup v-else label="Selecione o Cartão">
+        
+        <UFormGroup v-if="type === 'transfer'" label="Conta de Destino">
+          <USelect v-model="destinationAccountId" :options="accountOptions" />
+        </UFormGroup>
+
+        <UFormGroup v-if="type !== 'transfer' && source === 'card'" label="Selecione o Cartão">
           <USelect v-model="sourceId" :options="cardOptions" />
         </UFormGroup>
 
-        <UFormGroup label="Orçamento / Categoria (opcional)">
+        <UFormGroup v-if="type !== 'transfer'" label="Orçamento / Categoria (opcional)">
           <USelect v-model="categoryId" :options="categoryOptions" placeholder="Sem orçamento vinculado" />
         </UFormGroup>
 

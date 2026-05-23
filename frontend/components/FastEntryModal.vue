@@ -8,8 +8,10 @@ const financeStore = useFinanceStore()
 
 const amount = ref<number>()
 const description = ref('')
+const type = ref<'expense' | 'income' | 'transfer'>('expense')
 const source = ref('account') // 'account' or 'card'
 const sourceId = ref('')
+const destinationAccountId = ref('')
 const categoryId = ref('')
 
 const isSubmitting = ref(false)
@@ -29,26 +31,32 @@ const categoryOptions = computed(() => {
 const submit = async () => {
   isSubmitting.value = true
   try {
-    const status = source.value === 'card' ? 'pending' : 'realized'
+    const status = (type.value !== 'transfer' && source.value === 'card') ? 'pending' : 'realized'
     
     const now = new Date().toISOString()
     const payload: any = {
-      title: description.value || 'Gasto Rápido',
+      title: description.value || (type.value === 'transfer' ? 'Transferência' : 'Lançamento Rápido'),
       amount: Number(amount.value),
-      type: 'expense',
+      type: type.value,
       status,
       expected_date: now
     }
 
-    if (source.value === 'account' && sourceId.value) {
+    if (type.value === 'transfer') {
       payload.account_id = sourceId.value
+      payload.destination_account_id = destinationAccountId.value
       payload.realized_date = now
-    } else if (source.value === 'card' && sourceId.value) {
-      payload.card_id = sourceId.value
-    }
+    } else {
+      if (source.value === 'account' && sourceId.value) {
+        payload.account_id = sourceId.value
+        payload.realized_date = now
+      } else if (source.value === 'card' && sourceId.value) {
+        payload.card_id = sourceId.value
+      }
 
-    if (categoryId.value) {
-      payload.category_id = categoryId.value
+      if (categoryId.value) {
+        payload.category_id = categoryId.value
+      }
     }
 
     const res = await api.api.transactions.post(payload)
@@ -62,7 +70,10 @@ const submit = async () => {
     close()
     amount.value = undefined
     description.value = ''
+    type.value = 'expense'
+    source.value = 'account'
     sourceId.value = ''
+    destinationAccountId.value = ''
     categoryId.value = ''
   } catch (err) {
     console.error('Failed to submit transaction', err)
@@ -97,21 +108,34 @@ const submit = async () => {
           <UInput v-model="description" placeholder="Ex: Mercado, Uber..." />
         </UFormGroup>
 
-        <UFormGroup label="Forma de Pagamento">
+        <UFormGroup label="Tipo de Lançamento">
+          <div class="flex gap-4 mb-2">
+            <URadio v-model="type" value="expense" label="Despesa" />
+            <URadio v-model="type" value="income" label="Receita" />
+            <URadio v-model="type" value="transfer" label="Transferência" />
+          </div>
+        </UFormGroup>
+
+        <UFormGroup v-if="type !== 'transfer'" label="Forma de Pagamento">
           <div class="flex gap-4">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-model="source" value="card" label="Cartão" />
           </div>
         </UFormGroup>
 
-        <UFormGroup v-if="source === 'account'" label="Selecione a Conta">
-          <USelect v-model="sourceId" :options="accountOptions" placeholder="Selecione a conta" />
+        <UFormGroup v-if="type === 'transfer' || source === 'account'" :label="type === 'transfer' ? 'Conta de Origem' : 'Selecione a Conta'">
+          <USelect v-model="sourceId" :options="accountOptions" placeholder="Selecione a conta de origem" />
         </UFormGroup>
-        <UFormGroup v-else label="Selecione o Cartão">
+        
+        <UFormGroup v-if="type === 'transfer'" label="Conta de Destino">
+          <USelect v-model="destinationAccountId" :options="accountOptions" placeholder="Selecione a conta de destino" />
+        </UFormGroup>
+
+        <UFormGroup v-if="type !== 'transfer' && source === 'card'" label="Selecione o Cartão">
           <USelect v-model="sourceId" :options="cardOptions" placeholder="Selecione o cartão" />
         </UFormGroup>
 
-        <UFormGroup label="Orçamento / Categoria (opcional)">
+        <UFormGroup v-if="type !== 'transfer'" label="Orçamento / Categoria (opcional)">
           <USelect v-model="categoryId" :options="categoryOptions" placeholder="Sem orçamento vinculado" />
         </UFormGroup>
 

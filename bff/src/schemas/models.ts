@@ -13,7 +13,8 @@ export const TransactionDTO = t.Object({
   account_id: t.Optional(t.String()),
   card_id: t.Optional(t.String()),
   category_id: t.Optional(t.String()),
-  project_id: t.Optional(t.String())
+  project_id: t.Optional(t.String()),
+  destination_account_id: t.Optional(t.String())
 });
 
 // Validamos a query string
