@@ -22,7 +22,7 @@ async function fetchTransactions() {
   if (!props.recurrence?.id) return
   isLoading.value = true
   try {
-    const res = await api.api.recurrences[props.recurrence.id].transactions.get()
+    const res = await api.api.recurrences({ id: String(props.recurrence.id) }).transactions.get()
     if (!res.error) {
       transactions.value = res.data as any[]
     }
@@ -43,7 +43,7 @@ async function toggleStatus() {
   if (!props.recurrence) return
   const newStatus = props.recurrence.status === 'active' ? 'paused' : 'active'
   try {
-    await api.api.recurrences[props.recurrence.id]['toggle-status'].patch({ status: newStatus })
+    await api.api.recurrences({ id: String(props.recurrence.id) })['toggle-status'].patch({ status: newStatus })
     toast.add({ title: 'Status Atualizado', color: 'emerald' })
     emit('refresh')
     isOpen.value = false
@@ -55,7 +55,7 @@ async function toggleStatus() {
 async function launchManual() {
   if (!props.recurrence) return
   try {
-    await api.api.recurrences[props.recurrence.id].launch.post()
+    await api.api.recurrences({ id: String(props.recurrence.id) }).launch.post()
     toast.add({ title: 'Lançamento Efetuado', description: 'Pendência gerada no Dashboard', color: 'emerald' })
     fetchTransactions()
   } catch (e) {
@@ -67,7 +67,7 @@ async function deactivate() {
   if (!props.recurrence) return
   if (!confirm('Deseja desativar este contrato de recorrência?')) return
   try {
-    await api.api.recurrences[props.recurrence.id].delete()
+    await api.api.recurrences({ id: String(props.recurrence.id) }).delete()
     toast.add({ title: 'Contrato Encerrado', color: 'emerald' })
     emit('refresh')
     isOpen.value = false
@@ -138,7 +138,7 @@ function getBadgeLabel(status: string) {
             v-if="recurrence.status === 'active'"
             icon="i-heroicons-pause" 
             color="yellow" 
-            variant="subtle" 
+            variant="soft" 
             label="Pausar" 
             block
             @click="toggleStatus"
@@ -147,7 +147,7 @@ function getBadgeLabel(status: string) {
             v-if="recurrence.status === 'paused'"
             icon="i-heroicons-play" 
             color="green" 
-            variant="subtle" 
+            variant="soft" 
             label="Reativar" 
             block
             @click="toggleStatus"
