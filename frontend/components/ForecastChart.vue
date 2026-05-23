@@ -9,7 +9,9 @@ const props = defineProps<{
 const chartOption = computed(() => {
   const dates = props.data?.map(t => {
     if(!t.date) return ''
-    const [_, month, day] = String(t.date).split('-')
+    const d = new Date(t.date)
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0')
     return `${day}/${month}`
   }) || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun']
   

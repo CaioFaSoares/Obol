@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
 import { TransactionDTO } from '../schemas/models';
 import { calculateCardDueDate } from '../utils/dateUtils';
@@ -197,4 +197,56 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       set.status = err.status || 400;
       return { error: 'Falha ao editar transação', details: err.data || err.message };
     }
+  })
+
+  // PATCH /api/transactions/:id/realize — Transforma pendente em realizada e abate saldo
+  .patch('/:id/realize', async ({ params, body, pb, set }: { params: { id: string }, body: any, pb: PocketBase, set: any }) => {
+    try {
+      const txn = await pb.collection('transactions').getOne(params.id);
+      
+      if (txn.status === 'realized') {
+        set.status = 400;
+        return { error: 'Transação já foi realizada.' };
+      }
+
+      const shouldUpdateBalance = body.update_balance !== false;
+
+      if (txn.type === 'transfer' && txn.account_id && txn.destination_account_id && shouldUpdateBalance) {
+        const sourceAcc = await pb.collection('accounts').getOne(txn.account_id);
+        const destAcc = await pb.collection('accounts').getOne(txn.destination_account_id);
+        
+        await pb.collection('accounts').update(sourceAcc.id, { 
+          initial_balance: sourceAcc.initial_balance - txn.amount 
+        });
+        await pb.collection('accounts').update(destAcc.id, { 
+          initial_balance: destAcc.initial_balance + txn.amount 
+        });
+      } else if (txn.account_id && shouldUpdateBalance) {
+        const account = await pb.collection('accounts').getOne(txn.account_id);
+        
+        let newBalance = account.initial_balance;
+        if (txn.type === 'income') newBalance += txn.amount;
+        if (txn.type === 'expense') newBalance -= txn.amount;
+        
+        await pb.collection('accounts').update(account.id, { 
+          initial_balance: newBalance 
+        });
+      }
+
+      const updatedTxn = await pb.collection('transactions').update(txn.id, {
+        status: 'realized',
+        realized_date: new Date().toISOString()
+      });
+
+      return updatedTxn;
+
+    } catch (error: any) {
+      console.error('Falha ao dar baixa:', error);
+      set.status = 500;
+      return { error: 'Falha ao realizar transação', details: error.message };
+    }
+  }, {
+    body: t.Object({
+      update_balance: t.Optional(t.Boolean({ default: true }))
+    })
   });

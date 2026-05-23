@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useFinanceStore } from '../stores/finance'
 
-const { data: accounts, refresh: refreshAccounts } = await useAsyncData('accounts', async () => {
-  // @ts-expect-error dynamic route
-  const res = await api.api.accounts.get()
-  if (res.error) throw res.error
-  return (res.data as any[]) ?? []
-})
+const financeStore = useFinanceStore()
 
-const { data: cards, refresh: refreshCards } = await useAsyncData('cards', async () => {
-  // @ts-expect-error dynamic route
-  const res = await api.api.cards.get()
-  if (res.error) throw res.error
-  return (res.data as any[]) ?? []
-})
+const accounts = computed(() => financeStore.accounts)
+const cards = computed(() => financeStore.cards)
 
 const accountModal = ref()
 const cardModal = ref()
+
+async function refreshAccounts() {
+  await financeStore.loadBaseData(true)
+}
+
+async function refreshCards() {
+  await financeStore.loadBaseData(true)
+}
 </script>
 
 <template>

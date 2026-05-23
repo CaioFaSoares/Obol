@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
+import { useFinanceStore } from '../stores/finance'
 
 const { open } = useTransactionEdit()
 const { startDate, endDate } = getForecastRange()
+const financeStore = useFinanceStore()
+const toast = useToast()
 
 const { data: forecastData, pending: pendingForecast, error } = await useAsyncData('forecast', async () => {
   const res = await api.api.forecast.get({ query: { startDate, endDate } })
@@ -35,6 +38,23 @@ const forecastedBalance = computed(() => {
 const transactions = computed((): any[] => {
   return transactionsData.value || []
 })
+
+const realizeTransaction = async (id: string, updateBalance: boolean) => {
+  try {
+    const res = await api.api.transactions({ id }).realize.patch({ update_balance: updateBalance })
+    if (res.error) throw res.error
+
+    toast.add({ 
+      title: 'Sucesso!', 
+      description: updateBalance ? 'Baixa realizada com sucesso.' : 'Baixa silenciosa efetuada.', 
+      color: 'emerald' 
+    })
+    window.location.reload()
+  } catch (err) {
+    console.error(err)
+    toast.add({ title: 'Erro', description: 'Não foi possível dar baixa.', color: 'red' })
+  }
+}
 </script>
 
 <template>
@@ -109,14 +129,41 @@ const transactions = computed((): any[] => {
               <span class="font-mono" :class="t.type === 'expense' ? 'text-red-400' : 'text-emerald-400'">
                 {{ t.type === 'expense' ? '-' : '+' }}{{ formatCurrency(t.amount) }}
               </span>
-              <UButton
-                icon="i-heroicons-pencil-square"
-                size="xs"
-                color="gray"
-                variant="ghost"
-                class="opacity-0 group-hover:opacity-100 transition-opacity"
-                @click="open(t)"
-              />
+              <div class="flex gap-1">
+                <UDropdown 
+                  v-if="t.status === 'pending'"
+                  :items="[[
+                    { 
+                      label: 'Dar baixa e somar no saldo', 
+                      icon: 'i-heroicons-plus-circle', 
+                      click: () => realizeTransaction(t.id, true) 
+                    },
+                    { 
+                      label: 'Já está no saldo (Baixa Silenciosa)', 
+                      icon: 'i-heroicons-eye-slash', 
+                      click: () => realizeTransaction(t.id, false) 
+                    }
+                  ]]" 
+                  :popper="{ placement: 'bottom-end' }"
+                >
+                  <UButton 
+                    icon="i-heroicons-check-circle" 
+                    color="emerald" 
+                    variant="ghost" 
+                    size="sm"
+                    class="opacity-50 hover:opacity-100 transition-opacity"
+                    title="Opções de Baixa"
+                  />
+                </UDropdown>
+                <UButton
+                  icon="i-heroicons-pencil-square"
+                  size="xs"
+                  color="gray"
+                  variant="ghost"
+                  class="opacity-0 group-hover:opacity-100 transition-opacity"
+                  @click="open(t)"
+                />
+              </div>
             </div>
           </li>
         </ul>

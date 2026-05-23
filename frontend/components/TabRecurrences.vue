@@ -15,20 +15,14 @@ const { data: recurrences, refresh } = await useAsyncData('recurrences', async (
 const incomes = computed(() => recurrences.value?.filter(r => r.type === 'income') || [])
 const expenses = computed(() => recurrences.value?.filter(r => r.type === 'expense') || [])
 
-const isDeleting = ref<string | null>(null)
+const isDetailsOpen = ref(false)
+const selectedRecurrence = ref<any | null>(null)
 
-async function deactivate(id: string) {
-  isDeleting.value = id
-  try {
-    // @ts-expect-error dynamic route typing
-    await api.api.recurrences[id].delete()
-    await refresh()
-  } catch (err) {
-    console.error('Erro ao desativar recorrência', err)
-  } finally {
-    isDeleting.value = null
-  }
+function openDetails(rec: any) {
+  selectedRecurrence.value = rec
+  isDetailsOpen.value = true
 }
+
 
 function badgeColor(type: string) {
   return type === 'income' ? 'green' : 'red'
@@ -79,11 +73,12 @@ function getSourceName(rec: any) {
         >
           <div class="flex items-center gap-3">
             <UBadge color="green" variant="subtle" label="Receita" />
-            <div>
+            <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
               <p class="text-white font-medium">{{ rec.name }}</p>
               <p class="text-xs text-zinc-500">
                 Entra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
+                <span v-else-if="rec.status === 'paused'" class="ml-1 text-yellow-400">(pausada)</span>
               </p>
             </div>
           </div>
@@ -91,15 +86,6 @@ function getSourceName(rec: any) {
             <span class="font-mono font-semibold text-emerald-400">
               {{ formatCurrency(rec.amount) }}
             </span>
-            <UButton
-              v-if="rec.status === 'active'"
-              icon="i-heroicons-trash"
-              size="xs"
-              color="gray"
-              variant="ghost"
-              :loading="isDeleting === rec.id"
-              @click="deactivate(rec.id)"
-            />
           </div>
         </li>
       </ul>
@@ -116,11 +102,12 @@ function getSourceName(rec: any) {
         >
           <div class="flex items-center gap-3">
             <UBadge color="red" variant="subtle" label="Despesa" />
-            <div>
+            <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
               <p class="text-white font-medium">{{ rec.name }}</p>
               <p class="text-xs text-zinc-500">
                 Cobra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
+                <span v-else-if="rec.status === 'paused'" class="ml-1 text-yellow-400">(pausada)</span>
               </p>
             </div>
           </div>
@@ -128,21 +115,13 @@ function getSourceName(rec: any) {
             <span class="font-mono font-semibold text-red-400">
               {{ formatCurrency(rec.amount) }}
             </span>
-            <UButton
-              v-if="rec.status === 'active'"
-              icon="i-heroicons-trash"
-              size="xs"
-              color="gray"
-              variant="ghost"
-              :loading="isDeleting === rec.id"
-              @click="deactivate(rec.id)"
-            />
           </div>
         </li>
       </ul>
     </div>
 
-    <!-- Modal -->
+    <!-- Modal e Slideover -->
     <RecurrenceModal @created="refresh" />
+    <RecurrenceDetails v-model="isDetailsOpen" :recurrence="selectedRecurrence" @refresh="refresh" />
   </div>
 </template>
