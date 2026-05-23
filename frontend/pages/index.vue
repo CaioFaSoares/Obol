@@ -1,39 +1,39 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const { $api } = useNuxtApp()
 const { startDate, endDate } = getForecastRange()
 
-const { data: forecastData, pending, error } = await useAsyncData('forecast', () =>
-  $api.api.forecast.get({ query: { start: startDate, end: endDate } })
-)
-
-const currentBalance = computed(() => {
-  if (!forecastData.value?.data?.timeline?.length) return 0
-  return forecastData.value.data.timeline[0].projected_balance
-})
-
-const forecastedBalance = computed(() => {
-  if (!forecastData.value?.data?.timeline?.length) return 0
-  const timeline = forecastData.value.data.timeline
-  return timeline[timeline.length - 1].projected_balance
+const { data: forecastData, pending, error } = await useAsyncData('forecast', async () => {
+  const res = await api.api.forecast.get({ query: { startDate, endDate } })
+  if (res.error) throw res.error
+  return res.data
 })
 
 const timelineData = computed(() => {
-  if (!forecastData.value?.data?.timeline) return []
-  return forecastData.value.data.timeline
+  if (!Array.isArray(forecastData.value)) return []
+  return forecastData.value
 })
 
-const pendingTransactions = computed(() => {
-  if (!forecastData.value?.data?.pendingTransactions) return []
-  return forecastData.value.data.pendingTransactions
+const currentBalance = computed(() => {
+  if (!timelineData.value.length) return 0
+  return timelineData.value[0].balance
+})
+
+const forecastedBalance = computed(() => {
+  if (!timelineData.value.length) return 0
+  return timelineData.value[timelineData.value.length - 1].balance
+})
+
+// O backend de projeção atual retorna apenas a timeline, então a lista de pendentes fica vazia por enquanto
+const pendingTransactions = computed((): any[] => {
+  return []
 })
 </script>
 
 <template>
   <div class="p-6 max-w-7xl mx-auto space-y-6">
     <div class="flex items-center justify-between">
-      <h1 v-pretext class="text-3xl font-bold tracking-tight text-white">
+      <h1 class="text-3xl font-bold tracking-tight text-white">
         Dashboard de Projeção
       </h1>
     </div>

@@ -20,5 +20,8 @@
     "vue": "^3.4.21",
     "vue-echarts": "^8.0.1",
     "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1"
   }
 }

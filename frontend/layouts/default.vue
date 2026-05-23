@@ -12,7 +12,7 @@ const { open } = useFastEntry()
 
     <!-- Floating Action Button (FAB) -->
     <UButton
-      icon="i-heroicons-plus-20-solid"
+      icon="i-heroicons-plus"
       size="xl"
       color="primary"
       variant="solid"

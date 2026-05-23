@@ -23,7 +23,7 @@ const app = new Elysia()
     };
   })
   
-  .listen(port);
+  .listen({ port, hostname: '0.0.0.0' });
 
 console.log(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useFastEntry } from '../composables/useFastEntry'
+import { useFinanceStore } from '../stores/finance'
 
 const { isOpen, close } = useFastEntry()
 const financeStore = useFinanceStore()
-const { $api } = useNuxtApp()
 
 const amount = ref<number>()
 const description = ref('')
@@ -26,7 +27,7 @@ const submit = async () => {
     const status = source.value === 'card' ? 'pending' : 'realized'
     
     // Este payload simula a chamada baseada na intenção do spec.
-    // O tipo será verificado pelo $api caso a rota exista no BFF.
+    // O tipo será verificado pelo api caso a rota exista no BFF.
     console.log('Enviando para o BFF:', {
       amount: amount.value,
       description: description.value,
@@ -36,7 +37,7 @@ const submit = async () => {
     })
 
     // Exemplo de como seria a chamada real se a rota estivesse totalmente definida:
-    // await $api.api.transactions.post({ ... })
+    // await api.api.transactions.post({ ... })
 
     // Simulate network delay
     await new Promise(r => setTimeout(r, 500))

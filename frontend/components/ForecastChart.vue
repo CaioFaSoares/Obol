@@ -9,11 +9,11 @@ const props = defineProps<{
 const chartOption = computed(() => {
   const dates = props.data?.map(t => {
     if(!t.date) return ''
-    const [_, month, day] = t.date.split('-')
+    const [_, month, day] = String(t.date).split('-')
     return `${day}/${month}`
   }) || ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun']
   
-  const balances = props.data?.map(t => t.projected_balance) || [0, 0, 0, 0, 0, 0]
+  const balances = props.data?.map(t => t.balance || 0) || [0, 0, 0, 0, 0, 0]
 
   return {
     tooltip: {
