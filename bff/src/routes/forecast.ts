@@ -23,6 +23,11 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         filter: `status = 'pending' && expected_date >= '${startFilter}' && expected_date <= '${endFilter}'`
       });
 
+      // 2.5 Carga de Recorrências (Simulação do Cron)
+      const activeRecurrences = await pb.collection('recurrences').getFullList({
+        filter: "status = 'active'"
+      });
+
       // 3. Algoritmo de Timeline (Iteração Dia a Dia)
       const timeline = [];
       
@@ -38,10 +43,19 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
           txn.expected_date.startsWith(dateStr)
         );
 
-        // Aplica os impactos do dia
+        // Aplica os impactos do dia (Transações)
         for (const txn of dailyTxns) {
           if (txn.type === 'income') currentBalance += txn.amount;
           if (txn.type === 'expense') currentBalance -= txn.amount;
+        }
+
+        // Aplica os impactos do dia (Recorrências)
+        const dayOfMonth = currentDate.getUTCDate();
+        for (const rec of activeRecurrences) {
+          if (rec.payday === dayOfMonth) {
+            if (rec.type === 'income') currentBalance += rec.amount;
+            if (rec.type === 'expense') currentBalance -= rec.amount;
+          }
         }
 
         // Grava o snapshot do final do dia

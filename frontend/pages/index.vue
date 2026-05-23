@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useTransactionEdit } from '../composables/useTransactionEdit'
 
+const { open } = useTransactionEdit()
 const { startDate, endDate } = getForecastRange()
 
-const { data: forecastData, pending, error } = await useAsyncData('forecast', async () => {
+const { data: forecastData, pending: pendingForecast, error } = await useAsyncData('forecast', async () => {
   const res = await api.api.forecast.get({ query: { startDate, endDate } })
   if (res.error) throw res.error
   return res.data
+})
+
+const { data: transactionsData, pending: pendingTransactions } = await useAsyncData('transactions', async () => {
+  const res = await api.api.transactions.get()
+  if (res.error) throw res.error
+  return (res.data as any[]) ?? []
 })
 
 const timelineData = computed(() => {
@@ -24,9 +32,8 @@ const forecastedBalance = computed(() => {
   return timelineData.value[timelineData.value.length - 1].balance
 })
 
-// O backend de projeção atual retorna apenas a timeline, então a lista de pendentes fica vazia por enquanto
-const pendingTransactions = computed((): any[] => {
-  return []
+const transactions = computed((): any[] => {
+  return transactionsData.value || []
 })
 </script>
 
@@ -38,7 +45,7 @@ const pendingTransactions = computed((): any[] => {
       </h1>
     </div>
 
-    <div v-if="pending" class="space-y-6">
+    <div v-if="pendingForecast" class="space-y-6">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <USkeleton class="h-32 w-full rounded-xl bg-zinc-800" />
         <USkeleton class="h-32 w-full rounded-xl bg-zinc-800" />
@@ -60,14 +67,14 @@ const pendingTransactions = computed((): any[] => {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
           <p class="text-sm text-zinc-400 font-medium mb-1">Caixa Atual (Hoje)</p>
-          <p v-pretext class="text-4xl font-mono text-white font-semibold">
+          <p class="text-4xl font-mono text-white font-semibold">
             {{ formatCurrency(currentBalance) }}
           </p>
         </UCard>
         
         <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
           <p class="text-sm text-zinc-400 font-medium mb-1">Projeção (+30 Dias)</p>
-          <p v-pretext class="text-4xl font-mono font-semibold" :class="forecastedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'">
+          <p class="text-4xl font-mono font-semibold" :class="forecastedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'">
             {{ formatCurrency(forecastedBalance) }}
           </p>
         </UCard>
@@ -81,23 +88,41 @@ const pendingTransactions = computed((): any[] => {
         <ForecastChart :data="timelineData" />
       </UCard>
 
-      <UCard v-if="pendingTransactions.length > 0" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+      <UCard v-if="transactions.length > 0" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
         <template #header>
-          <h3 class="font-semibold text-lg text-white">Próximos Lançamentos Pendentes</h3>
+          <h3 class="font-semibold text-lg text-white">Histórico de Lançamentos</h3>
         </template>
         
         <ul class="divide-y divide-zinc-800">
-          <li v-for="t in pendingTransactions" :key="t.id" class="py-3 flex justify-between items-center">
+          <li v-for="t in transactions" :key="t.id" class="py-3 flex justify-between items-center group">
             <div>
-              <p class="text-white font-medium">{{ t.description }}</p>
-              <p class="text-xs text-zinc-400">{{ t.date }}</p>
+              <p class="text-white font-medium">
+                {{ t.title }}
+                <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs" class="ml-2">Pendente</UBadge>
+              </p>
+              <p class="text-xs text-zinc-400">
+                Previsto: {{ new Date(t.expected_date).toLocaleDateString() }} 
+                <span v-if="t.realized_date">• Realizado: {{ new Date(t.realized_date).toLocaleDateString() }}</span>
+              </p>
             </div>
-            <span class="font-mono" :class="t.amount < 0 ? 'text-red-400' : 'text-emerald-400'">
-              {{ formatCurrency(t.amount) }}
-            </span>
+            <div class="flex items-center gap-4">
+              <span class="font-mono" :class="t.type === 'expense' ? 'text-red-400' : 'text-emerald-400'">
+                {{ t.type === 'expense' ? '-' : '+' }}{{ formatCurrency(t.amount) }}
+              </span>
+              <UButton
+                icon="i-heroicons-pencil-square"
+                size="xs"
+                color="gray"
+                variant="ghost"
+                class="opacity-0 group-hover:opacity-100 transition-opacity"
+                @click="open(t)"
+              />
+            </div>
           </li>
         </ul>
       </UCard>
     </div>
+
+    <TransactionEditModal />
   </div>
 </template>

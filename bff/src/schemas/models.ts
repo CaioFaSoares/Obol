@@ -29,3 +29,47 @@ export const ForecastResponseDTO = t.Array(
     balance: t.Number()
   })
 );
+
+// ---- Recorrências ----
+export const RecurrenceDTO = t.Object({
+  name: t.String(),
+  amount: t.Number({ minimum: 0.01 }),
+  payday: t.Number({ minimum: 1, maximum: 31 }),
+  type: t.Union([t.Literal('income'), t.Literal('expense')]),
+  account_id: t.Optional(t.String()),
+  card_id: t.Optional(t.String()),
+  end_date: t.Optional(t.String()),
+});
+
+// ---- Orçamentos / Categorias ----
+export const CategoryDTO = t.Object({
+  name: t.String(),
+  type: t.Union([t.Literal('fixed_budget'), t.Literal('variable')]),
+  monthly_budget: t.Optional(t.Number()),
+});
+
+// ---- Projetos / Freelas ----
+export const ProjectCreateDTO = t.Object({
+  name: t.String(),
+  total_value: t.Number({ minimum: 0 }),
+});
+
+export const ProjectPaymentDTO = t.Object({
+  amount: t.Number({ minimum: 0.01 }),
+  description: t.Optional(t.String()),
+});
+
+// ---- Contas e Cartões ----
+export const AccountDTO = t.Object({
+  name: t.String(),
+  type: t.Union([t.Literal('checking'), t.Literal('savings'), t.Literal('investment')]),
+  initial_balance: t.Number(),
+});
+
+export const CardDTO = t.Object({
+  name: t.String(),
+  closing_day: t.Number({ minimum: 1, maximum: 31 }),
+  due_day: t.Number({ minimum: 1, maximum: 31 }),
+  limit: t.Number({ minimum: 0 }),
+});
+

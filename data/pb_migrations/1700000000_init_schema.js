@@ -17,11 +17,9 @@ migrate((app) => {
   }
 
   // Helper para injetar campos de sistema obrigatórios no v0.23+
-  const systemFields = [
-    { name: "id", type: "text", primaryKey: true, system: true },
-    { name: "created", type: "autodate", system: true, onCreate: true },
-    { name: "updated", type: "autodate", system: true, onCreate: true, onUpdate: true }
-  ];
+  // NO v0.23+ NÃO DEVEMOS INJETAR id, created, updated nas collections base.
+  // O PocketBase faz isso automaticamente.
+  const systemFields = [];
 
   const baseRules = {
     listRule: null, viewRule: null, createRule: null, updateRule: null, deleteRule: null

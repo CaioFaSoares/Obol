@@ -3,6 +3,11 @@ import { pbPlugin } from './plugins/pocketbase';
 import { transactionRoutes } from './routes/transactions';
 import { forecastRoutes } from './routes/forecast';
 import { jobsRoutes } from './routes/jobs';
+import { recurrenceRoutes } from './routes/recurrences';
+import { categoryRoutes } from './routes/categories';
+import { projectRoutes } from './routes/projects';
+import { accountRoutes } from './routes/accounts';
+import { cardRoutes } from './routes/cards';
 
 const port = process.env.PORT || 8080;
 const app = new Elysia()
@@ -10,6 +15,11 @@ const app = new Elysia()
   .use(transactionRoutes) // <-- Rota inteligente acoplada
   .use(forecastRoutes) // <-- Motor de Projeção no ar
   .use(jobsRoutes) // <-- Gatilho e Motor de Recorrência (Cron)
+  .use(recurrenceRoutes) // <-- CRUD de Recorrências
+  .use(categoryRoutes) // <-- Categorias + Orçamentos calculados
+  .use(projectRoutes) // <-- Projetos/Freelas + Pagamentos
+  .use(accountRoutes) // <-- Contas
+  .use(cardRoutes) // <-- Cartões
   
   // Rota de Health Check para testar a ponte
   .get('/', async ({ pb }) => {

@@ -10,6 +10,7 @@ const amount = ref<number>()
 const description = ref('')
 const source = ref('account') // 'account' or 'card'
 const sourceId = ref('')
+const categoryId = ref('')
 
 const isSubmitting = ref(false)
 
@@ -21,31 +22,48 @@ const cardOptions = computed(() => {
   return financeStore.cards.map(c => ({ label: c.name, value: c.id }))
 })
 
+const categoryOptions = computed(() => {
+  return financeStore.categories.map(c => ({ label: c.name, value: c.id }))
+})
+
 const submit = async () => {
   isSubmitting.value = true
   try {
     const status = source.value === 'card' ? 'pending' : 'realized'
     
-    // Este payload simula a chamada baseada na intenção do spec.
-    // O tipo será verificado pelo api caso a rota exista no BFF.
-    console.log('Enviando para o BFF:', {
-      amount: amount.value,
-      description: description.value,
-      sourceId: sourceId.value,
-      sourceType: source.value,
-      status
-    })
+    const now = new Date().toISOString()
+    const payload: any = {
+      title: description.value || 'Gasto Rápido',
+      amount: Number(amount.value),
+      type: 'expense',
+      status,
+      expected_date: now
+    }
 
-    // Exemplo de como seria a chamada real se a rota estivesse totalmente definida:
-    // await api.api.transactions.post({ ... })
+    if (source.value === 'account' && sourceId.value) {
+      payload.account_id = sourceId.value
+      payload.realized_date = now
+    } else if (source.value === 'card' && sourceId.value) {
+      payload.card_id = sourceId.value
+    }
 
-    // Simulate network delay
-    await new Promise(r => setTimeout(r, 500))
+    if (categoryId.value) {
+      payload.category_id = categoryId.value
+    }
+
+    const res = await api.api.transactions.post(payload)
+    if (res.error) throw res.error
+
+    // TODO: A dashboard component would need to react to this,
+    // reloading the data. Since the Nuxt layout doesn't natively watch for it,
+    // an event could be emitted, but for now we just reload the page.
+    window.location.reload()
 
     close()
     amount.value = undefined
     description.value = ''
     sourceId.value = ''
+    categoryId.value = ''
   } catch (err) {
     console.error('Failed to submit transaction', err)
   } finally {
@@ -87,10 +105,14 @@ const submit = async () => {
         </UFormGroup>
 
         <UFormGroup v-if="source === 'account'" label="Selecione a Conta">
-          <USelect v-model="sourceId" :options="accountOptions" />
+          <USelect v-model="sourceId" :options="accountOptions" placeholder="Selecione a conta" />
         </UFormGroup>
         <UFormGroup v-else label="Selecione o Cartão">
-          <USelect v-model="sourceId" :options="cardOptions" />
+          <USelect v-model="sourceId" :options="cardOptions" placeholder="Selecione o cartão" />
+        </UFormGroup>
+
+        <UFormGroup label="Orçamento / Categoria (opcional)">
+          <USelect v-model="categoryId" :options="categoryOptions" placeholder="Sem orçamento vinculado" />
         </UFormGroup>
 
         <div class="flex justify-end gap-3 mt-6">
