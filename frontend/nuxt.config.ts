@@ -19,7 +19,13 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080'
     }
   },
+  icon: {
+    clientBundle: {
+      scan: true
+    }
+  },
   routeRules: {
+    '/api/_nuxt_icon/**': {},
     '/api/**': { proxy: 'http://bff:8080/api/**' }
   }
 })
