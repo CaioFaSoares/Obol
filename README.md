@@ -19,13 +19,20 @@ Obol uses a Nix flake for reproducible development environments and Docker Compo
    nix develop
    ```
 
-2. **Boot the Infrastructure**:
+2. **Environment Setup**:
+   Before starting the containers, set up your `.env` file based on the provided example. This is important to configure secure credentials (like PocketBase admin access).
+   ```bash
+   cp .env.example .env
+   ```
+   *Note: Open `.env` and change `PB_ADMIN_PASSWORD` to a secure password.*
+
+3. **Boot the Infrastructure**:
    This will spin up PocketBase, the Nuxt Frontend, the Elysia BFF, and SilverBullet (for Markdown Docs).
    ```bash
    docker-compose up -d --build
    ```
 
-3. **Access the Services**:
+4. **Access the Services**:
    - 🌐 Frontend: [http://localhost:3000](http://localhost:3000)
    - 🛠️ PocketBase Admin: [http://localhost:8090/_/](http://localhost:8090/_/)
    - 📝 Documentation (SilverBullet): [http://localhost:3030](http://localhost:3030)
