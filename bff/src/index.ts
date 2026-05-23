@@ -11,6 +11,12 @@ import { cardRoutes } from './routes/cards';
 
 const port = process.env.PORT || 8080;
 const app = new Elysia()
+  .onError(({ code, error, set }) => {
+    if ((error as any).status === 0) {
+      set.status = 502;
+      return { error: 'Database connection error', details: error.message };
+    }
+  })
   .use(pbPlugin) // Injeta o contexto { pb } em todas as rotas abaixo
   .use(transactionRoutes) // <-- Rota inteligente acoplada
   .use(forecastRoutes) // <-- Motor de Projeção no ar

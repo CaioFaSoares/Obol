@@ -20,29 +20,28 @@ export const categoryRoutes = new Elysia({ prefix: '/api/categories' })
     const startOfMonth = new Date(Date.UTC(year, month, 1)).toISOString();
     const endOfMonth = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999)).toISOString();
 
-    // 1. Busca apenas categorias de orçamento fixo
+    // 1. Busca todas as categorias
     const categories = await pb.collection('categories').getFullList({
-      filter: "type = 'fixed_budget'",
       sort: 'name'
     });
 
-    // 2. Para cada categoria, soma as despesas realizadas ou pendentes do mês
-    const enriched = await Promise.all(
-      categories.map(async (cat) => {
-        const transactions = await pb.collection('transactions').getFullList({
-          filter: `category_id = '${cat.id}' && type = 'expense' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`
-        });
+    // 2. Busca TODAS as despesas do mês de uma vez só
+    const monthlyExpenses = await pb.collection('transactions').getFullList({
+      filter: `type = 'expense' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`
+    });
 
-        const spent = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    // 3. Agrupa por categoria na memória e calcula os totais
+    const enriched = categories.map((cat) => {
+      const catTxns = monthlyExpenses.filter(t => t.category_id === cat.id);
+      const spent = catTxns.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-        return {
-          id: cat.id,
-          name: cat.name,
-          monthly_budget: cat.monthly_budget || 0,
-          spent,
-        };
-      })
-    );
+      return {
+        id: cat.id,
+        name: cat.name,
+        monthly_budget: cat.monthly_budget || 0,
+        spent,
+      };
+    });
 
     return enriched;
   })

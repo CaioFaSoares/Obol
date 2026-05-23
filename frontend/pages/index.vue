@@ -4,15 +4,20 @@ import { useTransactionEdit } from '../composables/useTransactionEdit'
 import { useFinanceStore } from '../stores/finance'
 
 const { open } = useTransactionEdit()
-const { startDate, endDate } = getForecastRange()
+const forecastDays = ref(30)
+
+const forecastQuery = computed(() => {
+  return getForecastRange(forecastDays.value)
+})
+
 const financeStore = useFinanceStore()
 const toast = useToast()
 
 const { data: forecastData, pending: pendingForecast, error } = await useAsyncData('forecast', async () => {
-  const res = await api.api.forecast.get({ query: { startDate, endDate } })
+  const res = await api.api.forecast.get({ query: forecastQuery.value })
   if (res.error) throw res.error
   return res.data
-})
+}, { watch: [forecastQuery] })
 
 const { data: transactionsData, pending: pendingTransactions } = await useAsyncData('transactions', async () => {
   const res = await api.api.transactions.get()
@@ -26,8 +31,9 @@ const timelineData = computed(() => {
 })
 
 const currentBalance = computed(() => {
-  if (!timelineData.value.length) return 0
-  return timelineData.value[0].balance
+  return financeStore.accounts
+    .filter(a => a.type !== 'investment')
+    .reduce((sum, a) => sum + (a.initial_balance || 0), 0)
 })
 
 const forecastedBalance = computed(() => {
@@ -93,7 +99,17 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
         </UCard>
         
         <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
-          <p class="text-sm text-zinc-400 font-medium mb-1">Projeção (+30 Dias)</p>
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-sm text-zinc-400 font-medium">Projeção (+{{ forecastDays }} Dias)</p>
+            <UDropdown :items="[
+              [{ label: '15 Dias', click: () => forecastDays = 15 }],
+              [{ label: '30 Dias', click: () => forecastDays = 30 }],
+              [{ label: '60 Dias', click: () => forecastDays = 60 }],
+              [{ label: '90 Dias', click: () => forecastDays = 90 }]
+            ]" :popper="{ placement: 'bottom-end' }">
+              <UButton color="gray" variant="ghost" icon="i-heroicons-calendar-days" size="xs" />
+            </UDropdown>
+          </div>
           <p class="text-4xl font-mono font-semibold" :class="forecastedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'">
             {{ formatCurrency(forecastedBalance) }}
           </p>
@@ -105,7 +121,7 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
           <h3 class="font-semibold text-lg text-white">Trajetória do Saldo</h3>
         </template>
         <!-- The component itself provides the height wrapper -->
-        <ForecastChart :data="timelineData" />
+        <ForecastChart :data="timelineData" :current-balance="currentBalance" />
       </UCard>
 
       <UCard v-if="transactions.length > 0" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">

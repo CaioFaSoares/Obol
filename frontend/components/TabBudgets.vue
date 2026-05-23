@@ -31,7 +31,7 @@ const budgetModal = ref()
 
     <div v-if="!budgets?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
       <UIcon name="i-heroicons-chart-bar" class="w-10 h-10" />
-      <p>Nenhuma categoria de orçamento fixo cadastrada.</p>
+      <p>Nenhuma categoria de gastos cadastrada.</p>
     </div>
 
     <ul v-else class="space-y-4">
@@ -43,33 +43,43 @@ const budgetModal = ref()
         <div class="flex items-center justify-between">
           <span class="text-white font-medium">{{ cat.name }}</span>
           <span class="text-sm text-zinc-400">
-            <span :class="progressPercent(cat.spent, cat.monthly_budget) >= 90 ? 'text-red-400' : 'text-white'">
-              {{ formatCurrency(cat.spent) }}
-            </span>
-            <span class="text-zinc-600"> / </span>
-            {{ formatCurrency(cat.monthly_budget) }}
+            <template v-if="cat.monthly_budget">
+              <span :class="progressPercent(cat.spent, cat.monthly_budget) >= 90 ? 'text-red-400' : 'text-white'">
+                {{ formatCurrency(cat.spent) }}
+              </span>
+              <span class="text-zinc-600"> / </span>
+              {{ formatCurrency(cat.monthly_budget) }}
+            </template>
+            <template v-else>
+              <span class="text-white">{{ formatCurrency(cat.spent) }}</span>
+            </template>
           </span>
         </div>
 
-        <div class="w-full bg-zinc-700 rounded-full h-2">
-          <div
-            class="h-2 rounded-full transition-all duration-500"
-            :style="{ width: `${progressPercent(cat.spent, cat.monthly_budget)}%` }"
-            :class="{
-              'bg-emerald-500': barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'green',
-              'bg-yellow-400': barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'yellow',
-              'bg-red-500':    barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'red',
-            }"
-          />
-        </div>
+        <template v-if="cat.monthly_budget">
+          <div class="w-full bg-zinc-700 rounded-full h-2">
+            <div
+              class="h-2 rounded-full transition-all duration-500"
+              :style="{ width: `${progressPercent(cat.spent, cat.monthly_budget)}%` }"
+              :class="{
+                'bg-emerald-500': barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'green',
+                'bg-yellow-400': barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'yellow',
+                'bg-red-500':    barColor(progressPercent(cat.spent, cat.monthly_budget)) === 'red',
+              }"
+            />
+          </div>
 
-        <p class="text-xs text-right" :class="{
-          'text-emerald-400': progressPercent(cat.spent, cat.monthly_budget) < 70,
-          'text-yellow-400':  progressPercent(cat.spent, cat.monthly_budget) >= 70 && progressPercent(cat.spent, cat.monthly_budget) < 90,
-          'text-red-400':     progressPercent(cat.spent, cat.monthly_budget) >= 90,
-        }">
-          {{ progressPercent(cat.spent, cat.monthly_budget) }}% utilizado
-        </p>
+          <p class="text-xs text-right" :class="{
+            'text-emerald-400': progressPercent(cat.spent, cat.monthly_budget) < 70,
+            'text-yellow-400':  progressPercent(cat.spent, cat.monthly_budget) >= 70 && progressPercent(cat.spent, cat.monthly_budget) < 90,
+            'text-red-400':     progressPercent(cat.spent, cat.monthly_budget) >= 90,
+          }">
+            {{ progressPercent(cat.spent, cat.monthly_budget) }}% utilizado
+          </p>
+        </template>
+        <template v-else>
+          <p class="text-xs text-right text-zinc-500">Sem limite definido</p>
+        </template>
       </li>
     </ul>
 

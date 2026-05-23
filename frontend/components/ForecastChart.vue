@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 
 const props = defineProps<{
   data?: any[]
+  currentBalance?: number
 }>();
 
 // Minimal configuration leveraging the modular ECharts components we registered
@@ -55,7 +56,8 @@ const chartOption = computed(() => {
         },
         markLine: {
           data: [
-            { type: 'average', name: 'Média' }
+            { type: 'average', name: 'Média' },
+            ...(props.currentBalance !== undefined ? [{ yAxis: props.currentBalance, name: 'Saldo Atual', itemStyle: { color: '#f59e0b' } }] : [])
           ]
         }
       }

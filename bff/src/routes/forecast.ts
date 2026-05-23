@@ -15,60 +15,83 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
       
       let currentBalance = accounts.reduce((sum, account) => sum + account.initial_balance, 0);
 
-      // 2. Carga de Futuro: Busca transações pendentes no range especificado
-      const startFilter = `${startDate} 00:00:00.000Z`;
-      const endFilter = `${endDate} 23:59:59.999Z`;
-      
-      const pendingTransactions = await pb.collection('transactions').getFullList({
-        filter: `status = 'pending' && expected_date >= '${startFilter}' && expected_date <= '${endFilter}'`
+      // 2. Definimos o range de cálculo (sempre partindo de hoje no mínimo para não quebrar o futuro)
+      const todayStr = new Date().toISOString().split('T')[0];
+      const calcStartDateStr = startDate < todayStr ? startDate : todayStr;
+      const startFilter = `${calcStartDateStr} 00:00:00.000Z`;
+
+      // 3. Busca todas as transações relevantes (pendentes ou realizadas a partir do início do cálculo)
+      const transactions = await pb.collection('transactions').getFullList({
+        filter: `status = 'pending' || realized_date >= '${startFilter}'`
       });
 
-      // 2.5 Carga de Recorrências (Simulação do Cron)
+      // 4. Busca Recorrências
       const activeRecurrences = await pb.collection('recurrences').getFullList({
         filter: "status = 'active'"
       });
 
-      // 3. Algoritmo de Timeline (Iteração Dia a Dia)
+      // 5. Rollback: Encontrar o Saldo Inicial verdadeiro no calcStartDateStr
+      let runningBalance = currentBalance;
+      const realizedSinceStart = transactions.filter(t => t.status === 'realized' && t.realized_date >= startFilter);
+      for (const txn of realizedSinceStart) {
+        if (txn.type === 'income') runningBalance -= txn.amount;
+        if (txn.type === 'expense') runningBalance += txn.amount;
+      }
+
+      // 6. Algoritmo de Timeline (Iteração Dia a Dia)
       const timeline = [];
-      
-      let currentDate = new Date(`${startDate}T00:00:00Z`);
+      let currentDate = new Date(`${calcStartDateStr}T00:00:00Z`);
       const finalDate = new Date(`${endDate}T00:00:00Z`);
 
       while (currentDate <= finalDate) {
-        // Pega apenas o 'YYYY-MM-DD' em UTC para comparar
         const dateStr = currentDate.toISOString().split('T')[0];
         
-        // Filtra as transações que caem EXATAMENTE neste dia
-        const dailyTxns = pendingTransactions.filter(txn => 
-          txn.expected_date.startsWith(dateStr)
-        );
-
-        // Aplica os impactos do dia (Transações)
-        for (const txn of dailyTxns) {
-          if (txn.type === 'income') currentBalance += txn.amount;
-          if (txn.type === 'expense') currentBalance -= txn.amount;
-        }
-
-        // Aplica os impactos do dia (Recorrências)
-        const dayOfMonth = currentDate.getUTCDate();
-        for (const rec of activeRecurrences) {
-          if (rec.payday === dayOfMonth) {
-            if (rec.type === 'income') currentBalance += rec.amount;
-            if (rec.type === 'expense') currentBalance -= rec.amount;
+        if (dateStr <= todayStr) {
+          // PASSADO OU HOJE: Aplica as transações que realmente aconteceram
+          const dailyRealized = transactions.filter(t => t.status === 'realized' && t.realized_date.startsWith(dateStr));
+          for (const txn of dailyRealized) {
+            if (txn.type === 'income') runningBalance += txn.amount;
+            if (txn.type === 'expense') runningBalance -= txn.amount;
           }
         }
 
-        // Grava o snapshot do final do dia
+        if (dateStr === todayStr) {
+          // HOJE: Aplica todas as transações pendentes atrasadas ou do dia
+          const overduePending = transactions.filter(t => t.status === 'pending' && t.expected_date <= `${dateStr} 23:59:59`);
+          for (const txn of overduePending) {
+            if (txn.type === 'income') runningBalance += txn.amount;
+            if (txn.type === 'expense') runningBalance -= txn.amount;
+          }
+        }
+
+        if (dateStr > todayStr) {
+          // FUTURO: Aplica transações pendentes agendadas para o dia
+          const dailyPending = transactions.filter(t => t.status === 'pending' && t.expected_date.startsWith(dateStr));
+          for (const txn of dailyPending) {
+            if (txn.type === 'income') runningBalance += txn.amount;
+            if (txn.type === 'expense') runningBalance -= txn.amount;
+          }
+          
+          // FUTURO: Simula recorrências que caem no dia
+          const dayOfMonth = currentDate.getUTCDate();
+          for (const rec of activeRecurrences) {
+            if (rec.payday === dayOfMonth) {
+              if (rec.type === 'income') runningBalance += rec.amount;
+              if (rec.type === 'expense') runningBalance -= rec.amount;
+            }
+          }
+        }
+
         timeline.push({
           date: dateStr,
-          balance: currentBalance
+          balance: runningBalance
         });
 
-        // Avança +1 dia
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
       }
 
-      return timeline;
+      // 7. Retorna apenas o range solicitado
+      return timeline.filter(t => t.date >= startDate && t.date <= endDate);
 
     } catch (err: any) {
       set.status = 500;
