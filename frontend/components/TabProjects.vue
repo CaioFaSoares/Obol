@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useFinanceStore } from '../stores/finance'
 
-const { data: projects, refresh } = await useAsyncData('projects', async () => {
-  const res = await api.api.projects.get()
-  if (res.error) throw res.error
-  return (res.data as any[]) ?? []
-})
+const financeStore = useFinanceStore()
+const projects = computed(() => financeStore.projects)
 
-const activeProjects = computed(() => projects.value?.filter(p => p.status === 'active') || [])
-const completedProjects = computed(() => projects.value?.filter(p => p.status === 'completed') || [])
+const activeProjects = computed(() => projects.value.filter(p => p.status === 'active'))
+const completedProjects = computed(() => projects.value.filter(p => p.status === 'completed'))
 
 const projectModal = ref()
 
@@ -25,10 +23,9 @@ const isFinishing = ref<string | null>(null)
 async function finishProject(id: string) {
   isFinishing.value = id
   try {
-    // @ts-expect-error dynamic route
-    const res = await api.api.projects[id].complete.patch()
+    const res = await api.api.projects({ id }).complete.patch()
     if (res.error) throw res.error
-    await refresh()
+    await financeStore.loadBaseData(true)
   } catch (err) {
     console.error('Erro ao finalizar projeto', err)
   } finally {
@@ -50,13 +47,12 @@ async function submitPayment() {
   if (!paymentAmount.value) return
   isSubmitting.value = true
   try {
-    // @ts-expect-error dynamic route
-    const res = await api.api.projects[paymentModal.value.projectId].payment.post({
+    const res = await api.api.projects({ id: paymentModal.value.projectId }).payment.post({
       amount: paymentAmount.value,
       description: paymentDesc.value || undefined,
     })
     if (res.error) throw res.error
-    await refresh()
+    await financeStore.loadBaseData(true)
     closePayment()
   } catch (err) {
     console.error('Erro ao registrar pagamento', err)
@@ -193,6 +189,6 @@ function receivedPercent(received: number, total: number) {
     </UModal>
 
     <!-- Modal Novo Projeto -->
-    <ProjectModal ref="projectModal" @created="refresh" />
+    <ProjectModal ref="projectModal" @created="financeStore.loadBaseData(true)" />
   </div>
 </template>
