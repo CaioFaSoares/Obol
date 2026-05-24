@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
 import { CardDTO, CardInvoicesResponseDTO, PayInvoiceDTO } from '../schemas/models';
 import { determineInvoiceStatus } from '../utils/dateUtils';
@@ -25,6 +25,18 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
     }
   }, {
     body: CardDTO
+  })
+
+  // PATCH /api/cards/:id — Atualiza um cartão existente
+  .patch('/:id', async ({ params, body, pb, set }: { params: any, body: any, pb: PocketBase, set: any }) => {
+    try {
+      const record = await pb.collection('cards').update(params.id, body);
+      return record;
+    } catch (err: any) {
+      console.error('Falha ao atualizar cartão:', err.data || err.message || err);
+      set.status = err.status || 400;
+      return { error: 'Falha ao atualizar cartão', details: err.data || err.message };
+    }
   })
 
   // GET /api/cards/:id/invoices — Faturas Virtuais
@@ -91,14 +103,17 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         return invoice;
       });
 
-      return result.sort((a, b) => b.period.localeCompare(a.period));
+      return result.sort((a, b) => b.period.localeCompare(a.period)) as any;
 
-    } catch (error: any) {
+    } catch (err: any) {
       set.status = 500;
-      return { error: 'Falha ao gerar faturas', details: error.message };
+      return { error: 'Falha ao gerar faturas', details: err.message };
     }
   }, {
-    response: { 200: CardInvoicesResponseDTO }
+    response: { 
+      200: CardInvoicesResponseDTO,
+      500: t.Object({ error: t.String(), details: t.Optional(t.Any()) })
+    }
   })
 
   // POST /api/cards/:id/pay-invoice — Liquidação de Fatura

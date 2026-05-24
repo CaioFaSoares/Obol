@@ -75,7 +75,10 @@ async function refreshCards() {
           class="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 space-y-2"
         >
           <div class="flex items-center justify-between">
-            <p class="text-white font-medium">{{ card.name }}</p>
+            <div class="flex items-center gap-2">
+              <p class="text-white font-medium">{{ card.name }}</p>
+              <UButton icon="i-heroicons-pencil-square" size="xs" color="gray" variant="ghost" @click="cardModal?.open(card)" />
+            </div>
             <span class="font-mono text-zinc-300">
               Limite: {{ formatCurrency(card.limit) }}
             </span>

@@ -4,6 +4,7 @@ import { useFinanceStore } from '../stores/finance'
 
 const isOpen = ref(false)
 const isSubmitting = ref(false)
+const editingId = ref<string | null>(null)
 const name = ref('')
 const limit = ref<number>()
 const closingDay = ref<number>(1)
@@ -12,12 +13,26 @@ const dueDay = ref<number>(1)
 const emit = defineEmits<{ created: [] }>()
 const financeStore = useFinanceStore()
 
-function open() {
+function open(card?: any) {
+  if (card) {
+    editingId.value = card.id
+    name.value = card.name
+    limit.value = card.limit
+    closingDay.value = card.closing_day
+    dueDay.value = card.due_day
+  } else {
+    editingId.value = null
+    name.value = ''
+    limit.value = undefined
+    closingDay.value = 1
+    dueDay.value = 1
+  }
   isOpen.value = true
 }
 
 function close() {
   isOpen.value = false
+  editingId.value = null
   name.value = ''
   limit.value = undefined
   closingDay.value = 1
@@ -30,12 +45,20 @@ async function submit() {
   if (!name.value || !limit.value || !closingDay.value || !dueDay.value) return
   isSubmitting.value = true
   try {
-    const res = await api.api.cards.post({
+    const payload = {
       name: name.value,
       limit: limit.value,
       closing_day: Number(closingDay.value),
       due_day: Number(dueDay.value),
-    })
+    }
+    
+    let res
+    if (editingId.value) {
+      res = await api.api.cards({ id: editingId.value }).patch(payload)
+    } else {
+      res = await api.api.cards.post(payload)
+    }
+    
     if (res.error) throw res.error
     
     await financeStore.loadBaseData(true) // Force reload to update fast entry
@@ -57,7 +80,7 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-base font-semibold leading-6 text-white">
-            Novo Cartão de Crédito
+            {{ editingId ? 'Editar Cartão' : 'Novo Cartão de Crédito' }}
           </h3>
           <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" @click="close" />
         </div>
@@ -84,7 +107,7 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`
 
         <div class="flex justify-end gap-3 pt-2">
           <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
-          <UButton type="submit" label="Criar Cartão" color="primary" :loading="isSubmitting" />
+          <UButton type="submit" :label="editingId ? 'Salvar Alterações' : 'Criar Cartão'" color="primary" :loading="isSubmitting" />
         </div>
       </form>
     </UCard>
