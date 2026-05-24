@@ -297,8 +297,20 @@ const saveEdit = async () => {
   }
 }
 
-const getTransactionItems = (txn: any) => [
-  [
+const getTransactionItems = (txn: any) => {
+  const items = []
+  
+  if (txn.status === 'pending') {
+    items.push([
+      {
+        label: 'Marcar como Realizada (Baixa Silenciosa)',
+        icon: 'i-heroicons-check-circle',
+        click: () => realizeCardTransaction(txn.id)
+      }
+    ])
+  }
+  
+  items.push([
     {
       label: 'Editar',
       icon: 'i-heroicons-pencil',
@@ -310,8 +322,29 @@ const getTransactionItems = (txn: any) => [
       color: 'red',
       click: () => deleteTransaction(txn.id)
     }
-  ]
-]
+  ])
+  
+  return items
+}
+
+const realizeCardTransaction = async (id: string) => {
+  try {
+    const res = await api.api.transactions({ id }).realize.patch({
+      update_balance: false
+    });
+    
+    if (res.error) throw new Error("Erro ao dar baixa");
+
+    toast.add({ title: 'Gasto resolvido!', description: 'Fatura recalculada.', color: 'emerald' });
+    
+    const tempId = selectedCardId.value;
+    selectedCardId.value = '';
+    setTimeout(() => selectedCardId.value = tempId, 10);
+  } catch (err) {
+    console.error(err);
+    toast.add({ title: 'Erro', description: 'Falha ao processar a baixa.', color: 'red' });
+  }
+};
 
 const deleteTransaction = async (id: string) => {
   if (!confirm('Tem certeza que deseja excluir este gasto da fatura?')) return;

@@ -19,7 +19,7 @@ const { data: forecastData, pending: pendingForecast, error } = await useAsyncDa
   return res.data
 }, { watch: [forecastQuery] })
 
-const { data: transactionsData, pending: pendingTransactions } = await useAsyncData(() => `transactions-${forecastDays.value}`, async () => {
+const { data: transactionsData, pending: pendingTransactions } = await useAsyncData(async () => {
   const { startDate, endDate } = forecastQuery.value
   const res = await api.api.transactions.get({
     query: {
