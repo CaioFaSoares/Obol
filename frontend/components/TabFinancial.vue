@@ -72,18 +72,20 @@ async function refreshCards() {
         <li
           v-for="card in cards"
           :key="card.id"
-          class="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 space-y-2"
+          class="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 space-y-3"
         >
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <p class="text-white font-medium">{{ card.name }}</p>
-              <UButton icon="i-heroicons-pencil-square" size="xs" color="gray" variant="ghost" @click="cardModal?.open(card)" />
+            <div class="flex items-center gap-2 w-full">
+              <p class="text-white font-medium truncate">{{ card.name }}</p>
+              <UButton icon="i-heroicons-pencil-square" size="xs" color="gray" variant="ghost" class="flex-shrink-0" @click="cardModal?.open(card)" />
             </div>
-            <span class="font-mono text-zinc-300">
-              Limite: {{ formatCurrency(card.limit) }}
-            </span>
           </div>
-          <div class="flex items-center justify-between text-xs text-zinc-500">
+          
+          <div class="font-mono text-zinc-300 text-sm">
+            Limite: {{ formatCurrency(card.limit) }}
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-700/50">
             <span>Fecha dia {{ card.closing_day }}</span>
             <span>Vence dia {{ card.due_day }}</span>
           </div>

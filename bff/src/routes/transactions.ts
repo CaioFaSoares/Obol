@@ -92,7 +92,7 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       const records = await pb.collection('transactions').getList(1, 100, options);
       return records.items;
     } catch (err: any) {
-      console.error('Falha ao listar transações:', err.data || err.message || err);
+      console.error('Falha ao listar transações:', err);
       return [];
     }
   }, {

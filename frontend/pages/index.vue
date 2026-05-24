@@ -19,15 +19,18 @@ const { data: forecastData, pending: pendingForecast, error } = await useAsyncDa
   return res.data
 }, { watch: [forecastQuery] })
 
-const { data: transactionsData, pending: pendingTransactions } = await useAsyncData('transactions', async () => {
+const { data: transactionsData, pending: pendingTransactions } = await useAsyncData(() => `transactions-${forecastDays.value}`, async () => {
   const { startDate, endDate } = forecastQuery.value
   const res = await api.api.transactions.get({
     query: {
-      filter: `card_id = "" && expected_date >= '${startDate} 00:00:00.000Z' && expected_date <= '${endDate} 23:59:59.999Z'`,
+      filter: `card_id = "" && expected_date >= "${startDate} 00:00:00.000Z" && expected_date <= "${endDate} 23:59:59.999Z"`,
       sort: 'expected_date'
     }
   })
-  if (res.error) throw res.error
+  if (res.error) {
+    console.error('Failed to fetch transactions:', res.error)
+    throw res.error
+  }
   return (res.data as any[]) ?? []
 }, { watch: [forecastQuery] })
 
@@ -130,7 +133,18 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
         <ForecastChart :data="timelineData" :current-balance="currentBalance" />
       </UCard>
 
-      <UCard v-if="transactions.length > 0" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+      <UCard v-if="pendingTransactions" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+        <template #header>
+          <h3 class="font-semibold text-lg text-white">Histórico de Lançamentos</h3>
+        </template>
+        <div class="space-y-4 py-2">
+          <USkeleton class="h-10 w-full rounded-md bg-zinc-800" />
+          <USkeleton class="h-10 w-full rounded-md bg-zinc-800" />
+          <USkeleton class="h-10 w-full rounded-md bg-zinc-800" />
+        </div>
+      </UCard>
+
+      <UCard v-else-if="transactions.length > 0" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
         <template #header>
           <h3 class="font-semibold text-lg text-white">Histórico de Lançamentos</h3>
         </template>
