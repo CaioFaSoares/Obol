@@ -240,7 +240,7 @@ const confirmPayment = async () => {
     })
 
     if (res.error) {
-      toast.add({ title: 'Erro ao Pagar', description: res.error.value?.error || 'Falha no pagamento', color: 'red' })
+      toast.add({ title: 'Erro ao Pagar', description: (res.error.value as any)?.error || 'Falha no pagamento', color: 'red' })
       return
     }
 
