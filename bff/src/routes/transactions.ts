@@ -242,7 +242,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
 
       const updatedTxn = await pb.collection('transactions').update(txn.id, {
         status: 'realized',
-        realized_date: new Date().toISOString()
+        realized_date: new Date().toISOString(),
+        is_silent: !shouldUpdateBalance
       });
 
       return updatedTxn;

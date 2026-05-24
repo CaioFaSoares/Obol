@@ -78,7 +78,7 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
 
       // 5. Rollback: Encontrar o Saldo Inicial verdadeiro no calcStartDateStr
       let runningBalance = currentBalance;
-      const realizedSinceStart = transactions.filter(t => t.status === 'realized' && t.realized_date >= startFilter && !t.card_id);
+      const realizedSinceStart = transactions.filter(t => t.status === 'realized' && t.realized_date >= startFilter && !t.card_id && !t.is_silent);
       for (const txn of realizedSinceStart) {
         if (txn.type === 'income') runningBalance -= txn.amount;
         if (txn.type === 'expense') runningBalance += txn.amount;
@@ -99,7 +99,7 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         
         // --- BLOCO 1: PASSADO E HOJE ---
         if (dateStr <= todayStr) {
-          const dailyRealized = transactions.filter(t => t.status === 'realized' && t.realized_date.startsWith(dateStr) && !t.card_id);
+          const dailyRealized = transactions.filter(t => t.status === 'realized' && t.realized_date.startsWith(dateStr) && !t.card_id && !t.is_silent);
           for (const txn of dailyRealized) {
             if (txn.type === 'income') runningBalance += txn.amount;
             if (txn.type === 'expense') runningBalance -= txn.amount;

@@ -8,6 +8,7 @@ export const TransactionDTO = t.Object({
   expected_date: t.String({ format: 'date-time' }), // IsoString YYYY-MM-DD...
   realized_date: t.Optional(t.String({ format: 'date-time' })),
   is_recurring: t.Optional(t.Boolean()),
+  is_silent: t.Optional(t.Boolean()),
   // Data original da compra (para cartões de crédito)
   purchase_date: t.Optional(t.String({ format: 'date-time' })),
   
