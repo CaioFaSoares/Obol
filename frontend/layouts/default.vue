@@ -28,6 +28,16 @@ const { open } = useFastEntry()
             <UIcon name="i-heroicons-cog-6-tooth" class="w-4 h-4" />
             Gestão
           </NuxtLink>
+
+          <NuxtLink
+            to="/cards"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            active-class="bg-zinc-700 text-white"
+            inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
+          >
+            <UIcon name="i-heroicons-credit-card" class="w-4 h-4" />
+            Cartões
+          </NuxtLink>
         </div>
       </div>
     </nav>

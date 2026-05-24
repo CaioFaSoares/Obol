@@ -8,6 +8,8 @@ export const TransactionDTO = t.Object({
   expected_date: t.String({ format: 'date-time' }), // IsoString YYYY-MM-DD...
   realized_date: t.Optional(t.String({ format: 'date-time' })),
   is_recurring: t.Optional(t.Boolean()),
+  // Data original da compra (para cartões de crédito)
+  purchase_date: t.Optional(t.String({ format: 'date-time' })),
   
   // IDs de relacionamento
   account_id: t.Optional(t.String()),
@@ -74,3 +76,28 @@ export const CardDTO = t.Object({
   limit: t.Number({ minimum: 0 }),
 });
 
+// ---- Faturas de Cartão (Virtuais) ----
+export const InvoiceTransactionDTO = t.Object({
+  id: t.String(),
+  title: t.String(),
+  amount: t.Number(),
+  status: t.String(), // 'pending' | 'realized'
+  expected_date: t.String()
+});
+
+export const InvoiceDTO = t.Object({
+  period: t.String(), // Ex: '2026-05'
+  dueDate: t.String(),
+  totalAmount: t.Number(),
+  totalSpent: t.Number(),
+  status: t.Union([t.Literal('OPEN'), t.Literal('CLOSED'), t.Literal('PAID')]),
+  transactions: t.Array(InvoiceTransactionDTO)
+});
+
+export const CardInvoicesResponseDTO = t.Array(InvoiceDTO);
+
+export const PayInvoiceDTO = t.Object({
+  period: t.String({ description: 'Formato YYYY-MM (Ex: 2026-05)' }),
+  account_id: t.String({ description: 'ID da conta de onde o dinheiro vai sair' }),
+  amount_paid: t.Number({ description: 'Opcional para auditoria futura, mas obrigatório agora' })
+});

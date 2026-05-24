@@ -25,9 +25,9 @@ export const categoryRoutes = new Elysia({ prefix: '/api/categories' })
       sort: 'name'
     });
 
-    // 2. Busca TODAS as despesas do mês de uma vez só
+    // 2. Busca TODAS as despesas do mês baseadas na data original da compra (se houver) ou data de vencimento
     const monthlyExpenses = await pb.collection('transactions').getFullList({
-      filter: `type = 'expense' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`
+      filter: `type = 'expense' && ( (purchase_date != "" && purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}') || (purchase_date = "" && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') )`
     });
 
     // 3. Agrupa por categoria na memória e calcula os totais

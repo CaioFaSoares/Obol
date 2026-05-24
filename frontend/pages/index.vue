@@ -20,10 +20,16 @@ const { data: forecastData, pending: pendingForecast, error } = await useAsyncDa
 }, { watch: [forecastQuery] })
 
 const { data: transactionsData, pending: pendingTransactions } = await useAsyncData('transactions', async () => {
-  const res = await api.api.transactions.get()
+  const { startDate, endDate } = forecastQuery.value
+  const res = await api.api.transactions.get({
+    query: {
+      filter: `card_id = "" && expected_date >= '${startDate} 00:00:00.000Z' && expected_date <= '${endDate} 23:59:59.999Z'`,
+      sort: 'expected_date'
+    }
+  })
   if (res.error) throw res.error
   return (res.data as any[]) ?? []
-})
+}, { watch: [forecastQuery] })
 
 const timelineData = computed(() => {
   if (!Array.isArray(forecastData.value)) return []

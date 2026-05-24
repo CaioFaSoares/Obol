@@ -39,3 +39,39 @@ export function calculateClampedDate(year: number, month: number, targetDay: num
   const safeDay = Math.min(targetDay, lastDayOfMonth);
   return new Date(Date.UTC(year, month, safeDay, 0, 0, 0, 0)).toISOString();
 }
+
+export function determineInvoiceStatus(
+  transactions: any[], 
+  dueDateStr: string, 
+  closingDay: number, 
+  dueDay: number
+): 'OPEN' | 'CLOSED' | 'PAID' {
+  
+  // Se TODAS as transações deste agrupamento já foram realizadas, a fatura está paga.
+  const allRealized = transactions.every(t => t.status === 'realized');
+  if (allRealized && transactions.length > 0) return 'PAID';
+
+  // Lógica para descobrir a data exata do fechamento:
+  const dueDate = new Date(dueDateStr);
+  let closingMonth = dueDate.getUTCMonth();
+  let closingYear = dueDate.getUTCFullYear();
+
+  // Se o dia de fechamento é MAIOR que o dia de vencimento (Ex: Fecha 28, Vence 05)
+  // Significa que a data de fechamento ocorreu no mês ANTERIOR ao vencimento.
+  if (closingDay > dueDay) {
+    closingMonth -= 1;
+    if (closingMonth < 0) {
+      closingMonth = 11;
+      closingYear -= 1;
+    }
+  }
+
+  const closingDate = new Date(Date.UTC(closingYear, closingMonth, closingDay, 23, 59, 59));
+  const today = new Date();
+
+  // Se o dia de hoje já passou do dia de fechamento, a fatura está Fechada (esperando pagamento)
+  if (today > closingDate) return 'CLOSED';
+
+  // Caso contrário, ainda aceita novos gastos
+  return 'OPEN';
+}

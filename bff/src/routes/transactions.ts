@@ -84,16 +84,22 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
   })
 
   // GET /api/transactions — Lista as transações ordenadas por data
-  .get('/', async ({ pb }: { pb: PocketBase }) => {
+  .get('/', async ({ query, pb }: { query: any, pb: PocketBase }) => {
     try {
-      const records = await pb.collection('transactions').getList(1, 100, {
-        sort: '-expected_date'
-      });
+      const options: any = { sort: query?.sort || '-expected_date' };
+      if (query?.filter) options.filter = query.filter;
+
+      const records = await pb.collection('transactions').getList(1, 100, options);
       return records.items;
     } catch (err: any) {
       console.error('Falha ao listar transações:', err.data || err.message || err);
       return [];
     }
+  }, {
+    query: t.Optional(t.Object({
+      filter: t.Optional(t.String()),
+      sort: t.Optional(t.String())
+    }))
   })
 
   // DELETE /api/transactions/:id — Deleta e estorna saldo se necessário
@@ -170,6 +176,7 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       if (data.card_id && data.type === 'expense') {
         const card = await pb.collection('cards').getOne(data.card_id);
         const projectedDueDate = calculateCardDueDate(data.expected_date, card.closing_day, card.due_day);
+        data.purchase_date = data.expected_date; // Salva a data real da compra
         data.expected_date = projectedDueDate;
         data.status = 'pending'; 
       }
