@@ -55,12 +55,12 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
       const invoicesMap = new Map();
 
       for (const txn of txns) {
-        // Extrai o YYYY-MM
-        const period = txn.expected_date.substring(0, 7);
+        // Extrai a data exata (YYYY-MM-DD) para alinhar com o forecast
+        const exactDueDate = txn.expected_date.substring(0, 10);
         
-        if (!invoicesMap.has(period)) {
-          invoicesMap.set(period, {
-            period,
+        if (!invoicesMap.has(exactDueDate)) {
+          invoicesMap.set(exactDueDate, {
+            period: exactDueDate, // Usamos o exato dia como identificador da fatura agora
             dueDate: txn.expected_date,
             totalAmount: 0,
             totalSpent: 0,
@@ -69,7 +69,7 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           });
         }
 
-        const invoice = invoicesMap.get(period);
+        const invoice = invoicesMap.get(exactDueDate);
         
         // Saldo Devedor Restante
         if (txn.status === 'pending') {
@@ -119,15 +119,30 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
   // POST /api/cards/:id/pay-invoice — Liquidação de Fatura
   .post('/:id/pay-invoice', async ({ params, body, pb, set }: { params: any, body: any, pb: PocketBase, set: any }) => {
     try {
-      const { period, account_id, amount_paid } = body;
+      const { period, account_id, amount_paid, ignore_balance } = body;
 
-      // 1. Validamos a conta e o cartão
-      const account = await pb.collection('accounts').getOne(account_id);
+      // 1. Validamos o cartão (a conta só é validada se não for baixa silenciosa)
       const card = await pb.collection('cards').getOne(params.id);
+      let account = null;
+      if (!ignore_balance) {
+        if (!account_id) throw new Error('account_id é obrigatório quando não é baixa silenciosa.');
+        account = await pb.collection('accounts').getOne(account_id);
+      }
 
-      // 2. Buscamos as transações daquele mês exato para o cartão
+      // 2. Buscamos as transações pela DATA EXATA da fatura (que agora vem no period)
+      // Como o expected_date tem timestamp, pegamos o dia inteiro:
+      // Nota: Para suportar legados, period pode vir como YYYY-MM ou YYYY-MM-DD
+      let dateFilter = "";
+      if (period.length === 7) {
+        // Legado (se o front mandar só YYYY-MM)
+        dateFilter = `expected_date >= '${period}-01 00:00:00.000Z' && expected_date <= '${period}-31 23:59:59.999Z'`;
+      } else {
+        // Novo padrão (YYYY-MM-DD)
+        dateFilter = `expected_date >= '${period} 00:00:00.000Z' && expected_date <= '${period} 23:59:59.999Z'`;
+      }
+
       const txns = await pb.collection('transactions').getFullList({
-        filter: `card_id = '${params.id}' && expected_date >= '${period}-01 00:00:00.000Z' && expected_date <= '${period}-31 23:59:59.999Z' && status = 'pending'`,
+        filter: `card_id = '${params.id}' && ${dateFilter} && status = 'pending'`,
       });
 
       if (txns.length === 0) {
@@ -142,60 +157,70 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         if (txn.type === 'income') totalDue -= txn.amount;
       }
 
-      if (amount_paid <= 0) {
-        set.status = 400;
-        return { error: 'O valor pago deve ser maior que zero.' };
-      }
-
-      if (amount_paid > totalDue + 0.01) {
-        set.status = 400;
-        return { error: 'O valor pago não pode exceder o saldo devedor da fatura.' };
-      }
+      let newBalance = account ? account.initial_balance : null;
 
       // 4. Executa as Mutações no Banco
 
-      // A. Abate o saldo da Conta Corrente
-      const newBalance = account.initial_balance - amount_paid;
-      await pb.collection('accounts').update(account.id, { 
-        initial_balance: newBalance 
-      });
+      if (!ignore_balance) {
+        if (!amount_paid || amount_paid <= 0) {
+          set.status = 400;
+          return { error: 'O valor pago deve ser maior que zero.' };
+        }
+        if (amount_paid > totalDue + 0.01) {
+          set.status = 400;
+          return { error: 'O valor pago não pode exceder o saldo devedor da fatura.' };
+        }
 
-      // B. Registra a saída da conta corrente no histórico
-      await pb.collection('transactions').create({
-        title: `Pagamento Fatura ${card.name} ${period}`,
-        amount: amount_paid,
-        type: 'expense',
-        status: 'realized',
-        account_id: account.id,
-        realized_date: new Date().toISOString(),
-        expected_date: new Date().toISOString()
-      });
-
-      // C. Update em Massa (Quitação vs Parcial)
-      const isPartial = amount_paid < totalDue - 0.01;
-
-      if (isPartial) {
-        await pb.collection('transactions').create({
-          title: `Pagamento Parcial ${card.name}`,
-          amount: amount_paid,
-          type: 'income',
-          status: 'pending',
-          card_id: params.id,
-          expected_date: `${period}-15T12:00:00.000Z`
+        // A. Abate o saldo da Conta Corrente
+        if (!account) throw new Error('Conta não encontrada ou não informada.');
+        
+        newBalance = account.initial_balance - amount_paid;
+        await pb.collection('accounts').update(account.id, { 
+          initial_balance: newBalance 
         });
-      } else {
-        const updatePromises = txns.map(txn => 
-          pb.collection('transactions').update(txn.id, {
-            status: 'realized',
-            realized_date: new Date().toISOString()
-          })
-        );
-        await Promise.all(updatePromises);
+
+        // B. Registra a saída da conta corrente no histórico
+        await pb.collection('transactions').create({
+          title: `Pagamento Fatura ${card.name} ${period}`,
+          amount: amount_paid,
+          type: 'expense',
+          status: 'realized',
+          account_id: account.id,
+          realized_date: new Date().toISOString(),
+          expected_date: new Date().toISOString()
+        });
+
+        // Pagamento Parcial (Só é suportado quando há pagamento real em dinheiro)
+        const isPartial = amount_paid < totalDue - 0.01;
+        if (isPartial) {
+          await pb.collection('transactions').create({
+            title: `Pagamento Parcial ${card.name}`,
+            amount: amount_paid,
+            type: 'income',
+            status: 'pending',
+            card_id: params.id,
+            expected_date: `${period.substring(0, 7)}-15T12:00:00.000Z` // Joga pra frente provisoriamente
+          });
+          return { 
+            success: true, 
+            message: `Pagamento parcial de R$ ${amount_paid} registrado com sucesso!`,
+            new_account_balance: newBalance
+          };
+        }
       }
+
+      // C. Update em Massa (Quitação Total ou Baixa Silenciosa)
+      const updatePromises = txns.map(txn => 
+        pb.collection('transactions').update(txn.id, {
+          status: 'realized',
+          realized_date: new Date().toISOString()
+        })
+      );
+      await Promise.all(updatePromises);
 
       return { 
         success: true, 
-        message: isPartial ? `Pagamento parcial de R$ ${amount_paid} registrado com sucesso!` : `Fatura de ${period} quitada!`,
+        message: ignore_balance ? `Fatura resolvida silenciosamente!` : `Fatura de ${period} quitada!`,
         new_account_balance: newBalance
       };
 

@@ -98,7 +98,8 @@ export const InvoiceDTO = t.Object({
 export const CardInvoicesResponseDTO = t.Array(InvoiceDTO);
 
 export const PayInvoiceDTO = t.Object({
-  period: t.String({ description: 'Formato YYYY-MM (Ex: 2026-05)' }),
-  account_id: t.String({ description: 'ID da conta de onde o dinheiro vai sair' }),
-  amount_paid: t.Number({ description: 'Opcional para auditoria futura, mas obrigatório agora' })
+  period: t.String({ description: 'Formato YYYY-MM-DD (ou YYYY-MM legado)' }),
+  account_id: t.Optional(t.String({ description: 'ID da conta de onde o dinheiro vai sair' })),
+  amount_paid: t.Optional(t.Number({ description: 'Opcional para auditoria futura' })),
+  ignore_balance: t.Optional(t.Boolean({ description: 'Se true, não desconta da conta, apenas dá baixa.' }))
 });

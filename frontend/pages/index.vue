@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
 import { useFinanceStore } from '../stores/finance'
+import { formatCurrency, formatDate, getForecastRange } from '../utils/formatters'
+import { api } from '../utils/api'
 
 const { open } = useTransactionEdit()
 const forecastDays = ref(30)

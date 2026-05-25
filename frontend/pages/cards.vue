@@ -103,11 +103,16 @@
         <h3 class="text-lg font-medium text-white">Pagar Fatura</h3>
         <p class="text-sm text-zinc-400">Selecione de qual conta o valor de {{ formatCurrency(currentInvoice?.totalAmount || 0) }} será debitado.</p>
         
-        <UFormGroup label="Valor a Pagar">
+        <UFormGroup label="Apenas resolver (sem debitar da conta)">
+          <UToggle v-model="isSilentPayment" />
+          <p class="text-xs text-zinc-500 mt-1">Marque isso se você já pagou a fatura por fora e só quer limpar as pendências no aplicativo sem alterar seu saldo.</p>
+        </UFormGroup>
+
+        <UFormGroup label="Valor a Pagar" v-if="!isSilentPayment">
           <UInput v-model="amountToPay" type="text" placeholder="Ex: 150.00" />
         </UFormGroup>
 
-        <UFormGroup label="Conta Corrente">
+        <UFormGroup label="Conta Corrente" v-if="!isSilentPayment">
           <USelectMenu
             v-model="paymentAccountId"
             :options="financeStore.accounts"
@@ -120,7 +125,13 @@
 
         <div class="flex justify-end gap-3 mt-6">
           <UButton label="Cancelar" color="gray" variant="ghost" @click="isPaymentModalOpen = false" />
-          <UButton label="Confirmar Pagamento" color="primary" :disabled="!paymentAccountId" :loading="isPaying" @click="confirmPayment" />
+          <UButton 
+            :label="isSilentPayment ? 'Dar Baixa Silenciosa' : 'Confirmar Pagamento'" 
+            color="primary" 
+            :disabled="!isSilentPayment && !paymentAccountId" 
+            :loading="isPaying" 
+            @click="confirmPayment" 
+          />
         </div>
       </div>
     </UModal>
@@ -155,7 +166,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { useFinanceStore } from '~/stores/finance'
 import { api } from '~/utils/api'
-import { formatCurrency, getStatusProps } from '~/utils/formatters'
+import { formatCurrency, getStatusProps, formatDate, parseCurrencyInput } from '~/utils/formatters'
 
 const financeStore = useFinanceStore()
 const toast = useToast()
@@ -168,6 +179,7 @@ const isLoadingInvoices = ref(false)
 const isPaymentModalOpen = ref(false)
 const paymentAccountId = ref<string>('')
 const amountToPay = ref<number>(0)
+const isSilentPayment = ref(false)
 const isPaying = ref(false)
 
 // Carrega os cartões ao montar
@@ -224,20 +236,27 @@ const formatPeriod = (period: string) => {
 // Fluxo de Pagamento
 const payInvoice = () => {
   paymentAccountId.value = ''
+  isSilentPayment.value = false
   amountToPay.value = currentInvoice.value?.totalAmount || 0
   isPaymentModalOpen.value = true
 }
 
 const confirmPayment = async () => {
-  if (!currentInvoice.value || !paymentAccountId.value) return
+  if (!currentInvoice.value || (!isSilentPayment.value && !paymentAccountId.value)) return
   
   isPaying.value = true
   try {
-    const res = await api.api.cards({ id: selectedCardId.value })['pay-invoice'].post({
+    const payload: any = {
       period: currentInvoice.value.period,
-      account_id: paymentAccountId.value,
-      amount_paid: parseCurrencyInput(amountToPay.value)
-    })
+      ignore_balance: isSilentPayment.value
+    }
+    
+    if (!isSilentPayment.value) {
+      payload.account_id = paymentAccountId.value
+      payload.amount_paid = parseCurrencyInput(amountToPay.value)
+    }
+
+    const res = await api.api.cards({ id: selectedCardId.value })['pay-invoice'].post(payload)
 
     if (res.error) {
       toast.add({ title: 'Erro ao Pagar', description: (res.error.value as any)?.error || 'Falha no pagamento', color: 'red' })
