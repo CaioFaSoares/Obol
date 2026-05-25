@@ -31,7 +31,7 @@ async function submit() {
   try {
     const payload: any = {
       name: name.value,
-      amount: Number(amount.value),
+      amount: parseCurrencyInput(amount.value),
       payday: Number(payday.value),
       type: type.value,
     }
@@ -94,7 +94,7 @@ const categoryOptions = computed(() => {
         </UFormGroup>
 
         <UFormGroup label="Valor (R$)">
-          <UInput v-model="amount" type="number" step="0.01" placeholder="0.00" />
+          <UInput v-model="amount" type="text" placeholder="0.00" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">

@@ -33,7 +33,7 @@
     <div v-if="currentInvoice" class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-6">
       <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
         <div>
-          <p class="text-sm text-zinc-400">Vencimento: {{ new Date(currentInvoice.dueDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }}</p>
+          <p class="text-sm text-zinc-400">Vencimento: {{ formatDate(currentInvoice.dueDate) }}</p>
           <div class="flex items-end gap-3 mt-1">
             <div>
               <p class="text-xs text-zinc-500 uppercase font-semibold">Em Aberto</p>
@@ -73,7 +73,7 @@
         <div v-for="txn in currentInvoice.transactions" :key="txn.id" class="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors">
           <div>
             <p class="text-white font-medium">{{ txn.title }}</p>
-            <p class="text-xs text-zinc-500">Comprado em: {{ new Date(txn.expected_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }}</p>
+            <p class="text-xs text-zinc-500">Comprado em: {{ formatDate(txn.expected_date) }}</p>
           </div>
           <div class="flex items-center gap-4">
             <p class="text-white font-semibold">
@@ -104,7 +104,7 @@
         <p class="text-sm text-zinc-400">Selecione de qual conta o valor de {{ formatCurrency(currentInvoice?.totalAmount || 0) }} será debitado.</p>
         
         <UFormGroup label="Valor a Pagar">
-          <UInput v-model="amountToPay" type="number" step="0.01" placeholder="Ex: 150.00" />
+          <UInput v-model="amountToPay" type="text" placeholder="Ex: 150.00" />
         </UFormGroup>
 
         <UFormGroup label="Conta Corrente">
@@ -135,7 +135,7 @@
             <UInput v-model="editingTxn.title" placeholder="Ex: Uber" />
           </UFormGroup>
           <UFormGroup label="Valor">
-            <UInput v-model="editingTxn.amount" type="number" step="0.01" placeholder="Valor (positivo ou negativo)" />
+            <UInput v-model="editingTxn.amount" type="text" placeholder="Valor (positivo ou negativo)" />
           </UFormGroup>
           <UFormGroup label="Data da Compra">
             <UInput v-model="editingTxn.expected_date" type="date" />
@@ -236,7 +236,7 @@ const confirmPayment = async () => {
     const res = await api.api.cards({ id: selectedCardId.value })['pay-invoice'].post({
       period: currentInvoice.value.period,
       account_id: paymentAccountId.value,
-      amount_paid: Number(amountToPay.value)
+      amount_paid: parseCurrencyInput(amountToPay.value)
     })
 
     if (res.error) {
@@ -278,7 +278,7 @@ const saveEdit = async () => {
   try {
     const payload = {
       title: editingTxn.value.title,
-      amount: Number(editingTxn.value.amount),
+      amount: parseCurrencyInput(editingTxn.value.amount),
       expected_date: new Date(editingTxn.value.expected_date).toISOString()
     }
 

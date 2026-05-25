@@ -73,7 +73,7 @@ async function submit() {
         </UFormGroup>
 
         <UFormGroup v-if="type === 'fixed_budget'" label="Teto de Gastos (R$)">
-          <UInput v-model="monthlyBudget" type="number" step="0.01" placeholder="Ex: 1000.00" />
+          <UInput v-model="monthlyBudget" type="text" placeholder="Ex: 1000.00" />
         </UFormGroup>
 
         <div class="flex justify-end gap-3 pt-2">

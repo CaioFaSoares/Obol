@@ -36,7 +36,7 @@ const submit = async () => {
     const now = new Date().toISOString()
     const payload: any = {
       title: description.value || (type.value === 'transfer' ? 'Transferência' : 'Lançamento Rápido'),
-      amount: Number(amount.value),
+      amount: parseCurrencyInput(amount.value),
       type: type.value,
       status,
       expected_date: now
@@ -97,7 +97,7 @@ const submit = async () => {
 
       <form @submit.prevent="submit" class="space-y-4">
         <UFormGroup label="Valor">
-          <UInput v-model="amount" type="number" step="0.01" placeholder="0.00" icon="i-heroicons-currency-dollar">
+          <UInput v-model="amount" type="text" placeholder="0.00" icon="i-heroicons-currency-dollar">
             <template #leading>
               <span class="text-gray-500 dark:text-gray-400 sm:text-sm">R$</span>
             </template>

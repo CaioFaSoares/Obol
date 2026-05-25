@@ -57,7 +57,7 @@ const submit = async () => {
   try {
     const payload: any = {
       title: title.value,
-      amount: Number(amount.value),
+      amount: parseCurrencyInput(amount.value),
       type: type.value,
       status: status.value,
       expected_date: expectedDate.value ? new Date(expectedDate.value).toISOString() : new Date().toISOString()
@@ -136,7 +136,7 @@ const deleteTransaction = async () => {
 
       <form @submit.prevent="submit" class="space-y-4">
         <UFormGroup label="Valor">
-          <UInput v-model="amount" type="number" step="0.01" placeholder="0.00" icon="i-heroicons-currency-dollar">
+          <UInput v-model="amount" type="text" placeholder="0.00" icon="i-heroicons-currency-dollar">
             <template #leading><span class="text-gray-400 sm:text-sm">R$</span></template>
           </UInput>
         </UFormGroup>

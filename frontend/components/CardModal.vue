@@ -92,7 +92,7 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`
         </UFormGroup>
 
         <UFormGroup label="Limite Total (R$)">
-          <UInput v-model="limit" type="number" step="0.01" placeholder="Ex: 5000.00" />
+          <UInput v-model="limit" type="text" placeholder="Ex: 5000.00" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">

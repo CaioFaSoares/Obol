@@ -33,3 +33,32 @@ export const getStatusProps = (status: 'OPEN' | 'CLOSED' | 'PAID') => {
       return { label: 'Desconhecido', color: 'gray' as const };
   }
 };
+
+export const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  // Garante que o timezone offset não altere o dia se for ISO YYYY-MM-DD
+  const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+  const localDate = new Date(date.getTime() + userTimezoneOffset);
+  return new Intl.DateTimeFormat('pt-BR').format(localDate);
+};
+
+export const parseCurrencyInput = (value: string | number): number => {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  
+  let str = value.toString().trim();
+  
+  const lastCommaIndex = str.lastIndexOf(',');
+  const lastDotIndex = str.lastIndexOf('.');
+  
+  if (lastCommaIndex > lastDotIndex) {
+    // Vírgula é o separador decimal
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else if (lastDotIndex > lastCommaIndex) {
+    // Ponto é o separador decimal
+    str = str.replace(/,/g, '');
+  }
+  
+  return Number(str) || 0;
+};

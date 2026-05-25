@@ -10,7 +10,8 @@ const { data: budgets, refresh } = await useAsyncData('budgets', async () => {
 
 function progressPercent(spent: number, budget: number) {
   if (!budget) return 0
-  return Math.min(100, Math.round((spent / budget) * 100))
+  const percent = Math.round((spent / budget) * 100)
+  return Math.max(0, Math.min(100, percent))
 }
 
 function barColor(percent: number) {

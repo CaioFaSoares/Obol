@@ -23,7 +23,7 @@ const { data: transactionsData, pending: pendingTransactions } = await useAsyncD
   const { startDate, endDate } = forecastQuery.value
   const res = await api.api.transactions.get({
     query: {
-      filter: `card_id = "" && expected_date >= "${startDate} 00:00:00.000Z" && expected_date <= "${endDate} 23:59:59.999Z"`,
+      filter: `card_id = "" && (status = 'pending' || (status = 'realized' && realized_date >= '${startDate} 00:00:00.000Z' && realized_date <= '${endDate} 23:59:59.999Z'))`,
       sort: 'expected_date'
     }
   })
@@ -52,6 +52,17 @@ const forecastedBalance = computed(() => {
 
 const transactions = computed((): any[] => {
   return transactionsData.value || []
+})
+
+const activeTab = ref(0)
+const tabItems = [
+  { label: 'Realizados', key: 'realized', icon: 'i-heroicons-check-badge' },
+  { label: 'Pendentes', key: 'pending', icon: 'i-heroicons-clock' }
+]
+
+const filteredTransactions = computed(() => {
+  const status = activeTab.value === 0 ? 'realized' : 'pending'
+  return transactions.value.filter((t: any) => t.status === status)
 })
 
 const realizeTransaction = async (id: string, updateBalance: boolean) => {
@@ -149,21 +160,35 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
           <h3 class="font-semibold text-lg text-white">Histórico de Lançamentos</h3>
         </template>
         
-        <ul class="divide-y divide-zinc-800">
-          <li v-for="t in transactions" :key="t.id" class="py-3 flex justify-between items-center group">
+        <UTabs v-model="activeTab" :items="tabItems" class="w-full mb-4" />
+
+        <div v-if="filteredTransactions.length === 0" class="p-8 text-center text-zinc-500">
+          Nenhum lançamento encontrado nesta aba.
+        </div>
+
+        <ul v-else class="divide-y divide-zinc-800">
+          <li v-for="t in filteredTransactions" :key="t.id" class="py-3 flex justify-between items-center group">
             <div>
-              <p class="text-white font-medium">
+              <p class="text-white font-medium flex items-center gap-2">
                 {{ t.title }}
-                <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs" class="ml-2">Pendente</UBadge>
+                <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs">Pendente</UBadge>
+                <UBadge v-if="t.is_silent" color="gray" variant="subtle" size="xs">Baixa Silenciosa</UBadge>
               </p>
               <p class="text-xs text-zinc-400">
-                Previsto: {{ new Date(t.expected_date).toLocaleDateString() }} 
-                <span v-if="t.realized_date">• Realizado: {{ new Date(t.realized_date).toLocaleDateString() }}</span>
+                Previsto: {{ formatDate(t.expected_date) }} 
+                <span v-if="t.realized_date">• Realizado: {{ formatDate(t.realized_date) }}</span>
               </p>
             </div>
             <div class="flex items-center gap-4">
-              <span class="font-mono" :class="t.type === 'expense' ? 'text-red-400' : 'text-emerald-400'">
-                {{ t.type === 'expense' ? '-' : '+' }}{{ formatCurrency(t.amount) }}
+              <span 
+                class="font-mono" 
+                :class="{
+                  'text-zinc-400': t.type === 'transfer',
+                  'text-red-400': t.type === 'expense',
+                  'text-emerald-400': t.type === 'income'
+                }"
+              >
+                {{ t.type === 'expense' ? '-' : (t.type === 'income' ? '+' : '') }}{{ formatCurrency(t.amount) }}
               </span>
               <div class="flex gap-1">
                 <UDropdown 

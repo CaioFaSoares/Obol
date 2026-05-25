@@ -41,17 +41,17 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         const invoicesMap = new Map();
 
         for (const txn of cardTxns) {
-          const period = txn.expected_date.substring(0, 7);
-          if (!invoicesMap.has(period)) {
-            invoicesMap.set(period, {
-              period,
-              dueDate: txn.expected_date.substring(0, 10), // A data limite já vem do calculateCardDueDate!
+          const exactDueDate = txn.expected_date.substring(0, 10);
+          if (!invoicesMap.has(exactDueDate)) {
+            invoicesMap.set(exactDueDate, {
+              period: exactDueDate,
+              dueDate: exactDueDate,
               totalAmount: 0,
               status: 'OPEN',
               transactions: []
             });
           }
-          const invoice = invoicesMap.get(period);
+          const invoice = invoicesMap.get(exactDueDate);
           if (txn.status === 'pending') {
             if (txn.type === 'expense') invoice.totalAmount += txn.amount;
             if (txn.type === 'income') invoice.totalAmount -= txn.amount;
@@ -83,6 +83,14 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         if (txn.type === 'income') runningBalance -= txn.amount;
         if (txn.type === 'expense') runningBalance += txn.amount;
       }
+      
+      // Ajuste de Dívidas Antigas: IGNORADO. Dívidas passadas não pagas não devem rebaixar artificialmente
+      // o saldo bancário no gráfico. Elas devem ser gerenciadas apenas na aba 'Pendentes'.
+      // const historicalPending = transactions.filter(t => t.status === 'pending' && t.expected_date < startFilter && !t.card_id);
+      // for (const txn of historicalPending) {
+      //  if (txn.type === 'income') runningBalance += txn.amount;
+      //  if (txn.type === 'expense') runningBalance -= txn.amount;
+      // }
 
       // 6. Algoritmo de Timeline (Iteração Dia a Dia)
       const timeline = [];
@@ -97,51 +105,41 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
       while (currentDate <= finalDate) {
         const dateStr = currentDate.toISOString().split('T')[0];
         
-        // --- BLOCO 1: PASSADO E HOJE ---
+        // 1. TRANSAÇÕES REALIZADAS (Apenas do passado até hoje, baseadas na realized_date)
         if (dateStr <= todayStr) {
-          const dailyRealized = transactions.filter(t => t.status === 'realized' && t.realized_date.startsWith(dateStr) && !t.card_id && !t.is_silent);
+          const dailyRealized = transactions.filter(t => 
+            t.status === 'realized' && 
+            t.realized_date.startsWith(dateStr) && 
+            !t.card_id && !t.is_silent
+          );
           for (const txn of dailyRealized) {
             if (txn.type === 'income') runningBalance += txn.amount;
             if (txn.type === 'expense') runningBalance -= txn.amount;
           }
         }
 
-        // --- BLOCO 2: APENAS HOJE ---
-        if (dateStr === todayStr) {
-          // Aplica pendências, mas apenas as que não são "fantasmas" antigas (limite de 30 dias)
-          const overduePending = transactions.filter(t => 
+        // 2. TRANSAÇÕES PENDENTES (Processadas estritamente a partir de hoje e no futuro)
+        // Pendências passadas não pagas não devem distorcer o histórico de saldo real.
+        if (dateStr >= todayStr) {
+          const dailyPending = transactions.filter(t => 
             t.status === 'pending' && 
-            t.expected_date <= `${dateStr} 23:59:59` && 
-            t.expected_date >= limitGhostDebt && // Blindagem contra Ghost Debt
+            t.expected_date.startsWith(dateStr) && 
             !t.card_id
           );
-          for (const txn of overduePending) {
-            if (txn.type === 'income') runningBalance += txn.amount;
-            if (txn.type === 'expense') runningBalance -= txn.amount;
-          }
-          
-          const overdueInvoices = upcomingInvoices.filter(i => i.dateStr <= dateStr);
-          for (const inv of overdueInvoices) {
-            runningBalance -= inv.amount;
-          }
-        }
-
-        // --- BLOCO 3: APENAS FUTURO ---
-        if (dateStr > todayStr) {
-          const dailyPending = transactions.filter(t => t.status === 'pending' && t.expected_date.startsWith(dateStr) && !t.card_id);
           for (const txn of dailyPending) {
+            console.log(`[FORECAST] Aplicando pendência (${txn.title}) de ${txn.amount} no dia ${dateStr}. Tipo: ${txn.type}`);
             if (txn.type === 'income') runningBalance += txn.amount;
             if (txn.type === 'expense') runningBalance -= txn.amount;
           }
-          
-          const dailyInvoices = upcomingInvoices.filter(i => i.dateStr === dateStr);
-          for (const inv of dailyInvoices) {
-            runningBalance -= inv.amount;
-          }
+        }
+        
+        // 3. FATURAS DE CARTÃO DE CRÉDITO (Aplicadas estritamente na data de vencimento)
+        const dailyInvoices = upcomingInvoices.filter(i => i.dateStr === dateStr);
+        for (const inv of dailyInvoices) {
+          runningBalance -= inv.amount;
         }
 
-        // --- BLOCO 4: SIMULAÇÃO DE RECORRÊNCIAS (HOJE E FUTURO) ---
-        // A Mágica: Agora ele simula bolsas que caem hoje e não foram lançadas!
+        // 4. SIMULAÇÃO DE RECORRÊNCIAS FUTURAS
         if (dateStr >= todayStr) {
           const dayOfMonth = currentDate.getUTCDate();
           const currentMonthStr = dateStr.substring(0, 7); 
@@ -161,10 +159,9 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
           }
         }
 
-        // --- FINALIZAÇÃO: HIGIENE MATEMÁTICA ---
+        // HIGIENE MATEMÁTICA E INJEÇÃO NA TIMELINE
         timeline.push({
           date: dateStr,
-          // Força o arredondamento para 2 casas decimais, eliminando o erro de dízima do JS
           balance: Math.round(runningBalance * 100) / 100
         });
 

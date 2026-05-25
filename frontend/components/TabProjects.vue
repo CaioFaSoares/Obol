@@ -175,7 +175,7 @@ function receivedPercent(received: number, total: number) {
 
         <form @submit.prevent="submitPayment" class="space-y-4">
           <UFormGroup label="Valor recebido (R$)">
-            <UInput v-model="paymentAmount" type="number" step="0.01" placeholder="0.00" autofocus />
+            <UInput v-model="paymentAmount" type="text" placeholder="0.00" autofocus />
           </UFormGroup>
           <UFormGroup label="Descrição (opcional)">
             <UInput v-model="paymentDesc" placeholder="Ex: 1ª parcela, entrega final..." />

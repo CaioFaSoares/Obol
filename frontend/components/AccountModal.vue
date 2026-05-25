@@ -68,7 +68,7 @@ async function submit() {
         </UFormGroup>
 
         <UFormGroup label="Saldo Inicial (R$)">
-          <UInput v-model="initialBalance" type="number" step="0.01" placeholder="Ex: 1500.00" />
+          <UInput v-model="initialBalance" type="text" placeholder="Ex: 1500.00" />
         </UFormGroup>
 
         <div class="flex justify-end gap-3 pt-2">
