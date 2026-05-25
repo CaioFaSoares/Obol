@@ -13,8 +13,8 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Docker / PocketBase Data
-data/pb_data/
-!data/pb_migrations/
+db/pb_data/
+!db/pb_migrations/
 
 # Environment Variables
 .env
