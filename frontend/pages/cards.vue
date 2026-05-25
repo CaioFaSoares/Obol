@@ -170,6 +170,7 @@ import { formatCurrency, getStatusProps, formatDate, parseCurrencyInput } from '
 
 const financeStore = useFinanceStore()
 const toast = useToast()
+const route = useRoute()
 
 const selectedCardId = ref<string>('')
 const invoices = ref<any[]>([])
@@ -185,7 +186,9 @@ const isPaying = ref(false)
 // Carrega os cartões ao montar
 onMounted(async () => {
   await financeStore.loadBaseData()
-  if (financeStore.cards.length > 0) {
+  if (route.query.card_id) {
+    selectedCardId.value = route.query.card_id as string
+  } else if (financeStore.cards.length > 0) {
     selectedCardId.value = financeStore.cards[0].id
   }
 })

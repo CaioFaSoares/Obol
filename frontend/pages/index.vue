@@ -111,7 +111,8 @@ const invoicesAsTxns = computed(() => {
     amount: inv.amount,
     type: 'expense',
     status: 'pending',
-    isInvoice: true
+    isInvoice: true,
+    card_id: inv.card_id
   }))
 })
 
@@ -245,18 +246,16 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
               </p>
             </div>
             <div class="flex items-center gap-4">
-              <span 
-                class="font-mono" 
-                :class="{
-                  'text-zinc-400': t.type === 'transfer',
-                  'text-red-400': t.type === 'expense',
-                  'text-emerald-400': t.type === 'income'
-                }"
-              >
-                {{ t.type === 'expense' ? '-' : (t.type === 'income' ? '+' : '') }}{{ formatCurrency(t.amount) }}
-              </span>
               <div class="flex gap-1">
                 <template v-if="!t.isInvoice">
+                  <UButton
+                    icon="i-heroicons-pencil-square"
+                    size="xs"
+                    color="gray"
+                    variant="ghost"
+                    class="opacity-0 group-hover:opacity-100 transition-opacity"
+                    @click="open(t)"
+                  />
                   <UDropdown 
                     v-if="t.status === 'pending'"
                     :items="[[
@@ -282,18 +281,10 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
                       title="Opções de Baixa"
                     />
                   </UDropdown>
-                  <UButton
-                    icon="i-heroicons-pencil-square"
-                    size="xs"
-                    color="gray"
-                    variant="ghost"
-                    class="opacity-0 group-hover:opacity-100 transition-opacity"
-                    @click="open(t)"
-                  />
                 </template>
                 <template v-else>
                   <UButton 
-                    to="/cards"
+                    :to="`/cards?card_id=${t.card_id}`"
                     icon="i-heroicons-credit-card" 
                     color="purple" 
                     variant="soft" 
@@ -302,6 +293,16 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
                   />
                 </template>
               </div>
+              <span 
+                class="font-mono text-right min-w-[100px]" 
+                :class="{
+                  'text-zinc-400': t.type === 'transfer',
+                  'text-red-400': t.type === 'expense',
+                  'text-emerald-400': t.type === 'income'
+                }"
+              >
+                {{ t.type === 'expense' ? '-' : (t.type === 'income' ? '+' : '') }}{{ formatCurrency(t.amount) }}
+              </span>
             </div>
           </li>
         </ul>
