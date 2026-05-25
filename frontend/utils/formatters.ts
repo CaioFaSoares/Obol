@@ -35,12 +35,15 @@ export const getStatusProps = (status: 'OPEN' | 'CLOSED' | 'PAID') => {
 };
 
 export const formatDate = (dateString: string) => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  // Garante que o timezone offset não altere o dia se for ISO YYYY-MM-DD
-  const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-  const localDate = new Date(date.getTime() + userTimezoneOffset);
-  return new Intl.DateTimeFormat('pt-BR').format(localDate);
+  try {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    const localDate = new Date(date.getTime() + userTimezoneOffset);
+    return new Intl.DateTimeFormat('pt-BR').format(localDate);
+  } catch (e) {
+    return dateString || '';
+  }
 };
 
 export const parseCurrencyInput = (value: string | number): number => {

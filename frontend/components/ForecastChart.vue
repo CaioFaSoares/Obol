@@ -6,6 +6,19 @@ const props = defineProps<{
   currentBalance?: number
 }>();
 
+const emit = defineEmits<{
+  (e: 'point-click', payload: { index: number, data: any }): void
+}>()
+
+const onChartClick = (params: any) => {
+  if (params.componentType === 'series' && params.seriesType === 'line') {
+    const dataIndex = params.dataIndex
+    if (props.data && props.data[dataIndex]) {
+      emit('point-click', { index: dataIndex, data: props.data[dataIndex] })
+    }
+  }
+}
+
 // Minimal configuration leveraging the modular ECharts components we registered
 const chartOption = computed(() => {
   const dates = props.data?.map(t => {
@@ -69,6 +82,6 @@ const chartOption = computed(() => {
 <template>
   <div class="w-full h-72">
     <!-- VChart is globally registered by our plugin -->
-    <VChart class="w-full h-full" :option="chartOption" autoresize />
+    <VChart class="w-full h-full" :option="chartOption" autoresize @click="onChartClick" />
   </div>
 </template>

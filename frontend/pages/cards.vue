@@ -228,9 +228,13 @@ const currentInvoice = computed(() => {
 
 // Formatação do Label do botão de mês (Ex: 2026-05 -> Maio 2026)
 const formatPeriod = (period: string) => {
-  const [year, month] = period.split('-')
-  const date = new Date(parseInt(year), parseInt(month) - 1, 1)
-  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date)
+  try {
+    const [year, month] = period.split('-')
+    const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+    return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date)
+  } catch (e) {
+    return period || 'Fatura';
+  }
 }
 
 // Fluxo de Pagamento

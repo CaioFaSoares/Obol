@@ -34,24 +34,24 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
 
       // 4.5. Busca Cartões e calcula Faturas Virtuais Abertas/Fechadas
       const cards = await pb.collection('cards').getFullList();
-      const upcomingInvoices: { dateStr: string, amount: number }[] = [];
+      const upcomingInvoices: { card_id: string, card_name: string, dateStr: string, amount: number, status: string }[] = [];
 
       for (const card of cards) {
         const cardTxns = transactions.filter(t => t.card_id === card.id);
         const invoicesMap = new Map();
 
         for (const txn of cardTxns) {
-          const exactDueDate = txn.expected_date.substring(0, 10);
-          if (!invoicesMap.has(exactDueDate)) {
-            invoicesMap.set(exactDueDate, {
-              period: exactDueDate,
-              dueDate: exactDueDate,
+          const period = txn.expected_date.substring(0, 7);
+          if (!invoicesMap.has(period)) {
+            invoicesMap.set(period, {
+              period: period,
+              dueDate: txn.expected_date.substring(0, 10), // Use full date string here for determineInvoiceStatus
               totalAmount: 0,
               status: 'OPEN',
               transactions: []
             });
           }
-          const invoice = invoicesMap.get(exactDueDate);
+          const invoice = invoicesMap.get(period);
           if (txn.status === 'pending') {
             if (txn.type === 'expense') invoice.totalAmount += txn.amount;
             if (txn.type === 'income') invoice.totalAmount -= txn.amount;
@@ -69,8 +69,11 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
 
           if ((invoice.status === 'OPEN' || invoice.status === 'CLOSED') && invoice.totalAmount > 0) {
             upcomingInvoices.push({
+              card_id: card.id,
+              card_name: card.name,
               dateStr: invoice.dueDate,
-              amount: invoice.totalAmount
+              amount: invoice.totalAmount,
+              status: invoice.status
             });
           }
         }
@@ -169,7 +172,12 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
       }
 
       // 7. Retorna apenas o range solicitado
-      return timeline.filter(t => t.date >= startDate && t.date <= endDate);
+      const filteredInvoices = upcomingInvoices.filter(i => i.dateStr >= startDate);
+
+      return {
+        timeline: timeline.filter(t => t.date >= startDate && t.date <= endDate),
+        upcomingInvoices: filteredInvoices
+      };
 
     } catch (err: any) {
       set.status = 500;

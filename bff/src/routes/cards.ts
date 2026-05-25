@@ -55,12 +55,12 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
       const invoicesMap = new Map();
 
       for (const txn of txns) {
-        // Extrai a data exata (YYYY-MM-DD) para alinhar com o forecast
-        const exactDueDate = txn.expected_date.substring(0, 10);
+        // Extrai o YYYY-MM (mês da fatura)
+        const period = txn.expected_date.substring(0, 7);
         
-        if (!invoicesMap.has(exactDueDate)) {
-          invoicesMap.set(exactDueDate, {
-            period: exactDueDate, // Usamos o exato dia como identificador da fatura agora
+        if (!invoicesMap.has(period)) {
+          invoicesMap.set(period, {
+            period: period,
             dueDate: txn.expected_date,
             totalAmount: 0,
             totalSpent: 0,
@@ -69,7 +69,7 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           });
         }
 
-        const invoice = invoicesMap.get(exactDueDate);
+        const invoice = invoicesMap.get(period);
         
         // Saldo Devedor Restante
         if (txn.status === 'pending') {
@@ -129,20 +129,9 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         account = await pb.collection('accounts').getOne(account_id);
       }
 
-      // 2. Buscamos as transações pela DATA EXATA da fatura (que agora vem no period)
-      // Como o expected_date tem timestamp, pegamos o dia inteiro:
-      // Nota: Para suportar legados, period pode vir como YYYY-MM ou YYYY-MM-DD
-      let dateFilter = "";
-      if (period.length === 7) {
-        // Legado (se o front mandar só YYYY-MM)
-        dateFilter = `expected_date >= '${period}-01 00:00:00.000Z' && expected_date <= '${period}-31 23:59:59.999Z'`;
-      } else {
-        // Novo padrão (YYYY-MM-DD)
-        dateFilter = `expected_date >= '${period} 00:00:00.000Z' && expected_date <= '${period} 23:59:59.999Z'`;
-      }
-
+      // 2. Buscamos as transações daquele mês exato para o cartão
       const txns = await pb.collection('transactions').getFullList({
-        filter: `card_id = '${params.id}' && ${dateFilter} && status = 'pending'`,
+        filter: `card_id = '${params.id}' && expected_date >= '${period}-01 00:00:00.000Z' && expected_date <= '${period}-31 23:59:59.999Z' && status = 'pending'`,
       });
 
       if (txns.length === 0) {

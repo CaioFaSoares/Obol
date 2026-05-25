@@ -26,13 +26,24 @@ export const ForecastQueryDTO = t.Object({
   endDate: t.String({ description: 'Formato YYYY-MM-DD' })
 });
 
+export const ForecastInvoiceDTO = t.Object({
+  card_id: t.String(),
+  card_name: t.String(),
+  dateStr: t.String(),
+  amount: t.Number(),
+  status: t.String()
+});
+
 // Definimos a resposta exata para o Nuxt receber com autocomplete
-export const ForecastResponseDTO = t.Array(
-  t.Object({
-    date: t.String(),
-    balance: t.Number()
-  })
-);
+export const ForecastResponseDTO = t.Object({
+  timeline: t.Array(
+    t.Object({
+      date: t.String(),
+      balance: t.Number()
+    })
+  ),
+  upcomingInvoices: t.Array(ForecastInvoiceDTO)
+});
 
 // ---- Recorrências ----
 export const RecurrenceDTO = t.Object({
