@@ -76,7 +76,7 @@ const onForecastPointClick = (payload: { index: number, data: any }) => {
 const dayDetailTransactions = computed(() => {
   if (!selectedDayData.value || !selectedDayData.value.date) return []
   
-  // Eden Treaty parses ISO-like strings into Date objects
+  // Safely extract target date string (YYYY-MM-DD)
   let targetDateStr = '';
   if (selectedDayData.value.date instanceof Date) {
     targetDateStr = selectedDayData.value.date.toISOString().substring(0, 10)
@@ -84,17 +84,30 @@ const dayDetailTransactions = computed(() => {
     targetDateStr = String(selectedDayData.value.date).substring(0, 10)
   }
   
-  return transactions.value
+  const getSafeDateStr = (dateVal: any) => {
+    if (!dateVal) return '';
+    return dateVal instanceof Date ? dateVal.toISOString() : String(dateVal);
+  }
+
+  const baseList = transactions.value
     .filter(t => {
       const dateToCheck = t.status === 'realized' && t.realized_date ? t.realized_date : t.expected_date
-      return dateToCheck && dateToCheck.substring(0, 10) <= targetDateStr
+      const safeDateStr = getSafeDateStr(dateToCheck);
+      return safeDateStr.substring(0, 10) <= targetDateStr && !t.card_id
     })
+
+  const validInvoices = invoicesAsTxns.value.filter((inv: any) => {
+    const safeDateStr = getSafeDateStr(inv.expected_date);
+    return safeDateStr.substring(0, 10) <= targetDateStr;
+  })
+
+  return [...baseList, ...validInvoices]
     .sort((a, b) => {
-      const dateA = a.status === 'realized' && a.realized_date ? a.realized_date : a.expected_date
-      const dateB = b.status === 'realized' && b.realized_date ? b.realized_date : b.expected_date
+      const dateA = getSafeDateStr(a.status === 'realized' && a.realized_date ? a.realized_date : a.expected_date);
+      const dateB = getSafeDateStr(b.status === 'realized' && b.realized_date ? b.realized_date : b.expected_date);
       return dateB.localeCompare(dateA) // Descending
     })
-    .slice(0, 15) // Aumentamos para 15
+    .slice(0, 15)
 })
 
 const activeTab = ref(0)
