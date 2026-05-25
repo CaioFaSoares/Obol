@@ -1,40 +1,40 @@
 version: '3.8'
 
 services:
-  # 1. Frontend (Nuxt 3)
-  frontend:
+  # 1. App (Nuxt 3)
+  app:
     build:
-      context: ./frontend
+      context: ./app
       dockerfile: Dockerfile
-    container_name: finance-nuxt
+    container_name: obol-nuxt
     ports:
       - "3000:3000"
     environment:
-      - NUXT_PUBLIC_API_BASE=http://bff:8080 # Comunicação via rede interna
+      - NUXT_PUBLIC_API_BASE=http://server:8080 # Comunicação via rede interna
     networks:
-      - finance_net
+      - obol_net
     depends_on:
-      - bff
+      - server
 
-  # 2. BFF (ElysiaJS no Bun)
-  bff:
+  # 2. Server (ElysiaJS no Bun)
+  server:
     build:
-      context: ./bff
+      context: ./server
       dockerfile: Dockerfile
-    container_name: finance-elysia
+    container_name: obol-elysia
     environment:
       - POCKETBASE_URL=http://database:8090 # Comunicação interna com o banco
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
       - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
     networks:
-      - finance_net
+      - obol_net
     depends_on:
       - database
 
   # 3. Banco de Dados (PocketBase)
   database:
     image: ghcr.io/muchobien/pocketbase:latest
-    container_name: finance-pocketbase
+    container_name: obol-pocketbase
     ports:
       - "8090:8090" # Portal de Admin acessível em http://localhost:8090/_/
     environment:
@@ -42,23 +42,23 @@ services:
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
       - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
     volumes:
-      - ./data/pb_data:/pb_data
-      - ./data/pb_migrations:/pb_migrations # Aqui vai a nossa magia
+      - ./db/pb_data:/pb_data
+      - ./db/pb_migrations:/pb_migrations # Aqui vai a nossa magia
     networks:
-      - finance_net
+      - obol_net
     command: ["serve", "--http=0.0.0.0:8090", "--dir=/pb_data", "--migrationsDir=/pb_migrations"]
 
   # 4. Laboratório de Desenvolvimento (Notas Markdown)
   docs:
     image: zefhemel/silverbullet
-    container_name: finance-docs
+    container_name: obol-docs
     ports:
       - "3030:3000" # Acessível em http://localhost:3030
     volumes:
       - ./docs:/space # Seus arquivos .md ficam salvos nesta pasta do projeto
     networks:
-      - finance_net
+      - obol_net
 
 networks:
-  finance_net:
+  obol_net:
     driver: bridge

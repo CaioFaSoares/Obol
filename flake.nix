@@ -26,8 +26,8 @@
             echo "  - Bun $(bun -v)"
             echo ""
             echo "💡 Para resolver o erro do Docker (falta de arquivos de lock), faça o setup inicial:"
-            echo "  1. cd frontend && npm install && cd .."
-            echo "  2. cd bff && bun install && cd .."
+            echo "  1. cd app && npm install && cd .."
+            echo "  2. cd server && bun install && cd .."
             echo "  3. docker-compose -f docker-compose.yml up -d --build"
           '';
         };

@@ -6,8 +6,8 @@ Obol is a personal cash flow forecaster designed for granular control, precise f
 
 This system is built using a strict 3-layer architecture:
 
-1. **Frontend (Nuxt 3 + Nuxt UI)**: Focuses purely on UX, global state caching (Pinia), and rendering high-performance reactive charts (ECharts). It implements optimistic UI updates and never talks directly to the database.
-2. **BFF (ElysiaJS + Bun)**: The brain of the operation. Orchestrates dashboard payloads, calculates mathematical projections via strict type contracts (Eden Treaty), and runs the **Virtual Invoices Engine** to resolve credit card billing cycles on the fly.
+1. **App (Nuxt 3 + Nuxt UI)**: Focuses purely on UX, global state caching (Pinia), and rendering high-performance reactive charts (ECharts). It implements optimistic UI updates and never talks directly to the database.
+2. **Server (ElysiaJS + Bun)**: The brain of the operation. Orchestrates dashboard payloads, calculates mathematical projections via strict type contracts (Eden Treaty), and runs the **Virtual Invoices Engine** to resolve credit card billing cycles on the fly.
 3. **Data Layer (PocketBase v0.23+)**: A robust SQLite wrapper running in isolation. Secures the data, handles zero-touch superuser creation, and manages the Relational mapping via Javascript migrations.
 
 ## ✨ Core Features
@@ -35,16 +35,16 @@ Obol uses a Nix flake for reproducible development environments and Docker Compo
    *Note: Open `.env` and change `PB_ADMIN_PASSWORD` to a secure password.*
 
 3. **Boot the Infrastructure**:
-   This will spin up PocketBase, the Nuxt Frontend, the Elysia BFF, and SilverBullet (for Markdown Docs).
+   This will spin up PocketBase, the Nuxt App, the Elysia Server, and SilverBullet (for Markdown Docs).
    ```bash
    docker-compose up -d --build
    ```
 
 4. **Access the Services**:
-   - 🌐 Frontend: [http://localhost:3000](http://localhost:3000)
+   - 🌐 App: [http://localhost:3000](http://localhost:3000)
    - 🛠️ PocketBase Admin: [http://localhost:8090/_/](http://localhost:8090/_/)
    - 📝 Documentation (SilverBullet): [http://localhost:3030](http://localhost:3030)
 
 ## 🗄️ Database Migrations
 
-PocketBase migrations are written in JavaScript and executed automatically on boot. They map exactly to our business rules (like the addition of `purchase_date` for accrual tracking) and reside in `data/pb_migrations/`.
+PocketBase migrations are written in JavaScript and executed automatically on boot. They map exactly to our business rules (like the addition of `purchase_date` for accrual tracking) and reside in `db/pb_migrations/`.

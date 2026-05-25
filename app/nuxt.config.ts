@@ -26,6 +26,6 @@ export default defineNuxtConfig({
   },
   routeRules: {
     '/api/_nuxt_icon/**': {},
-    '/api/**': { proxy: 'http://bff:8080/api/**' }
+    '/api/**': { proxy: 'http://server:8080/api/**' }
   }
 })
