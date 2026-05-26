@@ -3,11 +3,11 @@
 > [!NOTE] 
 > **Status da Arquitetura:**
 > - **Backend (Data + BFF)**: 🟢 **CONCLUÍDO (SEALED)**
-> - **Frontend (Nuxt)**: 🟡 **EM ANDAMENTO (FASE 3)**
+> - **Frontend (Nuxt)**: 🟢 **CONCLUÍDO (FASE 4 & ÉPICO 2.1)**
 
 Nesta configuração, o fluxo de dados possui três camadas estritas:
 
-## Camada 1: Frontend (Nuxt 3 + Nuxt UI) - *Em Desenvolvimento*
+## Camada 1: Frontend (Nuxt 3 + Nuxt UI) - *Concluído*
 - **Responsabilidade**: UI/UX responsiva, validação de formulários no cliente, renderização de gráficos (ex: ECharts) e controle de estado global (Pinia).
 - **Comunicação**: Não faz nenhuma requisição direta ao PocketBase. Todo o tráfego passa pelo cliente tipado do Elysia (Eden Treaty) via `$fetch`. Isso garante que se houver mudança de campos no backend, o frontend acusa erro de TypeScript imediatamente durante o desenvolvimento.
 
@@ -36,6 +36,7 @@ O BFF injeta a instância do PocketBase autenticada via `pbPlugin` para todas es
 **Coleções Principais**:
 - `accounts`: Contas bancárias/investimento (`name`, `type`, `initial_balance`).
 - `cards`: Cartões de crédito (`name`, `closing_day`, `due_day`, `limit`).
+- `invoices`: Faturas de cartões consolidadas e vinculadas às `transactions` (performance absoluta e offset de vencimentos).
 - `categories`: Organização de gastos (`name`, `type`, `monthly_budget`).
 - `projects`: Agrupamento de freelas (`name`, `total_value`, `status`).
 - `recurrences`: Regras para receitas/despesas automáticas (`status: active/paused/ended`).
