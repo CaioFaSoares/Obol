@@ -21,7 +21,7 @@ export const getForecastRange = (daysOffset: number = 30, pastDays: number = 7) 
   return { startDate, endDate };
 };
 
-export const getStatusProps = (status: 'OPEN' | 'CLOSED' | 'PAID') => {
+export const getStatusProps = (status: 'OPEN' | 'CLOSED' | 'PAID' | 'PROJECTED') => {
   switch (status) {
     case 'OPEN':
       return { label: 'Aberta', color: 'emerald' as const };
@@ -29,6 +29,8 @@ export const getStatusProps = (status: 'OPEN' | 'CLOSED' | 'PAID') => {
       return { label: 'Fechada', color: 'orange' as const };
     case 'PAID':
       return { label: 'Paga', color: 'gray' as const };
+    case 'PROJECTED':
+      return { label: 'Próxima Fatura', color: 'blue' as const };
     default:
       return { label: 'Desconhecido', color: 'gray' as const };
   }

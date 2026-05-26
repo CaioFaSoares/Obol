@@ -69,7 +69,10 @@
 
       <!-- Lista de Compras -->
       <div class="space-y-3">
-        <h3 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">Compras do Mês</h3>
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">{{ currentInvoice.status === 'PROJECTED' ? 'Previsão de Cobranças' : 'Compras do Mês' }}</h3>
+          <p v-if="currentInvoice.status === 'PROJECTED'" class="text-xs text-blue-400 italic">Estimativa baseada nas recorrências ativas</p>
+        </div>
         
         <div v-if="currentInvoice.transactions.length === 0" class="text-zinc-500 py-4 text-center">
           Nenhuma transação nesta fatura.
@@ -90,9 +93,10 @@
               <span v-if="txn.amount < 0" class="text-emerald-400 mr-1">+</span>
               {{ formatCurrency(Math.abs(txn.amount)) }}
             </p>
-            <UDropdown :items="getTransactionItems(txn)" :popper="{ placement: 'bottom-end' }">
+            <UDropdown v-if="txn.status !== 'projected'" :items="getTransactionItems(txn)" :popper="{ placement: 'bottom-end' }">
               <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-vertical" class="opacity-50 hover:opacity-100 transition-opacity" />
             </UDropdown>
+            <UBadge v-else color="blue" variant="subtle" size="xs">Estimado</UBadge>
           </div>
         </div>
       </div>

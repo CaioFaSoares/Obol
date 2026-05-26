@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import { getCurrentMonthBoundaries, calculateClampedDate } from '../utils/dateUtils';
+import { syncInvoice } from './invoiceService';
 
 export async function processMonthlyRecurrences(pb: PocketBase) {
   console.log(`⏳ [CRON] Iniciando varredura de contratos recorrentes...`);
@@ -62,17 +63,26 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
       const expectedDate = calculateClampedDate(year, month, income.payday, lastDay);
 
       // 5. Geração da Transação
-      await pb.collection('transactions').create({
+      const txnPayload: any = {
         title: transactionTitle,
         amount: income.amount,
-        type: income.type, // Agora ele sabe se a internet é despesa e a bolsa é receita
+        type: income.type,
         status: 'pending',
         expected_date: expectedDate,
         is_recurring: true,
         recurrence_id: income.id,
-        account_id: income.account_id || null, // Se for Pix/Débito automático
-        card_id: income.card_id || null        // Se for a Apple caindo no cartão
-      });
+        account_id: income.account_id || null,
+        card_id: income.card_id || null
+      };
+
+      // 5b. Se for cartão de crédito, sincroniza com a fatura física
+      if (income.card_id) {
+        const invoice = await syncInvoice(pb, income.card_id, expectedDate, income.amount, income.type);
+        txnPayload.invoice_id = invoice.id;
+        txnPayload.expected_date = invoice.due_date; // Usa a data de vencimento da fatura
+      }
+
+      await pb.collection('transactions').create(txnPayload);
 
       processed++;
       generatedNames.push(`${income.name}`);

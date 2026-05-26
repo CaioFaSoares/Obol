@@ -95,26 +95,74 @@ export const recurrenceRoutes = new Elysia({ prefix: '/api/recurrences' })
     })
   })
 
-  // POST /api/recurrences/:id/launch — Lançamento manual
+  // POST /api/recurrences/:id/launch — Lançamento manual (próximo mês)
   .post('/:id/launch', async ({ params, pb, set }: { params: { id: string }, pb: PocketBase, set: any }) => {
     try {
       const recurrence = await pb.collection('recurrences').getOne(params.id);
       
+      // Calcular a data para o PRÓXIMO mês (não o atual)
       const now = new Date();
-      // Configurar expected_date para o dia de vencimento (payday) no mês atual
-      let expectedDate = new Date(now.getFullYear(), now.getMonth(), recurrence.payday);
+      let nextMonth = now.getMonth() + 1; // 0-indexed, +1 = próximo
+      let nextYear = now.getFullYear();
+      if (nextMonth > 11) {
+        nextMonth = 0;
+        nextYear++;
+      }
       
-      const newTxn = await pb.collection('transactions').create({
-        title: `${recurrence.name} - Lançamento Manual`,
+      // Clamping: se payday=31 e o próximo mês tem 28 dias, usa o último dia
+      const lastDayOfNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate();
+      const clampedDay = Math.min(recurrence.payday, lastDayOfNextMonth);
+      const expectedDate = new Date(nextYear, nextMonth, clampedDay).toISOString();
+
+      // Título com label de parcela se aplicável
+      const monthLabel = `${nextMonth + 1}/${nextYear}`;
+      let title = `${recurrence.name} - ${monthLabel}`;
+
+      if (recurrence.total_installments && recurrence.total_installments > 0) {
+        const history = await pb.collection('transactions').getList(1, 1, {
+          filter: `recurrence_id = '${recurrence.id}'`
+        });
+        const nextInstallment = history.totalItems + 1;
+        if (nextInstallment > recurrence.total_installments) {
+          await pb.collection('recurrences').update(recurrence.id, { status: 'ended' });
+          set.status = 400;
+          return { error: 'Parcelamento já concluído. Contrato encerrado.' };
+        }
+        title = `${recurrence.name} - Parcela ${nextInstallment}/${recurrence.total_installments}`;
+      }
+
+      // Verifica idempotência: já existe transação para o próximo mês?
+      const startOfNext = new Date(nextYear, nextMonth, 1).toISOString();
+      const endOfNext = new Date(nextYear, nextMonth + 1, 0, 23, 59, 59).toISOString();
+      const existing = await pb.collection('transactions').getFullList({
+        filter: `recurrence_id = '${recurrence.id}' && expected_date >= '${startOfNext}' && expected_date <= '${endOfNext}'`
+      });
+      if (existing.length > 0) {
+        set.status = 409;
+        return { error: 'Já existe um lançamento para o próximo mês.' };
+      }
+
+      const txnPayload: any = {
+        title,
         amount: recurrence.amount,
         type: recurrence.type,
         status: 'pending',
-        expected_date: expectedDate.toISOString(),
+        expected_date: expectedDate,
         is_recurring: true,
         account_id: recurrence.account_id || null,
         card_id: recurrence.card_id || null,
         recurrence_id: recurrence.id
-      });
+      };
+
+      // Sincroniza com fatura física se for cartão de crédito
+      if (recurrence.card_id) {
+        const { syncInvoice } = await import('../services/invoiceService');
+        const invoice = await syncInvoice(pb, recurrence.card_id, expectedDate, recurrence.amount, recurrence.type);
+        txnPayload.invoice_id = invoice.id;
+        txnPayload.expected_date = invoice.due_date;
+      }
+
+      const newTxn = await pb.collection('transactions').create(txnPayload);
       
       set.status = 201;
       return newTxn;

@@ -106,7 +106,7 @@ export const InvoiceDTO = t.Object({
   totalAmount: t.Number(),
   paidAmount: t.Number(),
   totalSpent: t.Number(),
-  status: t.Union([t.Literal('OPEN'), t.Literal('CLOSED'), t.Literal('PAID')]),
+  status: t.Union([t.Literal('OPEN'), t.Literal('CLOSED'), t.Literal('PAID'), t.Literal('PROJECTED')]),
   transactions: t.Array(InvoiceTransactionDTO)
 });
 

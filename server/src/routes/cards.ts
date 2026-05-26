@@ -85,6 +85,75 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           }))
         });
       }
+      // 4. Projeção da Próxima Fatura (virtual)
+      // Calcula o próximo período baseado no mais recente existente ou no mês atual
+      const now = new Date();
+      const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+      
+      // O próximo período é o mês seguinte ao mais recente existente, ou o mês seguinte ao atual
+      const latestPeriod = result.length > 0 ? result[0].period : currentPeriod;
+      const [ly, lm] = latestPeriod.split('-').map(Number);
+      const nextMonth = lm === 12 ? 1 : lm + 1;
+      const nextYear = lm === 12 ? ly + 1 : ly;
+      const nextPeriod = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+
+      // Só projeta se o próximo período ainda não existe como fatura real
+      const alreadyExists = result.some(r => r.period === nextPeriod);
+      if (!alreadyExists) {
+        // Busca recorrências ativas vinculadas a este cartão
+        const recurrences = await pb.collection('recurrences').getFullList({
+          filter: `card_id = '${card.id}' && status = 'active'`
+        });
+
+        if (recurrences.length > 0) {
+          const projectedTxns: any[] = [];
+          let projectedTotal = 0;
+
+          for (const rec of recurrences) {
+            // Verifica se o parcelamento já teria terminado
+            let installmentLabel = '';
+            if (rec.total_installments && rec.total_installments > 0) {
+              const history = await pb.collection('transactions').getList(1, 1, {
+                filter: `recurrence_id = '${rec.id}'`
+              });
+              const nextInstallment = history.totalItems + 1;
+              if (nextInstallment > rec.total_installments) continue; // Já encerrado
+              installmentLabel = ` - Parcela ${nextInstallment}/${rec.total_installments}`;
+            }
+
+            const amount = rec.amount;
+            const delta = rec.type === 'expense' ? amount : -amount;
+            projectedTotal += delta;
+
+            projectedTxns.push({
+              id: `projected-${rec.id}`,
+              title: `${rec.name}${installmentLabel}`,
+              amount: amount,
+              status: 'projected',
+              expected_date: `${nextPeriod}-${String(rec.payday).padStart(2, '0')}T00:00:00.000Z`,
+              purchase_date: null,
+              recurrence_id: rec.id
+            });
+          }
+
+          if (projectedTxns.length > 0) {
+            // Calcula a due_date projetada usando as regras do cartão
+            const { calculateCardDueDate } = await import('../utils/dateUtils');
+            const fakePurchaseDate = `${nextPeriod}-01T00:00:00.000Z`;
+            const projectedDueDate = calculateCardDueDate(fakePurchaseDate, card.closing_day, card.due_day);
+
+            result.unshift({
+              period: nextPeriod,
+              dueDate: projectedDueDate,
+              totalAmount: projectedTotal,
+              paidAmount: 0,
+              totalSpent: projectedTotal,
+              status: 'PROJECTED',
+              transactions: projectedTxns
+            });
+          }
+        }
+      }
 
       return result as any;
 
