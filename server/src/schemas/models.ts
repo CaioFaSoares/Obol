@@ -95,13 +95,16 @@ export const InvoiceTransactionDTO = t.Object({
   title: t.String(),
   amount: t.Number(),
   status: t.String(), // 'pending' | 'realized'
-  expected_date: t.String()
+  expected_date: t.String(),
+  purchase_date: t.Optional(t.Nullable(t.String())),
+  recurrence_id: t.Optional(t.Nullable(t.String()))
 });
 
 export const InvoiceDTO = t.Object({
   period: t.String(), // Ex: '2026-05'
   dueDate: t.String(),
   totalAmount: t.Number(),
+  paidAmount: t.Number(),
   totalSpent: t.Number(),
   status: t.Union([t.Literal('OPEN'), t.Literal('CLOSED'), t.Literal('PAID')]),
   transactions: t.Array(InvoiceTransactionDTO)

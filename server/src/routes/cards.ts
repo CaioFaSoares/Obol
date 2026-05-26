@@ -1,7 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
 import { CardDTO, CardInvoicesResponseDTO, PayInvoiceDTO } from '../schemas/models';
-import { determineInvoiceStatus } from '../utils/dateUtils';
 import type PocketBase from 'pocketbase';
 
 export const cardRoutes = new Elysia({ prefix: '/api/cards' })
@@ -72,6 +71,7 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           period: inv.period,
           dueDate: inv.due_date,
           totalAmount: inv.total_amount - (inv.paid_amount || 0), // Saldo real devedor
+          paidAmount: inv.paid_amount || 0,
           totalSpent: totalSpent,
           status: inv.status,
           transactions: txns.map(txn => ({
@@ -79,7 +79,9 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
             title: txn.title,
             amount: txn.amount,
             status: txn.status,
-            expected_date: txn.expected_date
+            expected_date: txn.expected_date,
+            purchase_date: txn.purchase_date || null,
+            recurrence_id: txn.recurrence_id || null
           }))
         });
       }

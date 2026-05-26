@@ -184,7 +184,7 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
         color="red"
         variant="subtle"
         title="Erro ao carregar projeção"
-        :description="error.message"
+        :description="String(error?.message || error)"
       />
     </div>
 

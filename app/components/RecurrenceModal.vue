@@ -16,6 +16,8 @@ const accountId = ref('')
 const cardId = ref('')
 const categoryId = ref('')
 const endDate = ref('')
+const isInstallment = ref(false)
+const totalInstallments = ref<number>()
 
 watch(type, (newType) => {
   if (newType === 'income' && source.value === 'card') {
@@ -38,6 +40,13 @@ watch(recurrenceToEdit, (val) => {
     }
     categoryId.value = val.category_id || ''
     endDate.value = val.end_date ? val.end_date.split('T')[0] : ''
+    if (val.total_installments && val.total_installments > 0) {
+      isInstallment.value = true
+      totalInstallments.value = val.total_installments
+    } else {
+      isInstallment.value = false
+      totalInstallments.value = undefined
+    }
   } else {
     name.value = ''
     amount.value = undefined
@@ -48,6 +57,8 @@ watch(recurrenceToEdit, (val) => {
     cardId.value = ''
     categoryId.value = ''
     endDate.value = ''
+    isInstallment.value = false
+    totalInstallments.value = undefined
   }
 }, { immediate: true })
 
@@ -67,6 +78,9 @@ async function submit() {
     if (source.value === 'card' && cardId.value) payload.card_id = cardId.value
     if (categoryId.value) payload.category_id = categoryId.value
     if (endDate.value) payload.end_date = endDate.value
+    if (isInstallment.value && totalInstallments.value && totalInstallments.value > 0) {
+      payload.total_installments = Number(totalInstallments.value)
+    }
 
     if (recurrenceToEdit.value) {
       const res = await api.api.recurrences({ id: recurrenceToEdit.value.id }).put(payload)
@@ -154,6 +168,19 @@ const categoryOptions = computed(() => {
         <UFormGroup label="Data Final (opcional)">
           <UInput v-model="endDate" type="date" />
         </UFormGroup>
+
+        <div class="border-t border-zinc-800 pt-4 space-y-3">
+          <UFormGroup label="Este contrato é um parcelamento?">
+            <UToggle v-model="isInstallment" />
+            <p class="text-xs text-zinc-500 mt-1">
+              Ative para compras parceladas (ex: Computador em 10x). Deixe desativado para assinaturas sem fim (ex: Netflix).
+            </p>
+          </UFormGroup>
+
+          <UFormGroup v-if="isInstallment" label="Número de Parcelas">
+            <UInput v-model="totalInstallments" type="number" min="2" max="120" placeholder="Ex: 10" />
+          </UFormGroup>
+        </div>
 
         <div class="flex justify-end gap-3 pt-2">
           <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />

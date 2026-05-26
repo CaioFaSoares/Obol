@@ -74,7 +74,10 @@ function getSourceName(rec: any) {
           <div class="flex items-center gap-3">
             <UBadge color="green" variant="subtle" label="Receita" />
             <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
-              <p class="text-white font-medium">{{ rec.name }}</p>
+              <p class="text-white font-medium flex items-center gap-2">
+                {{ rec.name }}
+                <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
+              </p>
               <p class="text-xs text-zinc-500">
                 Entra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
@@ -103,7 +106,10 @@ function getSourceName(rec: any) {
           <div class="flex items-center gap-3">
             <UBadge color="red" variant="subtle" label="Despesa" />
             <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
-              <p class="text-white font-medium">{{ rec.name }}</p>
+              <p class="text-white font-medium flex items-center gap-2">
+                {{ rec.name }}
+                <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
+              </p>
               <p class="text-xs text-zinc-500">
                 Cobra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>

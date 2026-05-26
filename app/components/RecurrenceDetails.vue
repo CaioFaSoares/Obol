@@ -135,12 +135,29 @@ function getBadgeLabel(status: string) {
               <h3 class="text-lg font-medium text-white">{{ recurrence.name }}</h3>
               <p class="text-sm text-zinc-400">Dia de cobrança: {{ recurrence.payday }}</p>
             </div>
-            <UBadge :color="getBadgeColor(recurrence.status)" variant="subtle">
-              {{ getBadgeLabel(recurrence.status) }}
-            </UBadge>
+            <div class="flex items-center gap-2">
+              <UBadge v-if="recurrence.total_installments > 0" color="blue" variant="subtle">
+                {{ recurrence.total_installments }}x
+              </UBadge>
+              <UBadge :color="getBadgeColor(recurrence.status)" variant="subtle">
+                {{ getBadgeLabel(recurrence.status) }}
+              </UBadge>
+            </div>
           </div>
           <div class="text-3xl font-mono" :class="recurrence.type === 'income' ? 'text-emerald-400' : 'text-red-400'">
             {{ formatCurrency(recurrence.amount) }}
+          </div>
+          <div v-if="recurrence.total_installments > 0" class="mt-3 space-y-1">
+            <div class="flex justify-between text-xs text-zinc-400">
+              <span>Parcela {{ transactions.length }} de {{ recurrence.total_installments }}</span>
+              <span>{{ Math.round((transactions.length / recurrence.total_installments) * 100) }}%</span>
+            </div>
+            <div class="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+              <div 
+                class="h-full bg-blue-500 rounded-full transition-all duration-300" 
+                :style="{ width: `${Math.min(100, (transactions.length / recurrence.total_installments) * 100)}%` }" 
+              />
+            </div>
           </div>
         </UCard>
 

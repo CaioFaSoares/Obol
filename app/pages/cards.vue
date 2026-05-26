@@ -34,10 +34,15 @@
       <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
         <div>
           <p class="text-sm text-zinc-400">Vencimento: {{ formatDate(currentInvoice.dueDate) }}</p>
-          <div class="flex items-end gap-3 mt-1">
+          <div class="flex items-end gap-3 mt-1 flex-wrap">
             <div>
               <p class="text-xs text-zinc-500 uppercase font-semibold">Em Aberto</p>
               <p class="text-3xl font-bold text-white">{{ formatCurrency(currentInvoice.totalAmount) }}</p>
+            </div>
+            <div v-if="currentInvoice.paidAmount > 0" class="mb-1 hidden sm:block h-8 border-l border-zinc-700"></div>
+            <div v-if="currentInvoice.paidAmount > 0" class="mb-1 hidden sm:block">
+              <p class="text-xs text-zinc-500 uppercase font-semibold">Já Pago</p>
+              <p class="text-lg font-medium text-emerald-400">{{ formatCurrency(currentInvoice.paidAmount) }}</p>
             </div>
             <div class="mb-1 hidden sm:block h-8 border-l border-zinc-700"></div>
             <div class="mb-1 hidden sm:block">
@@ -72,8 +77,13 @@
 
         <div v-for="txn in currentInvoice.transactions" :key="txn.id" class="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors">
           <div>
-            <p class="text-white font-medium">{{ txn.title }}</p>
-            <p class="text-xs text-zinc-500">Comprado em: {{ formatDate(txn.expected_date) }}</p>
+            <p class="text-white font-medium flex items-center gap-2">
+              {{ txn.title.replace(/ - Parcela \d+\/\d+$/, '') }}
+              <UBadge v-if="getInstallmentInfo(txn.title)" color="blue" variant="subtle" size="xs">
+                {{ getInstallmentInfo(txn.title) }}
+              </UBadge>
+            </p>
+            <p class="text-xs text-zinc-500">Comprado em: {{ formatDate(txn.purchase_date || txn.expected_date) }}</p>
           </div>
           <div class="flex items-center gap-4">
             <p class="text-white font-semibold">
@@ -101,7 +111,10 @@
     <UModal v-model="isPaymentModalOpen">
       <div class="p-6 space-y-4">
         <h3 class="text-lg font-medium text-white">Pagar Fatura</h3>
-        <p class="text-sm text-zinc-400">Selecione de qual conta o valor de {{ formatCurrency(currentInvoice?.totalAmount || 0) }} será debitado.</p>
+        <div class="text-sm text-zinc-400 space-y-1">
+          <p>Saldo devedor: <span class="text-white font-semibold">{{ formatCurrency(currentInvoice?.totalAmount || 0) }}</span></p>
+          <p v-if="currentInvoice?.paidAmount > 0">Já pago anteriormente: <span class="text-emerald-400 font-semibold">{{ formatCurrency(currentInvoice.paidAmount) }}</span></p>
+        </div>
         
         <UFormGroup label="Apenas resolver (sem debitar da conta)">
           <UToggle v-model="isSilentPayment" />
@@ -239,6 +252,12 @@ const formatInvoiceName = (periodStr: string) => {
   
   const monthName = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(date);
   return `Fatura de ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`;
+};
+
+// Extrai "3/10" de um título como "Computador - Parcela 3/10"
+const getInstallmentInfo = (title: string): string | null => {
+  const match = title.match(/Parcela (\d+\/\d+)$/);
+  return match ? match[1] : null;
 };
 
 // Fluxo de Pagamento
