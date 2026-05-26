@@ -82,6 +82,13 @@ const chartOption = computed(() => {
 <template>
   <div class="w-full h-72">
     <!-- VChart is globally registered by our plugin -->
-    <VChart class="w-full h-full" :option="chartOption" autoresize @click="onChartClick" />
+    <ClientOnly>
+      <VChart class="w-full h-full" :option="chartOption" autoresize @click="onChartClick" />
+      <template #fallback>
+        <div class="w-full h-full flex items-center justify-center bg-zinc-900 rounded-xl animate-pulse">
+          <span class="text-zinc-500">Carregando gráfico...</span>
+        </div>
+      </template>
+    </ClientOnly>
   </div>
 </template>

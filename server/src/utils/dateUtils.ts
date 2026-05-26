@@ -1,16 +1,23 @@
 export function calculateCardDueDate(transactionDateStr: string, closingDay: number, dueDay: number): string {
   const txnDate = new Date(transactionDateStr);
-  let monthOffset = 1; // Por padrão, a fatura vence no mês seguinte
   
-  // Extrai o dia da transação em UTC para evitar problemas de fuso horário
+  // O padrão é a fatura vencer no mesmo mês da compra (Offset = 0)
+  let monthOffset = 0; 
+  
   const txnDay = txnDate.getUTCDate();
 
-  // Se passou (ou é o dia) do fechamento, a fatura deste mês já "virou". Pula pro próximo ciclo.
+  // Regra 1: Se a compra for feita no dia ou após o dia de fecho, entra na próxima fatura (+1 mês)
   if (txnDay >= closingDay) {
-    monthOffset = 2; 
+    monthOffset += 1; 
   }
 
-  // O Date do JavaScript é inteligente: se o mês passar de 11 (Dezembro), ele vira o ano automaticamente.
+  // Regra 2: Se o dia de vencimento for MENOR que o dia de fecho (Ex: fecha a 28, vence a 08), 
+  // isso significa que o vencimento recai naturalmente no mês seguinte ao fecho (+1 mês)
+  if (dueDay < closingDay) {
+    monthOffset += 1;
+  }
+
+  // Calcula a data final com a inteligência nativa do Date do Javascript (que lida com viradas de ano)
   const dueDate = new Date(Date.UTC(
     txnDate.getUTCFullYear(), 
     txnDate.getUTCMonth() + monthOffset, 

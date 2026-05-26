@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
 import { TransactionDTO } from '../schemas/models';
 import { calculateCardDueDate } from '../utils/dateUtils';
+import { syncInvoice } from '../services/invoiceService';
 import type PocketBase from 'pocketbase';
 
 export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
@@ -34,19 +35,14 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       // ---------------------------------------------------------
       // REGRA 2: CARTÃO DE CRÉDITO (Motor de Fatura)
       // ---------------------------------------------------------
-      if (data.card_id && data.type === 'expense') {
-        // 1. Busca as regras do cartão
-        const card = await pb.collection('cards').getOne(data.card_id);
+      if (data.card_id) {
+        // A data de compra informada (expected_date no form) vira a purchase_date real
+        const purchaseDate = data.expected_date;
+        const invoice = await syncInvoice(pb, data.card_id, purchaseDate, data.amount, data.type);
         
-        // 2. Calcula para qual mês vai a fatura
-        const projectedDueDate = calculateCardDueDate(
-          data.expected_date, 
-          card.closing_day, 
-          card.due_day
-        );
-
-        // 3. Sobrescreve os dados para forçar o provisionamento futuro
-        data.expected_date = projectedDueDate;
+        data.invoice_id = invoice.id;
+        data.purchase_date = purchaseDate;
+        data.expected_date = invoice.due_date; // Move a cobrança para a data de vencimento da fatura
         data.status = 'pending'; // Gastos de cartão SEMPRE nascem pendentes
       }
 
@@ -126,6 +122,19 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         }
       }
 
+      // REGRA DE FATURAS FÍSICAS: Estornar do total_amount da fatura pai
+      if (oldTxn.card_id && oldTxn.invoice_id) {
+        try {
+          const invoice = await pb.collection('invoices').getOne(oldTxn.invoice_id);
+          const amountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
+          await pb.collection('invoices').update(invoice.id, {
+            total_amount: invoice.total_amount + amountDelta
+          });
+        } catch(e) {
+          console.error("Fatura não encontrada para estorno.");
+        }
+      }
+
       await pb.collection('transactions').delete(params.id);
       return { success: true };
     } catch (err: any) {
@@ -173,11 +182,28 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       // ---------------------------------------------------------
       // APLICA NOVA REGRA 2: CARTÃO DE CRÉDITO
       // ---------------------------------------------------------
-      if (data.card_id && data.type === 'expense') {
-        const card = await pb.collection('cards').getOne(data.card_id);
-        const projectedDueDate = calculateCardDueDate(data.expected_date, card.closing_day, card.due_day);
-        data.purchase_date = data.expected_date; // Salva a data real da compra
-        data.expected_date = projectedDueDate;
+      if (data.card_id) {
+        // 1. Estorna o valor da fatura antiga, se existia
+        if (oldTxn.card_id && oldTxn.invoice_id) {
+          try {
+            const oldInvoice = await pb.collection('invoices').getOne(oldTxn.invoice_id);
+            const oldAmountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
+            await pb.collection('invoices').update(oldInvoice.id, {
+              total_amount: oldInvoice.total_amount + oldAmountDelta
+            });
+          } catch(e) {}
+        }
+
+        // 2. Associa e soma à nova fatura
+        const baseDate = data.expected_date || oldTxn.purchase_date || oldTxn.expected_date;
+        const newAmount = data.amount || oldTxn.amount;
+        const newType = data.type || oldTxn.type;
+        
+        const invoice = await syncInvoice(pb, data.card_id, baseDate, newAmount, newType);
+        
+        data.invoice_id = invoice.id;
+        data.purchase_date = baseDate;
+        data.expected_date = invoice.due_date;
         data.status = 'pending'; 
       }
 

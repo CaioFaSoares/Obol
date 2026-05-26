@@ -25,6 +25,28 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
         continue;
       }
 
+      // LÓGICA DE PARCELAMENTO FINITO
+      let transactionTitle = `${income.name} - ${month + 1}/${year}`; // Título padrão
+
+      if (income.total_installments && income.total_installments > 0) {
+        // Utilizamos o getList(1, 1) do PocketBase pois ele devolve o totalItems de forma muito mais rápida
+        const history = await pb.collection('transactions').getList(1, 1, {
+          filter: `recurrence_id = '${income.id}'`
+        });
+        
+        const currentInstallment = history.totalItems + 1;
+
+        // Se a parcela atual ultrapassar o total acordado, desativamos o contrato e abortamos
+        if (currentInstallment > income.total_installments) {
+          await pb.collection('recurrences').update(income.id, { status: 'ended' });
+          console.log(`⏸️  Parcelamento [${income.name}] concluído. Contrato encerrado.`);
+          continue; 
+        }
+
+        // Formata o título de forma elegante: "Computador - Parcela 2/10"
+        transactionTitle = `${income.name} - Parcela ${currentInstallment}/${income.total_installments}`;
+      }
+
       // 3. A Regra de Idempotência: Já geramos essa transação este mês?
       const existingTxns = await pb.collection('transactions').getFullList({
         filter: `recurrence_id = '${income.id}' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`,
@@ -41,7 +63,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
 
       // 5. Geração da Transação
       await pb.collection('transactions').create({
-        title: `${income.name} - ${month + 1}/${year}`,
+        title: transactionTitle,
         amount: income.amount,
         type: income.type, // Agora ele sabe se a internet é despesa e a bolsa é receita
         status: 'pending',

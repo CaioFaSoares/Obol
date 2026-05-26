@@ -54,6 +54,7 @@ export const RecurrenceDTO = t.Object({
   account_id: t.Optional(t.String()),
   card_id: t.Optional(t.String()),
   end_date: t.Optional(t.String()),
+  total_installments: t.Optional(t.Number()),
 });
 
 // ---- Orçamentos / Categorias ----

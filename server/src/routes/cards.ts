@@ -39,75 +39,56 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
     }
   })
 
-  // GET /api/cards/:id/invoices — Faturas Virtuais
+  // GET /api/cards/:id/invoices — Faturas Físicas
   .get('/:id/invoices', async ({ params, pb, set }: { params: any, pb: PocketBase, set: any }) => {
     try {
       // 1. Busca as regras do cartão
       const card = await pb.collection('cards').getOne(params.id);
 
-      // 2. Busca todas as transações atreladas a esse cartão
-      const txns = await pb.collection('transactions').getFullList({
+      // 2. Busca todas as faturas físicas desse cartão
+      const invoices = await pb.collection('invoices').getFullList({
         filter: `card_id = '${card.id}'`,
-        sort: 'expected_date' // Ordena cronologicamente
+        sort: '-period' // Ordena da mais recente pra mais antiga
       });
 
-      // 3. O Agrupador (Reduce)
-      const invoicesMap = new Map();
+      // 3. Monta o DTO com as transações aninhadas
+      const result = [];
+      for (const inv of invoices) {
+        const txns = await pb.collection('transactions').getFullList({
+          filter: `invoice_id = '${inv.id}'`,
+          sort: 'expected_date'
+        });
 
-      for (const txn of txns) {
-        // Extrai o YYYY-MM (mês da fatura)
-        const period = txn.expected_date.substring(0, 7);
-        
-        if (!invoicesMap.has(period)) {
-          invoicesMap.set(period, {
-            period: period,
-            dueDate: txn.expected_date,
-            totalAmount: 0,
-            totalSpent: 0,
-            status: 'OPEN',
-            transactions: []
-          });
+        // Calcula o gasto bruto (ignorando estornos para exibição)
+        let totalSpent = 0;
+        for (const txn of txns) {
+          if (txn.type === 'expense') totalSpent += txn.amount;
+          if (txn.type === 'income' && !txn.title.toLowerCase().includes('pagamento')) {
+            totalSpent -= txn.amount;
+          }
         }
 
-        const invoice = invoicesMap.get(period);
-        
-        // Saldo Devedor Restante
-        if (txn.status === 'pending') {
-          if (txn.type === 'expense') invoice.totalAmount += txn.amount;
-          if (txn.type === 'income') invoice.totalAmount -= txn.amount;
-        }
-
-        // Total Gasto Bruto do Mês
-        if (txn.type === 'expense') invoice.totalSpent += txn.amount;
-        if (txn.type === 'income' && !txn.title.toLowerCase().includes('pagamento')) {
-          invoice.totalSpent -= txn.amount;
-        }
-        
-        invoice.transactions.push({
-          id: txn.id,
-          title: txn.title,
-          amount: txn.amount,
-          status: txn.status,
-          expected_date: txn.expected_date
+        result.push({
+          period: inv.period,
+          dueDate: inv.due_date,
+          totalAmount: inv.total_amount - (inv.paid_amount || 0), // Saldo real devedor
+          totalSpent: totalSpent,
+          status: inv.status,
+          transactions: txns.map(txn => ({
+            id: txn.id,
+            title: txn.title,
+            amount: txn.amount,
+            status: txn.status,
+            expected_date: txn.expected_date
+          }))
         });
       }
 
-      // 4. Consolidação e Cálculo de Status
-      const result = Array.from(invoicesMap.values()).map(invoice => {
-        invoice.status = determineInvoiceStatus(
-          invoice.transactions,
-          invoice.dueDate,
-          card.closing_day,
-          card.due_day
-        );
-        return invoice;
-      });
-
-      return result.sort((a, b) => b.period.localeCompare(a.period)) as any;
+      return result as any;
 
     } catch (err: any) {
       set.status = 500;
-      return { error: 'Falha ao gerar faturas', details: err.message };
+      return { error: 'Falha ao buscar faturas', details: err.message };
     }
   }, {
     response: { 
@@ -129,27 +110,19 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         account = await pb.collection('accounts').getOne(account_id);
       }
 
-      // 2. Buscamos as transações daquele mês exato para o cartão
-      const txns = await pb.collection('transactions').getFullList({
-        filter: `card_id = '${params.id}' && expected_date >= '${period}-01 00:00:00.000Z' && expected_date <= '${period}-31 23:59:59.999Z' && status = 'pending'`,
-      });
-
-      if (txns.length === 0) {
-        set.status = 400;
-        return { error: 'Nenhuma transação pendente encontrada para esta fatura.' };
+      // 2. Buscamos a fatura física exata
+      let invoice;
+      try {
+        invoice = await pb.collection('invoices').getFirstListItem(`card_id = '${params.id}' && period = '${period}'`);
+      } catch (err) {
+        set.status = 404;
+        return { error: 'Fatura não encontrada para o período informado.' };
       }
 
-      // 3. Calculamos o valor real devido para checagem de segurança
-      let totalDue = 0;
-      for (const txn of txns) {
-        if (txn.type === 'expense') totalDue += txn.amount;
-        if (txn.type === 'income') totalDue -= txn.amount;
-      }
-
+      const totalDue = invoice.total_amount - (invoice.paid_amount || 0);
       let newBalance = account ? account.initial_balance : null;
 
-      // 4. Executa as Mutações no Banco
-
+      // 3. Executa as Mutações no Banco
       if (!ignore_balance) {
         if (!amount_paid || amount_paid <= 0) {
           set.status = 400;
@@ -157,7 +130,7 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         }
         if (amount_paid > totalDue + 0.01) {
           set.status = 400;
-          return { error: 'O valor pago não pode exceder o saldo devedor da fatura.' };
+          return { error: 'O valor pago não pode exceder o saldo devedor restante da fatura.' };
         }
 
         // A. Abate o saldo da Conta Corrente
@@ -179,26 +152,37 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           expected_date: new Date().toISOString()
         });
 
-        // Pagamento Parcial (Só é suportado quando há pagamento real em dinheiro)
-        const isPartial = amount_paid < totalDue - 0.01;
+        // C. Atualiza o paid_amount da Fatura
+        const newPaidAmount = (invoice.paid_amount || 0) + amount_paid;
+        const remaining = invoice.total_amount - newPaidAmount;
+        const isPartial = remaining > 0.01;
+
         if (isPartial) {
-          await pb.collection('transactions').create({
-            title: `Pagamento Parcial ${card.name}`,
-            amount: amount_paid,
-            type: 'income',
-            status: 'pending',
-            card_id: params.id,
-            expected_date: `${period.substring(0, 7)}-15T12:00:00.000Z` // Joga pra frente provisoriamente
+          await pb.collection('invoices').update(invoice.id, {
+            paid_amount: newPaidAmount
           });
           return { 
             success: true, 
             message: `Pagamento parcial de R$ ${amount_paid} registrado com sucesso!`,
             new_account_balance: newBalance
           };
+        } else {
+          await pb.collection('invoices').update(invoice.id, {
+            paid_amount: newPaidAmount,
+            status: 'PAID'
+          });
         }
+      } else {
+        // Baixa silenciosa completa a fatura
+        await pb.collection('invoices').update(invoice.id, {
+          status: 'PAID'
+        });
       }
 
-      // C. Update em Massa (Quitação Total ou Baixa Silenciosa)
+      // D. Quitação Total (Baixa nas transações filhas)
+      const txns = await pb.collection('transactions').getFullList({
+        filter: `invoice_id = '${invoice.id}' && status = 'pending'`,
+      });
       const updatePromises = txns.map(txn => 
         pb.collection('transactions').update(txn.id, {
           status: 'realized',

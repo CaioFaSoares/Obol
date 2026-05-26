@@ -21,7 +21,7 @@
       <UButton
         v-for="inv in invoices"
         :key="inv.period"
-        :label="formatPeriod(inv.period)"
+        :label="formatInvoiceName(inv.period)"
         :color="selectedPeriod === inv.period ? 'primary' : 'gray'"
         :variant="selectedPeriod === inv.period ? 'solid' : 'soft'"
         @click="selectedPeriod = inv.period"
@@ -229,16 +229,17 @@ const currentInvoice = computed(() => {
   return invoices.value.find(inv => inv.period === selectedPeriod.value)
 })
 
-// Formatação do Label do botão de mês (Ex: 2026-05 -> Maio 2026)
-const formatPeriod = (period: string) => {
-  try {
-    const [year, month] = period.split('-')
-    const date = new Date(parseInt(year), parseInt(month) - 1, 1)
-    return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date)
-  } catch (e) {
-    return period || 'Fatura';
-  }
-}
+// Formatação do Label do botão de mês (Ex: 2026-05 -> Fatura de Maio)
+const formatInvoiceName = (periodStr: string) => {
+  if (!periodStr) return '';
+  const [year, month] = periodStr.split('-');
+  
+  // Criamos a data no dia 15 para garantir que problemas de fuso horário não alteram o mês
+  const date = new Date(Number(year), Number(month) - 1, 15); 
+  
+  const monthName = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(date);
+  return `Fatura de ${monthName.charAt(0).toUpperCase() + monthName.slice(1)}`;
+};
 
 // Fluxo de Pagamento
 const payInvoice = () => {

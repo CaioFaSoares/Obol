@@ -32,50 +32,32 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         filter: "status = 'active'"
       });
 
-      // 4.5. Busca Cartões e calcula Faturas Virtuais Abertas/Fechadas
-      const cards = await pb.collection('cards').getFullList();
+      // 4.5. Busca Faturas Físicas Abertas/Fechadas
+      const invoices = await pb.collection('invoices').getFullList({
+        filter: "status != 'PAID'",
+        expand: 'card_id' // Para pegarmos o nome do cartão
+      });
+      
       const upcomingInvoices: { card_id: string, card_name: string, dateStr: string, amount: number, status: string }[] = [];
 
-      for (const card of cards) {
-        const cardTxns = transactions.filter(t => t.card_id === card.id);
-        const invoicesMap = new Map();
-
-        for (const txn of cardTxns) {
-          const period = txn.expected_date.substring(0, 7);
-          if (!invoicesMap.has(period)) {
-            invoicesMap.set(period, {
-              period: period,
-              dueDate: txn.expected_date.substring(0, 10), // Use full date string here for determineInvoiceStatus
-              totalAmount: 0,
-              status: 'OPEN',
-              transactions: []
-            });
-          }
-          const invoice = invoicesMap.get(period);
-          if (txn.status === 'pending') {
-            if (txn.type === 'expense') invoice.totalAmount += txn.amount;
-            if (txn.type === 'income') invoice.totalAmount -= txn.amount;
-          }
-          invoice.transactions.push(txn);
-        }
-
-        for (const invoice of invoicesMap.values()) {
-          invoice.status = determineInvoiceStatus(
-            invoice.transactions,
-            invoice.dueDate + "T00:00:00.000Z",
-            card.closing_day,
-            card.due_day
-          );
-
-          if ((invoice.status === 'OPEN' || invoice.status === 'CLOSED') && invoice.totalAmount > 0) {
-            upcomingInvoices.push({
-              card_id: card.id,
-              card_name: card.name,
-              dateStr: invoice.dueDate,
-              amount: invoice.totalAmount,
-              status: invoice.status
-            });
-          }
+      for (const invoice of invoices) {
+        const amountDue = invoice.total_amount - (invoice.paid_amount || 0);
+        
+        if (amountDue > 0) {
+          // Garante que o status dinâmico entre OPEN/CLOSED é baseado na data de hoje
+          const dueDate = new Date(invoice.due_date);
+          const isClosed = new Date() > dueDate; 
+          // (Poderíamos usar a função determineInvoiceStatus, mas como agora a fatura tem status físico, usamos ele. 
+          // O status OPEN só vira CLOSED se a due_date já passou ou o closing_day passou. O syncInvoice ou outro cron faria isso, 
+          // mas pro forecast o importante é o amountDue ser cobrado no due_date).
+          
+          upcomingInvoices.push({
+            card_id: invoice.card_id,
+            card_name: invoice.expand?.card_id?.name || 'Cartão',
+            dateStr: invoice.due_date.substring(0, 10),
+            amount: amountDue,
+            status: invoice.status
+          });
         }
       }
 
