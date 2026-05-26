@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { useFinanceStore } from '../stores/finance'
+import { useRecurrenceModal } from '~/composables/useRecurrenceModal'
 
 const props = defineProps<{
   modelValue: boolean
@@ -15,8 +16,16 @@ const isOpen = computed({
 })
 const toast = useToast()
 const financeStore = useFinanceStore()
+const { open: openEditModal } = useRecurrenceModal()
+
 const isLoading = ref(false)
 const transactions = ref<any[]>([])
+
+function editRecurrence() {
+  if (props.recurrence) {
+    openEditModal(props.recurrence)
+  }
+}
 
 async function fetchTransactions() {
   if (!props.recurrence?.id) return
@@ -112,7 +121,10 @@ function getBadgeLabel(status: string) {
     <div class="flex-1 flex flex-col bg-zinc-900 p-6 overflow-y-auto">
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-xl font-bold text-white">Detalhes da Recorrência</h2>
-        <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="isOpen = false" />
+        <div class="flex items-center gap-1">
+          <UButton v-if="recurrence && recurrence.status !== 'ended'" icon="i-heroicons-pencil-square" color="gray" variant="ghost" title="Editar" @click="editRecurrence" />
+          <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="isOpen = false" />
+        </div>
       </div>
 
       <div v-if="recurrence" class="space-y-6">

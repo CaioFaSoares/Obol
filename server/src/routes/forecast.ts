@@ -171,8 +171,9 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
       }
 
-      // 7. Retorna apenas o range solicitado
-      const filteredInvoices = upcomingInvoices.filter(i => i.dateStr >= startDate);
+      // 7. Retorna apenas o range solicitado para a timeline
+      // Para as faturas, retornamos todas (pois se estão abertas/fechadas, são devidas mesmo que atrasadas)
+      const filteredInvoices = upcomingInvoices;
 
       return {
         timeline: timeline.filter(t => t.date >= startDate && t.date <= endDate),

@@ -7,15 +7,20 @@ const isRunning = ref(false)
 const triggerCron = async () => {
   isRunning.value = true
   try {
-    const { $api } = useNuxtApp()
     // A rota correspondente no Elysia para o gatilho manual
-    const res = await $api.api.jobs.recurrence.post()
+    const res = await api.api.jobs.recurrence.post()
     
     if (res.error) throw res.error
 
+    const data = res.data as any;
+    let desc = `Lançadas: ${data.processed} | Ignoradas: ${data.skipped}`;
+    if (data.generatedNames && data.generatedNames.length > 0) {
+      desc += `\n\nGeradas:\n- ${data.generatedNames.join('\n- ')}`;
+    }
+
     toast.add({
       title: 'Cron Executado',
-      description: 'As recorrências foram processadas com sucesso!',
+      description: desc,
       color: 'green'
     })
   } catch (err: any) {

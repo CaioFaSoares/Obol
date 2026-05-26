@@ -5,6 +5,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
   console.log(`⏳ [CRON] Iniciando varredura de contratos recorrentes...`);
   let processed = 0;
   let skipped = 0;
+  const generatedNames: string[] = [];
 
   try {
     const { startOfMonth, endOfMonth, year, month, lastDay } = getCurrentMonthBoundaries();
@@ -52,6 +53,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
       });
 
       processed++;
+      generatedNames.push(`${income.name}`);
       console.log(`✅ Transação gerada: [${income.name}] para ${expectedDate.split('T')[0]}`);
     }
 
@@ -61,6 +63,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
       success: true, 
       processed,
       skipped,
+      generatedNames,
       message: 'Motor de recorrências executado com sucesso.' 
     };
 

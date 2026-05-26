@@ -2,7 +2,7 @@ import { t } from 'elysia';
 
 export const TransactionDTO = t.Object({
   title: t.String(),
-  amount: t.Number({ minimum: 0.01 }),
+  amount: t.Numeric({ minimum: 0.01 }),
   type: t.Union([t.Literal('income'), t.Literal('expense'), t.Literal('transfer')]),
   status: t.Union([t.Literal('pending'), t.Literal('realized')]),
   expected_date: t.String({ format: 'date-time' }), // IsoString YYYY-MM-DD...
@@ -48,8 +48,8 @@ export const ForecastResponseDTO = t.Object({
 // ---- Recorrências ----
 export const RecurrenceDTO = t.Object({
   name: t.String(),
-  amount: t.Number({ minimum: 0.01 }),
-  payday: t.Number({ minimum: 1, maximum: 31 }),
+  amount: t.Numeric({ minimum: 0.01 }),
+  payday: t.Numeric({ minimum: 1, maximum: 31 }),
   type: t.Union([t.Literal('income'), t.Literal('expense')]),
   account_id: t.Optional(t.String()),
   card_id: t.Optional(t.String()),
@@ -60,17 +60,17 @@ export const RecurrenceDTO = t.Object({
 export const CategoryDTO = t.Object({
   name: t.String(),
   type: t.Union([t.Literal('fixed_budget'), t.Literal('variable')]),
-  monthly_budget: t.Optional(t.Number()),
+  monthly_budget: t.Optional(t.Numeric()),
 });
 
 // ---- Projetos / Freelas ----
 export const ProjectCreateDTO = t.Object({
   name: t.String(),
-  total_value: t.Number({ minimum: 0 }),
+  total_value: t.Numeric({ minimum: 0 }),
 });
 
 export const ProjectPaymentDTO = t.Object({
-  amount: t.Number({ minimum: 0.01 }),
+  amount: t.Numeric({ minimum: 0.01 }),
   description: t.Optional(t.String()),
 });
 
@@ -78,14 +78,14 @@ export const ProjectPaymentDTO = t.Object({
 export const AccountDTO = t.Object({
   name: t.String(),
   type: t.Union([t.Literal('checking'), t.Literal('savings'), t.Literal('investment')]),
-  initial_balance: t.Number(),
+  initial_balance: t.Numeric(),
 });
 
 export const CardDTO = t.Object({
   name: t.String(),
-  closing_day: t.Number({ minimum: 1, maximum: 31 }),
-  due_day: t.Number({ minimum: 1, maximum: 31 }),
-  limit: t.Number({ minimum: 0 }),
+  closing_day: t.Numeric({ minimum: 1, maximum: 31 }),
+  due_day: t.Numeric({ minimum: 1, maximum: 31 }),
+  limit: t.Numeric({ minimum: 0 }),
 });
 
 // ---- Faturas de Cartão (Virtuais) ----
@@ -111,6 +111,6 @@ export const CardInvoicesResponseDTO = t.Array(InvoiceDTO);
 export const PayInvoiceDTO = t.Object({
   period: t.String({ description: 'Formato YYYY-MM-DD (ou YYYY-MM legado)' }),
   account_id: t.Optional(t.String({ description: 'ID da conta de onde o dinheiro vai sair' })),
-  amount_paid: t.Optional(t.Number({ description: 'Opcional para auditoria futura' })),
+  amount_paid: t.Optional(t.Numeric({ description: 'Opcional para auditoria futura' })),
   ignore_balance: t.Optional(t.Boolean({ description: 'Se true, não desconta da conta, apenas dá baixa.' }))
 });

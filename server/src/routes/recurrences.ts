@@ -36,6 +36,20 @@ export const recurrenceRoutes = new Elysia({ prefix: '/api/recurrences' })
     body: RecurrenceDTO
   })
 
+  // PUT /api/recurrences/:id — Edita recorrência
+  .put('/:id', async ({ params, body, pb, set }: { params: { id: string }, body: any, pb: PocketBase, set: any }) => {
+    try {
+      const updated = await pb.collection('recurrences').update(params.id, body);
+      return updated;
+    } catch (err: any) {
+      console.error('Falha ao editar recorrência:', err.data || err.message || err);
+      set.status = err.status || 400;
+      return { error: 'Falha ao editar recorrência', details: err.data || err.message };
+    }
+  }, {
+    body: t.Partial(RecurrenceDTO) // Usa a versão parcial do DTO (já que pode atualizar só alguns campos)
+  })
+
   // DELETE /api/recurrences/:id — Soft delete: muda status para 'ended'
   .delete('/:id', async ({ params, pb, set }: { params: { id: string }, pb: PocketBase, set: any }) => {
     try {

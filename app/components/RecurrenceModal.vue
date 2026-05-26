@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useRecurrenceModal } from '~/composables/useRecurrenceModal'
 import { useFinanceStore } from '../stores/finance'
 
-const { isOpen, close } = useRecurrenceModal()
+const { isOpen, close, recurrenceToEdit } = useRecurrenceModal()
 const financeStore = useFinanceStore()
 
 const isSubmitting = ref(false)
@@ -23,6 +23,34 @@ watch(type, (newType) => {
   }
 })
 
+watch(recurrenceToEdit, (val) => {
+  if (val) {
+    name.value = val.name
+    amount.value = val.amount
+    payday.value = val.payday
+    type.value = val.type
+    if (val.card_id) {
+      source.value = 'card'
+      cardId.value = val.card_id
+    } else {
+      source.value = 'account'
+      accountId.value = val.account_id || ''
+    }
+    categoryId.value = val.category_id || ''
+    endDate.value = val.end_date ? val.end_date.split('T')[0] : ''
+  } else {
+    name.value = ''
+    amount.value = undefined
+    payday.value = 1
+    type.value = 'expense'
+    source.value = 'account'
+    accountId.value = ''
+    cardId.value = ''
+    categoryId.value = ''
+    endDate.value = ''
+  }
+}, { immediate: true })
+
 const emit = defineEmits<{ created: [] }>()
 
 async function submit() {
@@ -40,22 +68,17 @@ async function submit() {
     if (categoryId.value) payload.category_id = categoryId.value
     if (endDate.value) payload.end_date = endDate.value
 
-    const res = await api.api.recurrences.post(payload)
-    if (res.error) throw res.error
+    if (recurrenceToEdit.value) {
+      const res = await api.api.recurrences({ id: recurrenceToEdit.value.id }).put(payload)
+      if (res.error) throw res.error
+    } else {
+      const res = await api.api.recurrences.post(payload)
+      if (res.error) throw res.error
+    }
     emit('created')
     close()
-    // reset
-    name.value = ''
-    amount.value = undefined
-    payday.value = 1
-    type.value = 'expense'
-    source.value = 'account'
-    accountId.value = ''
-    cardId.value = ''
-    categoryId.value = ''
-    endDate.value = ''
   } catch (err) {
-    console.error('Falha ao criar recorrência', err)
+    console.error('Falha ao salvar recorrência', err)
   } finally {
     isSubmitting.value = false
   }
@@ -82,7 +105,7 @@ const categoryOptions = computed(() => {
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-base font-semibold leading-6 text-white">
-            Nova Recorrência
+            {{ recurrenceToEdit ? 'Editar Recorrência' : 'Nova Recorrência' }}
           </h3>
           <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" @click="close" />
         </div>
@@ -136,7 +159,7 @@ const categoryOptions = computed(() => {
           <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
           <UButton
             type="submit"
-            :label="type === 'income' ? 'Criar Receita Fixa' : 'Criar Despesa Fixa'"
+            :label="recurrenceToEdit ? 'Salvar Alterações' : (type === 'income' ? 'Criar Receita Fixa' : 'Criar Despesa Fixa')"
             :color="type === 'income' ? 'green' : 'red'"
             :loading="isSubmitting"
           />

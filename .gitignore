@@ -15,6 +15,7 @@ yarn-error.log*
 # Docker / PocketBase Data
 db/pb_data/
 !db/pb_migrations/
+db/pb_data
 
 # Environment Variables
 .env
