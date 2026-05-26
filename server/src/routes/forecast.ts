@@ -24,8 +24,20 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
 
       // 3. Busca todas as transações relevantes (pendentes, realizadas a partir do início, ou recorrências do mês atual em diante)
       const startOfMonthStr = `${calcStartDateStr.substring(0, 7)}-01 00:00:00.000Z`;
+      
+      // 1. Isolamos o filtro base (que busca pendências e realizados do período) entre parênteses
+      let baseFilter = `(status = 'pending' || realized_date >= '${startFilter}' || (recurrence_id != "" && expected_date >= '${startOfMonthStr}'))`;
+
+      // 2. A MÁGICA DA SIMULAÇÃO: 
+      // Se não houver a flag explícita pedindo as simulações, nós travamos 
+      // rigorosamente para buscar APENAS o que for realidade (is_simulated = false).
+      if (query.includeSimulations !== 'true') {
+        baseFilter += ` && is_simulated = false`;
+      }
+
+      // 3. Passa a query ajustada para o PocketBase
       const transactions = await pb.collection('transactions').getFullList({
-        filter: `status = 'pending' || realized_date >= '${startFilter}' || (recurrence_id != "" && expected_date >= '${startOfMonthStr}')`
+        filter: baseFilter
       });
 
       // 4. Busca Recorrências

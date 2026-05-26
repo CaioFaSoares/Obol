@@ -9,6 +9,7 @@ export const TransactionDTO = t.Object({
   realized_date: t.Optional(t.String({ format: 'date-time' })),
   is_recurring: t.Optional(t.Boolean()),
   is_silent: t.Optional(t.Boolean()),
+  is_simulated: t.Optional(t.Boolean({ default: false })),
   // Data original da compra (para cartões de crédito)
   purchase_date: t.Optional(t.String({ format: 'date-time' })),
   
@@ -23,7 +24,8 @@ export const TransactionDTO = t.Object({
 // Validamos a query string
 export const ForecastQueryDTO = t.Object({
   startDate: t.String({ description: 'Formato YYYY-MM-DD' }),
-  endDate: t.String({ description: 'Formato YYYY-MM-DD' })
+  endDate: t.String({ description: 'Formato YYYY-MM-DD' }),
+  includeSimulations: t.Optional(t.String())
 });
 
 export const ForecastInvoiceDTO = t.Object({
@@ -53,8 +55,10 @@ export const RecurrenceDTO = t.Object({
   type: t.Union([t.Literal('income'), t.Literal('expense')]),
   account_id: t.Optional(t.String()),
   card_id: t.Optional(t.String()),
+  category_id: t.Optional(t.String()),
   end_date: t.Optional(t.String()),
   total_installments: t.Optional(t.Number()),
+  skipped_periods: t.Optional(t.Array(t.String())),
 });
 
 // ---- Orçamentos / Categorias ----

@@ -40,6 +40,16 @@ const { open } = useFastEntry()
           </NuxtLink>
 
           <NuxtLink
+            to="/ledger"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            active-class="bg-zinc-700 text-white"
+            inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
+          >
+            <UIcon name="i-heroicons-document-text" class="w-4 h-4" />
+            Auditoria
+          </NuxtLink>
+
+          <NuxtLink
             to="/admin"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
             active-class="bg-zinc-700 text-white"

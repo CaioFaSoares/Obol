@@ -86,44 +86,156 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
           }))
         });
       }
-      // 4. Projeção da Próxima Fatura (virtual)
-      // Calcula o próximo período baseado no mais recente existente ou no mês atual
-      const now = new Date();
-      const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      
-      // O próximo período é o mês seguinte ao mais recente existente, ou o mês seguinte ao atual
-      const latestPeriod = result.length > 0 ? result[0].period : currentPeriod;
-      const [ly, lm] = latestPeriod.split('-').map(Number);
-      const nextMonth = lm === 12 ? 1 : lm + 1;
-      const nextYear = lm === 12 ? ly + 1 : ly;
-      const nextPeriod = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+      // 4. Projeção de Recorrências nas Faturas Abertas e na Próxima (virtual)
+      const recurrences = await pb.collection('recurrences').getFullList({
+        filter: `card_id = '${card.id}' && status = 'active'`
+      });
 
-      // Só projeta se o próximo período ainda não existe como fatura real
-      const alreadyExists = result.some(r => r.period === nextPeriod);
-      if (!alreadyExists) {
-        // Busca recorrências ativas vinculadas a este cartão
-        const recurrences = await pb.collection('recurrences').getFullList({
-          filter: `card_id = '${card.id}' && status = 'active'`
-        });
+      if (recurrences.length > 0) {
+        // A. Injeta as recorrências faltantes nas faturas físicas que estão ABERTAS
+        for (const inv of result) {
+          if (inv.status === 'OPEN') {
+            for (const rec of recurrences) {
+              // Verifica se já existe uma transação real para esta recorrência nesta fatura
+              const alreadyHas = inv.transactions.some((t: any) => t.recurrence_id === rec.id);
+              if (!alreadyHas) {
+                // Checa se o parcelamento já encerrou
+                let installmentLabel = '';
+                if (rec.total_installments && rec.total_installments > 0) {
+                  // Rough estimation baseada na data esperada
+                  const history = await pb.collection('transactions').getList(1, 1, {
+                    filter: `recurrence_id = '${rec.id}' && expected_date < '${inv.dueDate}'`
+                  });
+                  const nextInstallment = history.totalItems + 1;
+                  if (nextInstallment > rec.total_installments) continue; // Parcelamento concluído antes dessa fatura
+                  installmentLabel = ` - Parcela ${nextInstallment}/${rec.total_installments}`;
+                }
 
-        if (recurrences.length > 0) {
+                // Determine the correct purchase date for this recurrence that maps to this invoice
+                const { calculateCardDueDate } = await import('../utils/dateUtils');
+                const [iy, im] = inv.period.split('-').map(Number);
+                
+                // Generates dates for current and previous month based on period
+                const d1 = new Date(Date.UTC(iy, im - 1, rec.payday));
+                const d2 = new Date(Date.UTC(iy, im - 2, rec.payday));
+                const d3 = new Date(Date.UTC(iy, im, rec.payday));
+                
+                const due1 = calculateCardDueDate(d1.toISOString(), card.closing_day, card.due_day);
+                const due2 = calculateCardDueDate(d2.toISOString(), card.closing_day, card.due_day);
+                const due3 = calculateCardDueDate(d3.toISOString(), card.closing_day, card.due_day);
+
+                let recDateStr = '';
+                if (due1.substring(0,10) === inv.dueDate.substring(0,10)) {
+                  recDateStr = d1.toISOString();
+                } else if (due2.substring(0,10) === inv.dueDate.substring(0,10)) {
+                  recDateStr = d2.toISOString();
+                } else if (due3.substring(0,10) === inv.dueDate.substring(0,10)) {
+                  recDateStr = d3.toISOString();
+                }
+
+                if (!recDateStr) continue; // This recurrence doesn't map to this invoice
+
+                // Check if user manually skipped this recurrence for this invoice period
+                if (rec.skipped_periods && rec.skipped_periods.includes(inv.period)) {
+                  continue;
+                }
+
+                const amount = rec.amount;
+                const delta = rec.type === 'expense' ? amount : -amount;
+                
+                inv.totalAmount = sum(inv.totalAmount, delta);
+                inv.totalSpent = sum(inv.totalSpent, delta);
+                
+                inv.transactions.push({
+                  id: `projected-${rec.id}-${inv.period}`,
+                  title: `${rec.name}${installmentLabel}`,
+                  amount: amount,
+                  status: 'projected',
+                  expected_date: recDateStr,
+                  purchase_date: null,
+                  recurrence_id: rec.id
+                });
+              }
+            }
+            // Reordena as transações por data para manter a visualização cronológica
+            inv.transactions.sort((a: any, b: any) => new Date(a.expected_date).getTime() - new Date(b.expected_date).getTime());
+          }
+        }
+
+        // B. Gera a PRÓXIMA fatura puramente virtual
+        const now = new Date();
+        const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+        
+        // Se houver uma fatura física, pegamos o período dela. Senão, usamos o mês atual.
+        const latestPeriod = result.length > 0 ? result[0].period : currentPeriod;
+        let [ly, lm] = latestPeriod.split('-').map(Number);
+        
+        // Verifica se latestPeriod é mais antigo que o mês atual. 
+        // Se a fatura mais recente física for muito velha (ex: mês passado), 
+        // a próxima fatura projetada deve ser a do mês atual.
+        const latestPeriodVal = ly * 12 + lm;
+        const currentPeriodVal = now.getUTCFullYear() * 12 + (now.getUTCMonth() + 1);
+        
+        let nextMonth, nextYear;
+        if (latestPeriodVal < currentPeriodVal) {
+          nextYear = now.getUTCFullYear();
+          nextMonth = now.getUTCMonth() + 1;
+        } else {
+          nextMonth = lm === 12 ? 1 : lm + 1;
+          nextYear = lm === 12 ? ly + 1 : ly;
+        }
+
+        const nextPeriod = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+
+        // Garante que não duplica se por acaso houver algum conflito, 
+        // embora seja improvável por causa do find anterior.
+        const alreadyExists = result.some(r => r.period === nextPeriod);
+        
+        if (!alreadyExists) {
           const projectedTxns: any[] = [];
           let projectedTotal = 0;
 
           for (const rec of recurrences) {
-            // Verifica se o parcelamento já teria terminado
             let installmentLabel = '';
             if (rec.total_installments && rec.total_installments > 0) {
-              const history = await pb.collection('transactions').getList(1, 1, {
-                filter: `recurrence_id = '${rec.id}'`
-              });
+              const history = await pb.collection('transactions').getList(1, 1, { filter: `recurrence_id = '${rec.id}'` });
               const nextInstallment = history.totalItems + 1;
-              if (nextInstallment > rec.total_installments) continue; // Já encerrado
+              if (nextInstallment > rec.total_installments) continue;
               installmentLabel = ` - Parcela ${nextInstallment}/${rec.total_installments}`;
             }
 
             const amount = rec.amount;
             const delta = rec.type === 'expense' ? amount : -amount;
+
+            // Encontrar data de projeção correta para a fatura virtual
+            const { calculateCardDueDate } = await import('../utils/dateUtils');
+            const fakePurchaseDate = `${nextPeriod}-01T00:00:00.000Z`;
+            const projectedDueDate = calculateCardDueDate(fakePurchaseDate, card.closing_day, card.due_day);
+
+            const [ny, nm] = nextPeriod.split('-').map(Number);
+            const d1 = new Date(Date.UTC(ny, nm - 1, rec.payday));
+            const d2 = new Date(Date.UTC(ny, nm - 2, rec.payday));
+            const d3 = new Date(Date.UTC(ny, nm, rec.payday));
+            
+            const due1 = calculateCardDueDate(d1.toISOString(), card.closing_day, card.due_day);
+            const due2 = calculateCardDueDate(d2.toISOString(), card.closing_day, card.due_day);
+            const due3 = calculateCardDueDate(d3.toISOString(), card.closing_day, card.due_day);
+
+            let recDateStr = '';
+            if (due1.substring(0,10) === projectedDueDate.substring(0,10)) {
+              recDateStr = d1.toISOString();
+            } else if (due2.substring(0,10) === projectedDueDate.substring(0,10)) {
+              recDateStr = d2.toISOString();
+            } else if (due3.substring(0,10) === projectedDueDate.substring(0,10)) {
+              recDateStr = d3.toISOString();
+            }
+
+            if (!recDateStr) continue;
+
+            if (rec.skipped_periods && rec.skipped_periods.includes(nextPeriod)) {
+              continue;
+            }
+
             projectedTotal = sum(projectedTotal, delta);
 
             projectedTxns.push({
@@ -131,14 +243,13 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
               title: `${rec.name}${installmentLabel}`,
               amount: amount,
               status: 'projected',
-              expected_date: `${nextPeriod}-${String(rec.payday).padStart(2, '0')}T00:00:00.000Z`,
+              expected_date: recDateStr,
               purchase_date: null,
               recurrence_id: rec.id
             });
           }
 
           if (projectedTxns.length > 0) {
-            // Calcula a due_date projetada usando as regras do cartão
             const { calculateCardDueDate } = await import('../utils/dateUtils');
             const fakePurchaseDate = `${nextPeriod}-01T00:00:00.000Z`;
             const projectedDueDate = calculateCardDueDate(fakePurchaseDate, card.closing_day, card.due_day);

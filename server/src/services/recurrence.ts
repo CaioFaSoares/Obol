@@ -50,13 +50,21 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
 
       // 3. A Regra de Idempotência: Já geramos essa transação este mês?
       const existingTxns = await pb.collection('transactions').getFullList({
-        filter: `recurrence_id = '${income.id}' && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}'`,
+        filter: `recurrence_id = '${income.id}' && ((expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') || (purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}'))`,
         $cancelKey: `check_${income.id}` // Evita cancelamento automático de requests paralelos pelo SDK do PB
       });
 
       if (existingTxns.length > 0) {
         skipped++;
         continue; // Já existe! Pula pro próximo sem duplicar.
+      }
+
+      // Verifica se o usuário pulou manualmente esta competência
+      const periodStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (income.skipped_periods && income.skipped_periods.includes(periodStr)) {
+        console.log(`⏸️  Recorrência [${income.name}] pulada manualmente neste mês (${periodStr}).`);
+        skipped++;
+        continue;
       }
 
       // 4. Clamping de Calendário (Garante que dia 31 em Fev vire dia 28/29)
@@ -69,6 +77,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
         type: income.type,
         status: 'pending',
         expected_date: expectedDate,
+        purchase_date: expectedDate, // Mantém a data de compra original antes do vencimento do cartão sobrepor
         is_recurring: true,
         recurrence_id: income.id,
         account_id: income.account_id || null,

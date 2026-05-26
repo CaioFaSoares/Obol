@@ -7,6 +7,7 @@ import { api } from '../utils/api'
 
 const { open } = useTransactionEdit()
 const forecastDays = ref(30)
+const includeSimulations = ref(false)
 
 const forecastQuery = computed(() => {
   return getForecastRange(forecastDays.value)
@@ -16,24 +17,31 @@ const financeStore = useFinanceStore()
 const toast = useToast()
 
 const { data: forecastData, pending: pendingForecast, error } = await useAsyncData('forecast', async () => {
-  const res = await api.api.forecast.get({ query: forecastQuery.value })
+  const res = await api.api.forecast.get({ 
+    query: {
+      ...forecastQuery.value,
+      includeSimulations: includeSimulations.value ? 'true' : undefined
+    } 
+  })
   if (res.error) throw res.error
   return res.data
-}, { watch: [forecastQuery] })
+}, { watch: [forecastQuery, includeSimulations] })
 
 const { data: transactionsData, pending: pendingTransactions } = await useAsyncData(async () => {
   const { startDate, endDate } = forecastQuery.value
   const res = await api.api.transactions.get({
     query: {
       filter: `status = 'pending' || (status = 'realized' && realized_date >= '${startDate} 00:00:00.000Z' && realized_date <= '${endDate} 23:59:59.999Z')`,
-      sort: 'expected_date'
+      sort: 'expected_date',
+      perPage: '500'
     }
   })
   if (res.error) {
     console.error('Failed to fetch transactions:', res.error)
     throw res.error
   }
-  return (res.data as any[]) ?? []
+  const data: any = res.data
+  return Array.isArray(data) ? data : (data?.items ?? [])
 }, { watch: [forecastQuery] })
 
 const timelineData = computed(() => {
@@ -111,37 +119,126 @@ const dayDetailTransactions = computed(() => {
 })
 
 const activeTab = ref(0)
-const tabItems = [
-  { label: 'Realizados', key: 'realized', icon: 'i-heroicons-check-badge' },
-  { label: 'Pendentes', key: 'pending', icon: 'i-heroicons-clock' }
-]
+const tabItems = computed(() => {
+  const tabs = [
+    { label: 'Realizados', key: 'realized', icon: 'i-heroicons-check-badge' },
+    { label: 'Pendentes', key: 'pending', icon: 'i-heroicons-clock' }
+  ]
+  if (includeSimulations.value) {
+    tabs.push({ label: 'Simulados', key: 'simulated', icon: 'i-heroicons-sparkles' })
+  }
+  return tabs
+})
+
+watch(includeSimulations, (newVal) => {
+  if (!newVal && activeTab.value === 2) {
+    activeTab.value = 1
+  }
+})
 
 const invoicesAsTxns = computed(() => {
-  return pendingInvoices.value.map((inv: any) => ({
-    id: `invoice-${inv.card_id}-${inv.dateStr}`,
-    title: `💳 Fatura ${inv.card_name}`,
-    expected_date: inv.dateStr,
-    amount: inv.amount,
-    type: 'expense',
-    status: 'pending',
-    isInvoice: true,
-    card_id: inv.card_id
-  }))
+  return pendingInvoices.value
+    .filter((inv: any) => inv.status !== 'OPEN')
+    .map((inv: any) => ({
+      id: `invoice-${inv.card_id}-${inv.dateStr}`,
+      title: `💳 Fatura ${inv.card_name}`,
+      expected_date: inv.dateStr,
+      amount: inv.amount,
+      type: 'expense',
+      status: 'pending',
+      isInvoice: true,
+      card_id: inv.card_id
+    }))
+})
+
+const recentPage = ref(1)
+const recentTransactions = ref<any[]>([])
+const hasMoreRecent = ref(false)
+const isLoadingRecent = ref(false)
+
+const loadRecentTransactions = async (reset = false) => {
+  if (reset) {
+    recentPage.value = 1
+    recentTransactions.value = []
+  }
+  isLoadingRecent.value = true
+  const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
+  
+  let filterStr = ''
+  let sortParam = ''
+
+  if (currentTab === 'simulated') {
+    filterStr = `is_simulated = true`
+    sortParam = 'expected_date'
+  } else {
+    filterStr = `status = '${currentTab}' && is_simulated = false`
+    sortParam = currentTab === 'realized' ? '-realized_date' : 'expected_date'
+  }
+
+  try {
+    const res = await api.api.transactions.get({
+      query: {
+        filter: filterStr,
+        sort: sortParam,
+        page: String(recentPage.value),
+        perPage: '15'
+      }
+    })
+
+    if (!res.error) {
+      const data: any = res.data
+      const items = (Array.isArray(data) ? data : (data?.items ?? [])).filter((t: any) => !t.card_id)
+      
+      if (reset) {
+        recentTransactions.value = items
+      } else {
+        recentTransactions.value.push(...items)
+      }
+      
+      if (!Array.isArray(data) && data.page < data.totalPages) {
+        hasMoreRecent.value = true
+      } else {
+        hasMoreRecent.value = false
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load recent transactions:', err)
+  } finally {
+    isLoadingRecent.value = false
+  }
+}
+
+// Quando a aba muda, recarrega a lista
+watch(activeTab, () => {
+  loadRecentTransactions(true)
 })
 
 const filteredTransactions = computed(() => {
-  const status = activeTab.value === 0 ? 'realized' : 'pending'
-  const baseList = transactions.value.filter((t: any) => t.status === status && !t.card_id)
+  const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
+  const baseList = recentTransactions.value
   
-  if (status === 'pending') {
-    return [...baseList, ...invoicesAsTxns.value].sort((a, b) => {
+  if (currentTab === 'pending' || currentTab === 'simulated') {
+    const list = currentTab === 'pending' ? [...baseList, ...invoicesAsTxns.value] : baseList
+    return list.sort((a, b) => {
       const dateA = a.status === 'realized' && a.realized_date ? a.realized_date : a.expected_date
       const dateB = b.status === 'realized' && b.realized_date ? b.realized_date : b.expected_date
-      return new Date(dateB).getTime() - new Date(dateA).getTime()
+      // Crescente (mais antigos/próximos primeiro) para pendentes e simulados
+      return new Date(dateA).getTime() - new Date(dateB).getTime()
     })
   }
   
-  return baseList
+  // Decrescente (mais novos primeiro) para realizados
+  return baseList.sort((a, b) => {
+    const dateA = a.realized_date || a.expected_date
+    const dateB = b.realized_date || b.expected_date
+    return new Date(dateB).getTime() - new Date(dateA).getTime()
+  })
+})
+
+// Carrega os dados iniciais do cliente
+import { onMounted } from 'vue'
+onMounted(() => {
+  loadRecentTransactions(true)
 })
 
 const realizeTransaction = async (id: string, updateBalance: boolean) => {
@@ -168,6 +265,10 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
       <h1 class="text-3xl font-bold tracking-tight text-white">
         Dashboard de Projeção
       </h1>
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-zinc-400">Modo Simulação</span>
+        <UToggle v-model="includeSimulations" color="purple" />
+      </div>
     </div>
 
     <div v-if="pendingForecast" class="space-y-6">
@@ -223,7 +324,7 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
         <ForecastChart :data="timelineData" :current-balance="currentBalance" @point-click="onForecastPointClick" />
       </UCard>
 
-      <UCard v-if="pendingTransactions" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+      <UCard v-if="pendingTransactions && isLoadingRecent && recentPage === 1" :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
         <template #header>
           <h3 class="font-semibold text-lg text-white">Histórico de Lançamentos</h3>
         </template>
@@ -319,6 +420,17 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
             </div>
           </li>
         </ul>
+
+        <div v-if="hasMoreRecent" class="mt-6 text-center">
+          <UButton 
+            @click="() => { recentPage++; loadRecentTransactions() }" 
+            :loading="isLoadingRecent" 
+            color="primary"
+            icon="i-heroicons-arrow-path"
+          >
+            Carregar mais
+          </UButton>
+        </div>
       </UCard>
     </div>
 

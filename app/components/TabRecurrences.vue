@@ -52,14 +52,14 @@ function getSourceName(rec: any) {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <p class="text-sm text-zinc-400">Contratos que o motor de Cron processa automaticamente toda madrugada.</p>
-      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Nova Recorrência" @click="open" />
+      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Nova Recorrência" @click="open()" />
     </div>
 
     <!-- Lista vazia -->
     <div v-if="!recurrences?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
       <UIcon name="i-heroicons-arrows-right-left" class="w-10 h-10" />
       <p>Nenhuma recorrência cadastrada ainda.</p>
-      <UButton size="sm" color="primary" variant="ghost" label="Criar primeira recorrência" @click="open" />
+      <UButton size="sm" color="primary" variant="ghost" label="Criar primeira recorrência" @click="open()" />
     </div>
 
     <!-- Lista Receitas -->

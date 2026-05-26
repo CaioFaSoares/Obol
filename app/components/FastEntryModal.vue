@@ -13,6 +13,7 @@ const source = ref('account') // 'account' or 'card'
 const sourceId = ref('')
 const destinationAccountId = ref('')
 const categoryId = ref('')
+const isSimulated = ref(false)
 
 const isSubmitting = ref(false)
 
@@ -29,6 +30,18 @@ const categoryOptions = computed(() => {
 })
 
 const submit = async () => {
+  if (!amount.value || !description.value) {
+    return useToast().add({ title: 'Preencha valor e descrição', color: 'red' })
+  }
+  
+  if (!isSimulated.value && type.value !== 'transfer' && !sourceId.value) {
+    return useToast().add({ title: 'Selecione a conta ou cartão para o lançamento real.', color: 'red' })
+  }
+
+  if (type.value === 'transfer' && (!sourceId.value || !destinationAccountId.value)) {
+    return useToast().add({ title: 'Selecione a conta de origem e destino', color: 'red' })
+  }
+
   isSubmitting.value = true
   try {
     const status = (type.value !== 'transfer' && source.value === 'card') ? 'pending' : 'realized'
@@ -38,8 +51,9 @@ const submit = async () => {
       title: description.value || (type.value === 'transfer' ? 'Transferência' : 'Lançamento Rápido'),
       amount: parseCurrencyInput(amount.value),
       type: type.value,
-      status,
-      expected_date: now
+      status: isSimulated.value ? 'pending' : status,
+      expected_date: now,
+      is_simulated: isSimulated.value
     }
 
     if (type.value === 'transfer') {
@@ -47,11 +61,13 @@ const submit = async () => {
       payload.destination_account_id = destinationAccountId.value
       payload.realized_date = now
     } else {
-      if (source.value === 'account' && sourceId.value) {
-        payload.account_id = sourceId.value
-        payload.realized_date = now
-      } else if (source.value === 'card' && sourceId.value) {
-        payload.card_id = sourceId.value
+      if (!isSimulated.value) {
+        if (source.value === 'account' && sourceId.value) {
+          payload.account_id = sourceId.value
+          payload.realized_date = now
+        } else if (source.value === 'card' && sourceId.value) {
+          payload.card_id = sourceId.value
+        }
       }
 
       if (categoryId.value) {
@@ -61,6 +77,11 @@ const submit = async () => {
 
     const res = await api.api.transactions.post(payload)
     if (res.error) throw res.error
+
+    useToast().add({ 
+      title: isSimulated.value ? 'Simulação Criada!' : 'Lançamento Salvo!', 
+      color: isSimulated.value ? 'purple' : 'emerald' 
+    })
 
     // TODO: A dashboard component would need to react to this,
     // reloading the data. Since the Nuxt layout doesn't natively watch for it,
@@ -75,8 +96,10 @@ const submit = async () => {
     sourceId.value = ''
     destinationAccountId.value = ''
     categoryId.value = ''
+    isSimulated.value = false
   } catch (err) {
     console.error('Failed to submit transaction', err)
+    useToast().add({ title: 'Erro ao salvar', color: 'red' })
   } finally {
     isSubmitting.value = false
   }
@@ -116,14 +139,14 @@ const submit = async () => {
           </div>
         </UFormGroup>
 
-        <UFormGroup v-if="type !== 'transfer'" label="Forma de Pagamento">
+        <UFormGroup v-if="type !== 'transfer' && !isSimulated" label="Forma de Pagamento">
           <div class="flex gap-4">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-model="source" value="card" label="Cartão" />
           </div>
         </UFormGroup>
 
-        <UFormGroup v-if="type === 'transfer' || source === 'account'" :label="type === 'transfer' ? 'Conta de Origem' : 'Selecione a Conta'">
+        <UFormGroup v-if="type === 'transfer' || (!isSimulated && source === 'account')" :label="type === 'transfer' ? 'Conta de Origem' : 'Selecione a Conta'">
           <USelect v-model="sourceId" :options="accountOptions" placeholder="Selecione a conta de origem" />
         </UFormGroup>
         
@@ -131,7 +154,7 @@ const submit = async () => {
           <USelect v-model="destinationAccountId" :options="accountOptions" placeholder="Selecione a conta de destino" />
         </UFormGroup>
 
-        <UFormGroup v-if="type !== 'transfer' && source === 'card'" label="Selecione o Cartão">
+        <UFormGroup v-if="type !== 'transfer' && !isSimulated && source === 'card'" label="Selecione o Cartão">
           <USelect v-model="sourceId" :options="cardOptions" placeholder="Selecione o cartão" />
         </UFormGroup>
 
@@ -139,9 +162,19 @@ const submit = async () => {
           <USelect v-model="categoryId" :options="categoryOptions" placeholder="Sem orçamento vinculado" />
         </UFormGroup>
 
+        <div v-if="type !== 'transfer'" class="bg-purple-900/10 border border-purple-500/20 rounded-lg p-4 flex items-start gap-3 mt-4">
+          <UToggle v-model="isSimulated" color="purple" class="mt-0.5" />
+          <div>
+            <h4 class="text-sm font-medium text-purple-200">Lançamento Simulado</h4>
+            <p class="text-xs text-purple-300/70 mt-1">
+              Não debita do seu saldo real. Ideal para testar o futuro no gráfico.
+            </p>
+          </div>
+        </div>
+
         <div class="flex justify-end gap-3 mt-6">
           <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
-          <UButton type="submit" label="Lançar" color="primary" :loading="isSubmitting" />
+          <UButton type="submit" label="Lançar" :color="isSimulated ? 'purple' : 'primary'" :loading="isSubmitting" />
         </div>
       </form>
     </UCard>

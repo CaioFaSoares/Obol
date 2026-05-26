@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Add dependencies
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
-RUN npm install
+RUN rm -f package-lock.json && npm install
 
 # Command for dev with hot reload
 CMD ["npm", "run", "dev"]

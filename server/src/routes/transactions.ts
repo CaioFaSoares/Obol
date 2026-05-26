@@ -80,22 +80,38 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
     body: TransactionDTO // Validação estrita TypeBox de entrada
   })
 
-  // GET /api/transactions — Lista as transações ordenadas por data
+  // GET /api/transactions — Lista as transações paginadas
   .get('/', async ({ query, pb }: { query: any, pb: PocketBase }) => {
     try {
+      // 1. Captura os parâmetros de paginação da Query, com defaults inteligentes
+      const page = Number(query?.page) || 1;
+      const perPage = Number(query?.perPage) || 15;
+
       const options: any = { sort: query?.sort || '-expected_date' };
       if (query?.filter) options.filter = query.filter;
 
-      const records = await pb.collection('transactions').getList(1, 100, options);
-      return records.items;
+      // 2. Realiza a busca no PocketBase utilizando a paginação dinâmica
+      const records = await pb.collection('transactions').getList(page, perPage, options);
+      
+      // 3. RETORNO ALTERADO: Em vez de devolver records.items diretamente, 
+      // devolvemos o objeto completo para o frontend ter metadados de paginação.
+      return {
+        items: records.items,
+        page: records.page,
+        perPage: records.perPage,
+        totalItems: records.totalItems,
+        totalPages: records.totalPages
+      };
     } catch (err: any) {
       console.error('Falha ao listar transações:', err);
-      return [];
+      return { items: [], page: 1, totalPages: 0, totalItems: 0 };
     }
   }, {
     query: t.Optional(t.Object({
       filter: t.Optional(t.String()),
-      sort: t.Optional(t.String())
+      sort: t.Optional(t.String()),
+      page: t.Optional(t.String()),
+      perPage: t.Optional(t.String())
     }))
   })
 
@@ -131,9 +147,30 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
           await pb.collection('invoices').update(invoice.id, {
             total_amount: sum(invoice.total_amount, amountDelta)
           });
+
+          if (oldTxn.recurrence_id) {
+             const rec = await pb.collection('recurrences').getOne(oldTxn.recurrence_id);
+             let skipped = rec.skipped_periods || [];
+             const pDate = oldTxn.purchase_date || oldTxn.expected_date;
+             const purchasePeriod = pDate.substring(0, 7);
+             if (!skipped.includes(purchasePeriod)) skipped.push(purchasePeriod);
+             if (!skipped.includes(invoice.period)) skipped.push(invoice.period);
+             await pb.collection('recurrences').update(rec.id, { skipped_periods: skipped });
+          }
         } catch(e) {
           console.error("Fatura não encontrada para estorno.");
         }
+      } else if (oldTxn.recurrence_id) {
+         try {
+             const rec = await pb.collection('recurrences').getOne(oldTxn.recurrence_id);
+             let skipped = rec.skipped_periods || [];
+             const pDate = oldTxn.purchase_date || oldTxn.expected_date;
+             const purchasePeriod = pDate.substring(0, 7);
+             if (!skipped.includes(purchasePeriod)) {
+                 skipped.push(purchasePeriod);
+                 await pb.collection('recurrences').update(rec.id, { skipped_periods: skipped });
+             }
+         } catch(e) {}
       }
 
       await pb.collection('transactions').delete(params.id);
@@ -181,11 +218,15 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       }
 
       // ---------------------------------------------------------
-      // APLICA NOVA REGRA 2: CARTÃO DE CRÉDITO
+      // ESTORNO DE FATURA DE CARTÃO (SE EXISTIA)
       // ---------------------------------------------------------
-      if (data.card_id) {
-        // 1. Estorna o valor da fatura antiga, se existia
-        if (oldTxn.card_id && oldTxn.invoice_id) {
+      if (oldTxn.card_id && oldTxn.invoice_id) {
+        // Verifica se precisamos estornar: mudou o cartão, valor, tipo, data ou virou conta
+        const changedCard = data.card_id !== undefined && data.card_id !== oldTxn.card_id;
+        const changedAmountOrType = (data.amount !== undefined && data.amount !== oldTxn.amount) || (data.type !== undefined && data.type !== oldTxn.type);
+        const changedDate = data.expected_date !== undefined && data.expected_date !== oldTxn.expected_date;
+        
+        if (changedCard || changedAmountOrType || changedDate) {
           try {
             const oldInvoice = await pb.collection('invoices').getOne(oldTxn.invoice_id);
             const oldAmountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
@@ -193,19 +234,35 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
               total_amount: sum(oldInvoice.total_amount, oldAmountDelta)
             });
           } catch(e) {}
+          
+          if (!data.card_id) {
+            data.invoice_id = null;
+            data.purchase_date = null;
+          }
         }
+      }
 
-        // 2. Associa e soma à nova fatura
-        const baseDate = data.expected_date || oldTxn.purchase_date || oldTxn.expected_date;
-        const newAmount = data.amount || oldTxn.amount;
-        const newType = data.type || oldTxn.type;
-        
-        const invoice = await syncInvoice(pb, data.card_id, baseDate, newAmount, newType);
-        
-        data.invoice_id = invoice.id;
-        data.purchase_date = baseDate;
-        data.expected_date = invoice.due_date;
-        data.status = 'pending'; 
+      // ---------------------------------------------------------
+      // APLICA NOVA REGRA 2: CARTÃO DE CRÉDITO
+      // ---------------------------------------------------------
+      if (data.card_id) {
+        // 2. Associa e soma à nova fatura (apenas se mudou algo ou se é novo)
+        const changedCard = data.card_id !== undefined && data.card_id !== oldTxn.card_id;
+        const changedAmountOrType = (data.amount !== undefined && data.amount !== oldTxn.amount) || (data.type !== undefined && data.type !== oldTxn.type);
+        const changedDate = data.expected_date !== undefined && data.expected_date !== oldTxn.expected_date;
+
+        if (changedCard || changedAmountOrType || changedDate || !oldTxn.card_id) {
+          const baseDate = data.expected_date || oldTxn.purchase_date || oldTxn.expected_date;
+          const newAmount = data.amount || oldTxn.amount;
+          const newType = data.type || oldTxn.type;
+          
+          const invoice = await syncInvoice(pb, data.card_id, baseDate, newAmount, newType);
+          
+          data.invoice_id = invoice.id;
+          data.purchase_date = baseDate;
+          data.expected_date = invoice.due_date;
+          data.status = 'pending'; 
+        }
       }
 
       // ---------------------------------------------------------
