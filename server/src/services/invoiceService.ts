@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import { calculateCardDueDate } from '../utils/dateUtils';
+import { sum } from '../utils/mathUtils';
 
 /**
  * Sincroniza o saldo de uma transação com a sua respectiva fatura física.
@@ -30,7 +31,7 @@ export async function syncInvoice(pb: PocketBase, card_id: string, expected_date
 
   if (invoice) {
     // 4a. Atualiza a fatura existente
-    const newTotal = invoice.total_amount + amountDelta;
+    const newTotal = sum(invoice.total_amount, amountDelta);
     return await pb.collection('invoices').update(invoice.id, {
       total_amount: newTotal
     });

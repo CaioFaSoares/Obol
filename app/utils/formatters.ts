@@ -5,6 +5,10 @@ export const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+export const roundCurrency = (value: number): number => {
+  return Math.round(value * 100) / 100;
+};
+
 export const getForecastRange = (daysOffset: number = 30, pastDays: number = 7) => {
   const now = new Date();
   const offset = now.getTimezoneOffset();

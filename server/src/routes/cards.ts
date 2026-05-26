@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
+import { sum, sub, roundCurrency } from '../utils/mathUtils';
 import { CardDTO, CardInvoicesResponseDTO, PayInvoiceDTO } from '../schemas/models';
 import type PocketBase from 'pocketbase';
 
@@ -61,16 +62,16 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
         // Calcula o gasto bruto (ignorando estornos para exibição)
         let totalSpent = 0;
         for (const txn of txns) {
-          if (txn.type === 'expense') totalSpent += txn.amount;
+          if (txn.type === 'expense') totalSpent = sum(totalSpent, txn.amount);
           if (txn.type === 'income' && !txn.title.toLowerCase().includes('pagamento')) {
-            totalSpent -= txn.amount;
+            totalSpent = sub(totalSpent, txn.amount);
           }
         }
 
         result.push({
           period: inv.period,
           dueDate: inv.due_date,
-          totalAmount: inv.total_amount - (inv.paid_amount || 0), // Saldo real devedor
+          totalAmount: sub(inv.total_amount, inv.paid_amount || 0), // Saldo real devedor
           paidAmount: inv.paid_amount || 0,
           totalSpent: totalSpent,
           status: inv.status,
@@ -123,7 +124,7 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
 
             const amount = rec.amount;
             const delta = rec.type === 'expense' ? amount : -amount;
-            projectedTotal += delta;
+            projectedTotal = sum(projectedTotal, delta);
 
             projectedTxns.push({
               id: `projected-${rec.id}`,

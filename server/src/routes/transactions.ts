@@ -3,6 +3,7 @@ import { pbPlugin } from '../plugins/pocketbase';
 import { TransactionDTO } from '../schemas/models';
 import { calculateCardDueDate } from '../utils/dateUtils';
 import { syncInvoice } from '../services/invoiceService';
+import { sum, sub } from '../utils/mathUtils';
 import type PocketBase from 'pocketbase';
 
 export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
@@ -20,8 +21,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         
         // 2. Calcula o novo saldo
         let newBalance = account.initial_balance;
-        if (data.type === 'income') newBalance += data.amount;
-        if (data.type === 'expense') newBalance -= data.amount;
+        if (data.type === 'income') newBalance = sum(newBalance, data.amount);
+        if (data.type === 'expense') newBalance = sub(newBalance, data.amount);
         
         // 3. Atualiza o saldo no banco
         await pb.collection('accounts').update(data.account_id, { 
@@ -53,8 +54,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         const sourceAcc = await pb.collection('accounts').getOne(data.account_id);
         const destAcc = await pb.collection('accounts').getOne(data.destination_account_id);
         
-        const newSourceBalance = sourceAcc.initial_balance - data.amount;
-        const newDestBalance = destAcc.initial_balance + data.amount;
+        const newSourceBalance = sub(sourceAcc.initial_balance, data.amount);
+        const newDestBalance = sum(destAcc.initial_balance, data.amount);
         
         await pb.collection('accounts').update(sourceAcc.id, { initial_balance: newSourceBalance });
         await pb.collection('accounts').update(destAcc.id, { initial_balance: newDestBalance });
@@ -107,14 +108,14 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         if (oldTxn.type === 'transfer' && oldTxn.destination_account_id) {
           const sourceAcc = await pb.collection('accounts').getOne(oldTxn.account_id);
           const destAcc = await pb.collection('accounts').getOne(oldTxn.destination_account_id);
-          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance + oldTxn.amount });
-          await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance - oldTxn.amount });
+          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sum(sourceAcc.initial_balance, oldTxn.amount) });
+          await pb.collection('accounts').update(destAcc.id, { initial_balance: sub(destAcc.initial_balance, oldTxn.amount) });
         } else {
           const account = await pb.collection('accounts').getOne(oldTxn.account_id);
           let revertedBalance = account.initial_balance;
           
-          if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
-          if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
+          if (oldTxn.type === 'income') revertedBalance = sub(revertedBalance, oldTxn.amount);
+          if (oldTxn.type === 'expense') revertedBalance = sum(revertedBalance, oldTxn.amount);
 
           await pb.collection('accounts').update(oldTxn.account_id, { 
             initial_balance: revertedBalance 
@@ -128,7 +129,7 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
           const invoice = await pb.collection('invoices').getOne(oldTxn.invoice_id);
           const amountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
           await pb.collection('invoices').update(invoice.id, {
-            total_amount: invoice.total_amount + amountDelta
+            total_amount: sum(invoice.total_amount, amountDelta)
           });
         } catch(e) {
           console.error("Fatura não encontrada para estorno.");
@@ -155,13 +156,13 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         if (oldTxn.type === 'transfer' && oldTxn.destination_account_id) {
           const sourceAcc = await pb.collection('accounts').getOne(oldTxn.account_id);
           const destAcc = await pb.collection('accounts').getOne(oldTxn.destination_account_id);
-          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance + oldTxn.amount });
-          await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance - oldTxn.amount });
+          await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sum(sourceAcc.initial_balance, oldTxn.amount) });
+          await pb.collection('accounts').update(destAcc.id, { initial_balance: sub(destAcc.initial_balance, oldTxn.amount) });
         } else {
           const account = await pb.collection('accounts').getOne(oldTxn.account_id);
           let revertedBalance = account.initial_balance;
-          if (oldTxn.type === 'income') revertedBalance -= oldTxn.amount;
-          if (oldTxn.type === 'expense') revertedBalance += oldTxn.amount;
+          if (oldTxn.type === 'income') revertedBalance = sub(revertedBalance, oldTxn.amount);
+          if (oldTxn.type === 'expense') revertedBalance = sum(revertedBalance, oldTxn.amount);
           await pb.collection('accounts').update(oldTxn.account_id, { initial_balance: revertedBalance });
         }
       }
@@ -172,8 +173,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       if (data.account_id && data.status === 'realized') {
         const account = await pb.collection('accounts').getOne(data.account_id);
         let newBalance = account.initial_balance;
-        if (data.type === 'income') newBalance += data.amount;
-        if (data.type === 'expense') newBalance -= data.amount;
+        if (data.type === 'income') newBalance = sum(newBalance, data.amount);
+        if (data.type === 'expense') newBalance = sub(newBalance, data.amount);
         
         await pb.collection('accounts').update(data.account_id, { initial_balance: newBalance });
         if (!data.realized_date) data.realized_date = new Date().toISOString();
@@ -189,7 +190,7 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
             const oldInvoice = await pb.collection('invoices').getOne(oldTxn.invoice_id);
             const oldAmountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
             await pb.collection('invoices').update(oldInvoice.id, {
-              total_amount: oldInvoice.total_amount + oldAmountDelta
+              total_amount: sum(oldInvoice.total_amount, oldAmountDelta)
             });
           } catch(e) {}
         }
@@ -214,8 +215,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         const sourceAcc = await pb.collection('accounts').getOne(data.account_id);
         const destAcc = await pb.collection('accounts').getOne(data.destination_account_id);
         
-        await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sourceAcc.initial_balance - data.amount });
-        await pb.collection('accounts').update(destAcc.id, { initial_balance: destAcc.initial_balance + data.amount });
+        await pb.collection('accounts').update(sourceAcc.id, { initial_balance: sub(sourceAcc.initial_balance, data.amount) });
+        await pb.collection('accounts').update(destAcc.id, { initial_balance: sum(destAcc.initial_balance, data.amount) });
         
         data.category_id = null;
         data.card_id = null;
@@ -249,17 +250,17 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         const destAcc = await pb.collection('accounts').getOne(txn.destination_account_id);
         
         await pb.collection('accounts').update(sourceAcc.id, { 
-          initial_balance: sourceAcc.initial_balance - txn.amount 
+          initial_balance: sub(sourceAcc.initial_balance, txn.amount) 
         });
         await pb.collection('accounts').update(destAcc.id, { 
-          initial_balance: destAcc.initial_balance + txn.amount 
+          initial_balance: sum(destAcc.initial_balance, txn.amount) 
         });
       } else if (txn.account_id && shouldUpdateBalance) {
         const account = await pb.collection('accounts').getOne(txn.account_id);
         
         let newBalance = account.initial_balance;
-        if (txn.type === 'income') newBalance += txn.amount;
-        if (txn.type === 'expense') newBalance -= txn.amount;
+        if (txn.type === 'income') newBalance = sum(newBalance, txn.amount);
+        if (txn.type === 'expense') newBalance = sub(newBalance, txn.amount);
         
         await pb.collection('accounts').update(account.id, { 
           initial_balance: newBalance 

@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { pbPlugin } from '../plugins/pocketbase';
+import { sum, sub, roundCurrency } from '../utils/mathUtils';
 import { ForecastQueryDTO, ForecastResponseDTO } from '../schemas/models';
 import { determineInvoiceStatus } from '../utils/dateUtils';
 
@@ -41,7 +42,7 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
       const upcomingInvoices: { card_id: string, card_name: string, dateStr: string, amount: number, status: string }[] = [];
 
       for (const invoice of invoices) {
-        const amountDue = invoice.total_amount - (invoice.paid_amount || 0);
+        const amountDue = sub(invoice.total_amount, invoice.paid_amount || 0);
         
         if (amountDue > 0) {
           // Garante que o status dinâmico entre OPEN/CLOSED é baseado na data de hoje
@@ -65,8 +66,8 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
       let runningBalance = currentBalance;
       const realizedSinceStart = transactions.filter(t => t.status === 'realized' && t.realized_date >= startFilter && !t.card_id && !t.is_silent);
       for (const txn of realizedSinceStart) {
-        if (txn.type === 'income') runningBalance -= txn.amount;
-        if (txn.type === 'expense') runningBalance += txn.amount;
+        if (txn.type === 'income') runningBalance = sub(runningBalance, txn.amount);
+        if (txn.type === 'expense') runningBalance = sum(runningBalance, txn.amount);
       }
       
       // Ajuste de Dívidas Antigas: IGNORADO. Dívidas passadas não pagas não devem rebaixar artificialmente
@@ -98,8 +99,8 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
             !t.card_id && !t.is_silent
           );
           for (const txn of dailyRealized) {
-            if (txn.type === 'income') runningBalance += txn.amount;
-            if (txn.type === 'expense') runningBalance -= txn.amount;
+            if (txn.type === 'income') runningBalance = sum(runningBalance, txn.amount);
+            if (txn.type === 'expense') runningBalance = sub(runningBalance, txn.amount);
           }
         }
 
@@ -113,15 +114,15 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
           );
           for (const txn of dailyPending) {
             console.log(`[FORECAST] Aplicando pendência (${txn.title}) de ${txn.amount} no dia ${dateStr}. Tipo: ${txn.type}`);
-            if (txn.type === 'income') runningBalance += txn.amount;
-            if (txn.type === 'expense') runningBalance -= txn.amount;
+            if (txn.type === 'income') runningBalance = sum(runningBalance, txn.amount);
+            if (txn.type === 'expense') runningBalance = sub(runningBalance, txn.amount);
           }
         }
         
         // 3. FATURAS DE CARTÃO DE CRÉDITO (Aplicadas estritamente na data de vencimento)
         const dailyInvoices = upcomingInvoices.filter(i => i.dateStr === dateStr);
         for (const inv of dailyInvoices) {
-          runningBalance -= inv.amount;
+          runningBalance = sub(runningBalance, inv.amount);
         }
 
         // 4. SIMULAÇÃO DE RECORRÊNCIAS FUTURAS
@@ -137,8 +138,8 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
               );
 
               if (!alreadyLaunched) {
-                if (rec.type === 'income') runningBalance += rec.amount;
-                if (rec.type === 'expense') runningBalance -= rec.amount;
+                if (rec.type === 'income') runningBalance = sum(runningBalance, rec.amount);
+                if (rec.type === 'expense') runningBalance = sub(runningBalance, rec.amount);
               }
             }
           }
@@ -147,7 +148,7 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
         // HIGIENE MATEMÁTICA E INJEÇÃO NA TIMELINE
         timeline.push({
           date: dateStr,
-          balance: Math.round(runningBalance * 100) / 100
+          balance: roundCurrency(runningBalance)
         });
 
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
