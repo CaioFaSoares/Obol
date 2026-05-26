@@ -213,7 +213,7 @@ function getBadgeLabel(status: string) {
             <li v-for="txn in transactions" :key="txn.id" class="flex justify-between items-center p-3 rounded bg-zinc-800/30 group">
               <div>
                 <p class="text-sm text-white font-medium">{{ txn.title }}</p>
-                <p class="text-xs text-zinc-500">{{ formatDate(txn.expected_date) }}</p>
+                <p class="text-xs text-zinc-500">{{ formatDate(txn.purchase_date || txn.expected_date) }}</p>
               </div>
               <div class="flex items-center gap-2">
                 <UBadge :color="txn.status === 'realized' ? 'green' : 'yellow'" variant="subtle" size="xs">

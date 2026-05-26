@@ -148,6 +148,7 @@ export const recurrenceRoutes = new Elysia({ prefix: '/api/recurrences' })
         type: recurrence.type,
         status: 'pending',
         expected_date: expectedDate,
+        purchase_date: expectedDate,
         is_recurring: true,
         account_id: recurrence.account_id || null,
         card_id: recurrence.card_id || null,

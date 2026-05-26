@@ -386,4 +386,64 @@ export const cardRoutes = new Elysia({ prefix: '/api/cards' })
     }
   }, {
     body: PayInvoiceDTO
+  })
+
+  // DELETE /api/cards/:id/invoices/:period — Exclusão Segura de Fatura (com cascata)
+  .delete('/:id/invoices/:period', async ({ params, pb, set }: { params: any, pb: PocketBase, set: any }) => {
+    try {
+      // 1. Busca a fatura pelo card_id + period
+      let invoice;
+      try {
+        invoice = await pb.collection('invoices').getFirstListItem(
+          `card_id = '${params.id}' && period = '${params.period}'`
+        );
+      } catch (err) {
+        set.status = 404;
+        return { error: `Fatura não encontrada para o período ${params.period}.` };
+      }
+
+      // 2. Busca todas as transações filhas dessa fatura
+      const childTxns = await pb.collection('transactions').getFullList({
+        filter: `invoice_id = '${invoice.id}'`
+      });
+
+      // 3. Para cada transação recorrente, registra o skip na recorrência pai
+      const skippedRecurrences: string[] = [];
+      for (const txn of childTxns) {
+        if (txn.recurrence_id) {
+          try {
+            const rec = await pb.collection('recurrences').getOne(txn.recurrence_id);
+            let skipped = rec.skipped_periods || [];
+            if (!skipped.includes(invoice.period)) {
+              skipped.push(invoice.period);
+              await pb.collection('recurrences').update(rec.id, { skipped_periods: skipped });
+              skippedRecurrences.push(rec.name);
+            }
+          } catch (e) {
+            // Recorrência pode ter sido deletada
+          }
+        }
+      }
+
+      // 4. Deleta todas as transações filhas
+      const deletePromises = childTxns.map(txn =>
+        pb.collection('transactions').delete(txn.id)
+      );
+      await Promise.all(deletePromises);
+
+      // 5. Deleta a fatura
+      await pb.collection('invoices').delete(invoice.id);
+
+      return {
+        success: true,
+        message: `Fatura ${params.period} excluída com segurança.`,
+        transactionsDeleted: childTxns.length,
+        recurrencesSkipped: skippedRecurrences
+      };
+
+    } catch (error: any) {
+      console.error('Falha ao excluir fatura:', error.message);
+      set.status = 500;
+      return { error: 'Falha ao excluir fatura', details: error.message };
+    }
   });

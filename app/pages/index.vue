@@ -138,7 +138,6 @@ watch(includeSimulations, (newVal) => {
 
 const invoicesAsTxns = computed(() => {
   return pendingInvoices.value
-    .filter((inv: any) => inv.status !== 'OPEN')
     .map((inv: any) => ({
       id: `invoice-${inv.card_id}-${inv.dateStr}`,
       title: `💳 Fatura ${inv.card_name}`,
@@ -147,7 +146,8 @@ const invoicesAsTxns = computed(() => {
       type: 'expense',
       status: 'pending',
       isInvoice: true,
-      card_id: inv.card_id
+      card_id: inv.card_id,
+      originalStatus: inv.status
     }))
 })
 
@@ -218,7 +218,8 @@ const filteredTransactions = computed(() => {
   const baseList = recentTransactions.value
   
   if (currentTab === 'pending' || currentTab === 'simulated') {
-    const list = currentTab === 'pending' ? [...baseList, ...invoicesAsTxns.value] : baseList
+    const closedInvoices = invoicesAsTxns.value.filter((inv: any) => inv.originalStatus !== 'OPEN')
+    const list = currentTab === 'pending' ? [...baseList, ...closedInvoices] : baseList
     return list.sort((a, b) => {
       const dateA = a.status === 'realized' && a.realized_date ? a.realized_date : a.expected_date
       const dateB = b.status === 'realized' && b.realized_date ? b.realized_date : b.expected_date

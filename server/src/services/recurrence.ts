@@ -50,7 +50,7 @@ export async function processMonthlyRecurrences(pb: PocketBase) {
 
       // 3. A Regra de Idempotência: Já geramos essa transação este mês?
       const existingTxns = await pb.collection('transactions').getFullList({
-        filter: `recurrence_id = '${income.id}' && ((expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') || (purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}'))`,
+        filter: `recurrence_id = '${income.id}' && ( (purchase_date != "" && purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}') || (purchase_date = "" && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') )`,
         $cancelKey: `check_${income.id}` // Evita cancelamento automático de requests paralelos pelo SDK do PB
       });
 
