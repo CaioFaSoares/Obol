@@ -67,6 +67,9 @@ const { open } = useFastEntry()
 
     <!-- Global Fast Entry Modal -->
     <FastEntryModal />
+    
+    <!-- Global Transaction Edit Modal -->
+    <TransactionEditModal />
 
     <!-- Floating Action Button -->
     <UButton

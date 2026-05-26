@@ -1,19 +1,19 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 migrate((app) => {
-  const collection = app.findCollectionByNameOrId("recurrences");
+  const collection = app.findCollectionByNameOrId("transactions");
 
   collection.fields.addAt(collection.fields.length, new Field({
     system: false,
-    name: "skipped_periods",
-    type: "json",
+    name: "is_scheduled",
+    type: "bool",
     required: false,
     options: {}
   }));
 
   app.save(collection);
 }, (app) => {
-  const collection = app.findCollectionByNameOrId("recurrences");
-  collection.fields.removeByName("skipped_periods");
+  const collection = app.findCollectionByNameOrId("transactions");
+  collection.fields.removeByName("is_scheduled");
   app.save(collection);
 });

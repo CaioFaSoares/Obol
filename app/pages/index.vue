@@ -218,8 +218,7 @@ const filteredTransactions = computed(() => {
   const baseList = recentTransactions.value
   
   if (currentTab === 'pending' || currentTab === 'simulated') {
-    const closedInvoices = invoicesAsTxns.value.filter((inv: any) => inv.originalStatus !== 'OPEN')
-    const list = currentTab === 'pending' ? [...baseList, ...closedInvoices] : baseList
+    const list = currentTab === 'pending' ? [...baseList, ...invoicesAsTxns.value] : baseList
     return list.sort((a, b) => {
       const dateA = a.status === 'realized' && a.realized_date ? a.realized_date : a.expected_date
       const dateB = b.status === 'realized' && b.realized_date ? b.realized_date : b.expected_date
@@ -351,12 +350,14 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
           <li v-for="t in filteredTransactions" :key="t.id" class="py-3 flex justify-between items-center group">
             <div>
               <p class="text-white font-medium flex items-center gap-2">
+                <UIcon v-if="t.is_scheduled" name="i-heroicons-calendar-days" class="w-4 h-4 text-amber-400 flex-shrink-0" />
                 {{ t.title }}
-                <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs">Pendente</UBadge>
+                <UBadge v-if="t.is_scheduled" color="amber" variant="subtle" size="xs">Agendado</UBadge>
+                <UBadge v-else-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs">Pendente</UBadge>
                 <UBadge v-if="t.is_silent" color="gray" variant="subtle" size="xs">Baixa Silenciosa</UBadge>
               </p>
               <p class="text-xs text-zinc-400">
-                Previsto: {{ formatDate(t.expected_date) }} 
+                {{ t.is_scheduled ? 'Vencimento:' : 'Previsto:' }} {{ formatDate(t.expected_date) }} 
                 <span v-if="t.realized_date">• Realizado: {{ formatDate(t.realized_date) }}</span>
               </p>
             </div>
@@ -372,7 +373,7 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
                     @click="open(t)"
                   />
                   <UDropdown 
-                    v-if="t.status === 'pending'"
+                    v-if="t.status === 'pending' && !t.is_scheduled"
                     :items="[[
                       { 
                         label: 'Dar baixa e somar no saldo', 
@@ -434,8 +435,6 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
         </div>
       </UCard>
     </div>
-
-    <TransactionEditModal />
 
     <UModal v-model="isDayDetailModalOpen">
       <UCard :ui="{ ring: '', divide: 'divide-y divide-zinc-800', background: 'bg-zinc-900' }">

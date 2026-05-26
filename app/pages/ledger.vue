@@ -3,7 +3,9 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { formatCurrency, formatDate } from '../utils/formatters'
 import { api } from '../utils/api'
 import { useFinanceStore } from '../stores/finance'
+import { useTransactionEdit } from '../composables/useTransactionEdit'
 
+const { open: openEditModal } = useTransactionEdit()
 const financeStore = useFinanceStore()
 const toast = useToast()
 
@@ -12,6 +14,7 @@ const searchQuery = ref('')
 const selectedStatus = ref('all') // 'all', 'realized', 'pending'
 const selectedType = ref('all')   // 'all', 'income', 'expense', 'transfer'
 const simulationFilter = ref('exclude_simulated') // 'exclude_simulated', 'only_simulated', 'all'
+const scheduledFilter = ref('all') // 'all', 'only_scheduled', 'exclude_scheduled'
 
 // 2. Estados de Paginação e Dados
 const transactions = ref<any[]>([])
@@ -41,6 +44,12 @@ const simulationOptions = [
   { label: 'Misturado', value: 'all' }
 ]
 
+const scheduledOptions = [
+  { label: 'Todos', value: 'all' },
+  { label: 'Apenas Agendados', value: 'only_scheduled' },
+  { label: 'Sem Agendados', value: 'exclude_scheduled' }
+]
+
 // 3. Construtor de Filtros Estritos (Sintaxe PocketBase)
 const filterString = computed(() => {
   const conditions = []
@@ -60,6 +69,13 @@ const filterString = computed(() => {
     conditions.push(`is_simulated = false`)
   } else if (simulationFilter.value === 'only_simulated') {
     conditions.push(`is_simulated = true`)
+  }
+
+  // Regra de Isolamento de Agendados
+  if (scheduledFilter.value === 'only_scheduled') {
+    conditions.push(`is_scheduled = true`)
+  } else if (scheduledFilter.value === 'exclude_scheduled') {
+    conditions.push(`is_scheduled = false`)
   }
 
   return conditions.join(' && ')
@@ -100,7 +116,7 @@ const onSearchInput = () => {
   }, 300)
 }
 
-watch([selectedStatus, selectedType, simulationFilter], () => {
+watch([selectedStatus, selectedType, simulationFilter, scheduledFilter], () => {
   page.value = 1
   fetchLedgerData()
 })
@@ -136,6 +152,13 @@ const isConverting = ref(false)
 
 const mapActionsMenu = (row: any) => {
   const baseActions = [
+    { 
+      label: 'Editar registro', 
+      icon: 'i-heroicons-pencil-square', 
+      click: () => {
+        openEditModal(row)
+      }
+    },
     { 
       label: 'Excluir registro', 
       icon: 'i-heroicons-trash', 
@@ -259,7 +282,7 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
 
     <!-- Filtros -->
     <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
         <UFormGroup label="Buscar">
           <UInput 
             v-model="searchQuery" 
@@ -274,8 +297,11 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         <UFormGroup label="Tipo">
           <USelect v-model="selectedType" :options="typeOptions" />
         </UFormGroup>
-        <UFormGroup label="Filtro de Simulação">
+        <UFormGroup label="Simulação">
           <USelect v-model="simulationFilter" :options="simulationOptions" />
+        </UFormGroup>
+        <UFormGroup label="Contas Agendadas">
+          <USelect v-model="scheduledFilter" :options="scheduledOptions" />
         </UFormGroup>
       </div>
     </UCard>
@@ -295,10 +321,12 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         
         <template #title-data="{ row }">
           <div class="flex items-center gap-2">
+            <UIcon v-if="row.is_scheduled" name="i-heroicons-calendar-days" class="w-4 h-4 text-amber-400 flex-shrink-0" />
             <span :class="{ 'italic text-purple-400': row.is_simulated, 'text-white': !row.is_simulated }">
               {{ row.title }}
             </span>
             <UBadge v-if="row.is_simulated" color="purple" variant="subtle" size="xs">Simulado</UBadge>
+            <UBadge v-if="row.is_scheduled" color="amber" variant="subtle" size="xs">Agendado</UBadge>
           </div>
         </template>
 
@@ -310,6 +338,7 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
 
         <template #status-data="{ row }">
           <UBadge v-if="row.status === 'realized'" color="emerald" variant="subtle" size="xs">Realizado</UBadge>
+          <UBadge v-else-if="row.is_scheduled" color="amber" variant="subtle" size="xs">Agendado</UBadge>
           <UBadge v-else color="yellow" variant="subtle" size="xs">Pendente</UBadge>
         </template>
 

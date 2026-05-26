@@ -10,6 +10,7 @@ export const TransactionDTO = t.Object({
   is_recurring: t.Optional(t.Boolean()),
   is_silent: t.Optional(t.Boolean()),
   is_simulated: t.Optional(t.Boolean({ default: false })),
+  is_scheduled: t.Optional(t.Boolean({ default: false })),
   // Data original da compra (para cartões de crédito)
   purchase_date: t.Optional(t.String({ format: 'date-time' })),
   

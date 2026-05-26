@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
 import { useFinanceStore } from '../stores/finance'
+import { parseCurrencyInput } from '../utils/formatters'
+import { api } from '../utils/api'
 
 const { isOpen, close, editingTransaction } = useTransactionEdit()
 const financeStore = useFinanceStore()
@@ -123,7 +125,7 @@ const deleteTransaction = async () => {
 </script>
 
 <template>
-  <UModal v-model="isOpen">
+  <UModal v-model="isOpen" prevent-close>
     <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
       <template #header>
         <div class="flex items-center justify-between">
