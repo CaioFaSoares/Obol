@@ -1,0 +1,10 @@
+FROM oven/bun:latest
+
+WORKDIR /app
+
+# Add dependencies
+COPY package.json bun.lockb* ./
+RUN bun install
+
+# Command for dev with hot reload
+CMD ["bun", "--watch", "run", "src/index.ts"]

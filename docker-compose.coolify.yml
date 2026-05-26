@@ -5,16 +5,12 @@ services:
   app:
     build:
       context: ./app
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: obol-nuxt
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       - NUXT_PUBLIC_API_BASE=http://server:8080 # Comunicação via rede interna
-    volumes:
-      - ./app:/app
-      - /app/node_modules
-      - /app/.nuxt
     networks:
       - obol_net
     depends_on:
@@ -24,15 +20,12 @@ services:
   server:
     build:
       context: ./server
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: obol-elysia
     environment:
       - POCKETBASE_URL=http://database:8090 # Comunicação interna com o banco
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
       - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
-    volumes:
-      - ./server:/app
-      - /app/node_modules
     networks:
       - obol_net
     depends_on:
@@ -42,8 +35,8 @@ services:
   database:
     image: ghcr.io/muchobien/pocketbase:latest
     container_name: obol-pocketbase
-    ports:
-      - "8090:8090" # Portal de Admin acessível em http://localhost:8090/_/
+    expose:
+      - "8090" # Portal de Admin acessível em http://localhost:8090/_/
     environment:
       # Variáveis que nosso script de migração vai ler
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
@@ -59,8 +52,8 @@ services:
   docs:
     image: zefhemel/silverbullet
     container_name: obol-docs
-    ports:
-      - "3030:3000" # Acessível em http://localhost:3030
+    expose:
+      - "3000" # Acessível via proxy do Coolify
     volumes:
       - ./docs:/space # Seus arquivos .md ficam salvos nesta pasta do projeto
     networks:
