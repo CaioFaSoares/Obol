@@ -6,8 +6,14 @@ import { useFinanceStore } from '../stores/finance'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
 
 const { open: openEditModal } = useTransactionEdit()
+const { globalRefreshTrigger } = useRefresh()
 const financeStore = useFinanceStore()
 const toast = useToast()
+
+watch(globalRefreshTrigger, () => {
+  fetchLedgerData()
+  financeStore.loadBaseData(true)
+})
 
 // 1. Estados Reativos dos Filtros
 const searchQuery = ref('')

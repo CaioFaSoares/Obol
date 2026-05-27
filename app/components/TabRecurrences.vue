@@ -15,6 +15,9 @@ const { data: recurrences, refresh } = await useAsyncData('recurrences', async (
 const incomes = computed(() => recurrences.value?.filter(r => r.type === 'income') || [])
 const expenses = computed(() => recurrences.value?.filter(r => r.type === 'expense') || [])
 
+const totalIncomes = computed(() => incomes.value.reduce((acc, r) => acc + (r.amount || 0), 0))
+const totalExpenses = computed(() => expenses.value.reduce((acc, r) => acc + (r.amount || 0), 0))
+
 const isDetailsOpen = ref(false)
 const selectedRecurrence = ref<any | null>(null)
 
@@ -45,6 +48,12 @@ function getSourceName(rec: any) {
     }
   }
 }
+
+function getCategoryName(rec: any) {
+  if (!rec.category_id) return null
+  const cat = financeStore.categories.find(c => c.id === rec.category_id)
+  return cat ? cat.name : null
+}
 </script>
 
 <template>
@@ -64,7 +73,10 @@ function getSourceName(rec: any) {
 
     <!-- Lista Receitas -->
     <div v-if="incomes.length > 0">
-      <h3 class="text-sm font-semibold text-emerald-400 mb-2 border-b border-zinc-800 pb-1">Receitas Fixas</h3>
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-1 mb-2">
+        <h3 class="text-sm font-semibold text-emerald-400">Receitas Fixas</h3>
+        <span class="text-sm font-semibold text-emerald-400">{{ formatCurrency(totalIncomes) }}</span>
+      </div>
       <ul class="divide-y divide-zinc-800/50">
         <li
           v-for="rec in incomes"
@@ -96,7 +108,10 @@ function getSourceName(rec: any) {
 
     <!-- Lista Despesas -->
     <div v-if="expenses.length > 0">
-      <h3 class="text-sm font-semibold text-red-400 mb-2 border-b border-zinc-800 pb-1 mt-4">Despesas Fixas</h3>
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-1 mb-2 mt-4">
+        <h3 class="text-sm font-semibold text-red-400">Despesas Fixas</h3>
+        <span class="text-sm font-semibold text-red-400">{{ formatCurrency(totalExpenses) }}</span>
+      </div>
       <ul class="divide-y divide-zinc-800/50">
         <li
           v-for="rec in expenses"
@@ -112,6 +127,7 @@ function getSourceName(rec: any) {
               </p>
               <p class="text-xs text-zinc-500">
                 Cobra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
+                <template v-if="getCategoryName(rec)"> • {{ getCategoryName(rec) }}</template>
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
                 <span v-else-if="rec.status === 'paused'" class="ml-1 text-yellow-400">(pausada)</span>
               </p>

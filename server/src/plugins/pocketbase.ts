@@ -3,6 +3,7 @@ import { Elysia } from 'elysia';
 
 // Instância global Singleton
 export const pb = new PocketBase(process.env.POCKETBASE_URL);
+pb.autoCancellation(false); // Impede que o SDK aborte requisições concorrentes no backend
 
 // Autentica no startup do container usando top-level await (suportado no Bun)
 let retries = 5;

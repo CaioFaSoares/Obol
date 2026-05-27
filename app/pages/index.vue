@@ -6,8 +6,15 @@ import { formatCurrency, formatDate, getForecastRange } from '../utils/formatter
 import { api } from '../utils/api'
 
 const { open } = useTransactionEdit()
+const { globalRefreshTrigger, triggerRefresh } = useRefresh()
 const forecastDays = ref(30)
 const includeSimulations = ref(false)
+
+watch(globalRefreshTrigger, () => {
+  refreshNuxtData() // Atualiza os useAsyncData (ex: forecast)
+  loadRecentTransactions(true) // Atualiza o histórico custom
+  financeStore.loadBaseData(true) // Atualiza contas e cartões globais
+})
 
 const forecastQuery = computed(() => {
   return getForecastRange(forecastDays.value)
@@ -157,11 +164,13 @@ const hasMoreRecent = ref(false)
 const isLoadingRecent = ref(false)
 
 const loadRecentTransactions = async (reset = false) => {
+  if (isLoadingRecent.value) return
+  isLoadingRecent.value = true
+  
   if (reset) {
     recentPage.value = 1
     recentTransactions.value = []
   }
-  isLoadingRecent.value = true
   const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
   
   let filterStr = ''
@@ -248,10 +257,11 @@ const realizeTransaction = async (id: string, updateBalance: boolean) => {
 
     toast.add({ 
       title: 'Sucesso!', 
-      description: updateBalance ? 'Baixa realizada com sucesso.' : 'Baixa silenciosa efetuada.', 
+      description: updateBalance ? 'Transação baixada e saldo atualizado.' : 'Transação baixada silenciosamente.',
       color: 'emerald' 
     })
-    window.location.reload()
+
+    triggerRefresh()
   } catch (err) {
     console.error(err)
     toast.add({ title: 'Erro', description: 'Não foi possível dar baixa.', color: 'red' })

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useFastEntry } from '../composables/useFastEntry'
-import { useFinanceStore } from '../stores/finance'
 
 const { isOpen, close } = useFastEntry()
+const { triggerRefresh } = useRefresh()
 const financeStore = useFinanceStore()
 
 const amount = ref<number>()
@@ -110,8 +109,7 @@ const submit = async () => {
 
     useToast().add({ title: toastTitle, color: toastColor })
 
-    window.location.reload()
-
+    triggerRefresh()
     close()
     amount.value = undefined
     description.value = ''

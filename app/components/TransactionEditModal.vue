@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useTransactionEdit } from '../composables/useTransactionEdit'
-import { useFinanceStore } from '../stores/finance'
-import { parseCurrencyInput } from '../utils/formatters'
-import { api } from '../utils/api'
 
 const { isOpen, close, editingTransaction } = useTransactionEdit()
+const { triggerRefresh } = useRefresh()
 const financeStore = useFinanceStore()
+const toast = useToast()
 
 const amount = ref<number>()
 const title = ref('')
@@ -77,28 +75,33 @@ const submit = async () => {
     } else {
       if (source.value === 'account' && sourceId.value) {
         payload.account_id = sourceId.value
-        payload.card_id = null
+        payload.card_id = ""
       } else if (source.value === 'card' && sourceId.value) {
         payload.card_id = sourceId.value
-        payload.account_id = null
+        payload.account_id = ""
       }
 
       if (categoryId.value) {
         payload.category_id = categoryId.value
       } else {
-        payload.category_id = null
+        payload.category_id = ""
       }
-      payload.destination_account_id = null
+      payload.destination_account_id = ""
     }
 
     const transactionId = editingTransaction.value.id as string
     const res = await api.api.transactions({ id: transactionId }).patch(payload)
-    if (res.error) throw res.error
+    if (res.error) {
+      console.error('API Error:', res.error)
+      throw new Error(res.error.message || 'Erro ao atualizar a transação')
+    }
 
-    window.location.reload()
+    toast.add({ title: 'Alterações salvas!', color: 'emerald' })
+    triggerRefresh()
     close()
-  } catch (err) {
+  } catch (err: any) {
     console.error('Falha ao atualizar transação', err)
+    toast.add({ title: 'Erro ao salvar', description: err.message, color: 'red' })
   } finally {
     isSubmitting.value = false
   }
@@ -114,7 +117,7 @@ const deleteTransaction = async () => {
     const res = await api.api.transactions({ id: transactionId }).delete()
     if (res.error) throw res.error
 
-    window.location.reload()
+    triggerRefresh()
     close()
   } catch (err) {
     console.error('Falha ao deletar transação', err)
@@ -126,7 +129,7 @@ const deleteTransaction = async () => {
 
 <template>
   <UModal v-model="isOpen" prevent-close>
-    <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
+    <UCard @click.stop :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-base font-semibold text-white">
