@@ -146,7 +146,7 @@ export const forecastRoutes = new Elysia({ prefix: '/api/forecast' })
             if (rec.payday === dayOfMonth) {
               const alreadyLaunched = transactions.some(t => 
                 t.recurrence_id === rec.id && 
-                t.expected_date.startsWith(currentMonthStr)
+                ((t.purchase_date && t.purchase_date.startsWith(currentMonthStr)) || t.expected_date.startsWith(currentMonthStr))
               );
 
               if (!alreadyLaunched) {

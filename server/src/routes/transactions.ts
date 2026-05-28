@@ -65,6 +65,10 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         if (!data.realized_date) data.realized_date = new Date().toISOString();
       }
 
+      if (data.status === 'realized') {
+        data.is_scheduled = false;
+      }
+
       // Salva a transação final (seja da Regra 1, 2, 3 ou puras)
       const transaction = await pb.collection('transactions').create(data);
       
@@ -280,6 +284,10 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
         if (!data.realized_date) data.realized_date = new Date().toISOString();
       }
 
+      if (data.status === 'realized') {
+        data.is_scheduled = false;
+      }
+
       const transaction = await pb.collection('transactions').update(params.id, data);
       return transaction;
 
@@ -327,7 +335,8 @@ export const transactionRoutes = new Elysia({ prefix: '/api/transactions' })
       const updatedTxn = await pb.collection('transactions').update(txn.id, {
         status: 'realized',
         realized_date: new Date().toISOString(),
-        is_silent: !shouldUpdateBalance
+        is_silent: !shouldUpdateBalance,
+        is_scheduled: false
       });
 
       return updatedTxn;

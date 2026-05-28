@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   # 1. App (Nuxt 3)
-  app:
+  obol-app:
     build:
       context: ./app
       dockerfile: Dockerfile.dev
@@ -21,7 +21,7 @@ services:
       - server
 
   # 2. Server (ElysiaJS no Bun)
-  server:
+  obol-server:
     build:
       context: ./server
       dockerfile: Dockerfile.dev
@@ -39,7 +39,7 @@ services:
       - database
 
   # 3. Banco de Dados (PocketBase)
-  database:
+  obol-database:
     image: ghcr.io/muchobien/pocketbase:latest
     container_name: obol-pocketbase
     ports:
@@ -53,10 +53,10 @@ services:
       - ./db/pb_migrations:/pb_migrations # Aqui vai a nossa magia
     networks:
       - obol_net
-    command: ["serve", "--http=0.0.0.0:8090", "--dir=/pb_data", "--migrationsDir=/pb_migrations"]
+    command: [ "serve", "--http=0.0.0.0:8090", "--dir=/pb_data", "--migrationsDir=/pb_migrations" ]
 
   # 4. Laboratório de Desenvolvimento (Notas Markdown)
-  docs:
+  obol-docs:
     image: zefhemel/silverbullet
     container_name: obol-docs
     ports:
