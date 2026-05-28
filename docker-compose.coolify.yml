@@ -10,11 +10,11 @@ services:
     expose:
       - "3000"
     environment:
-      - NUXT_PUBLIC_API_BASE=http://server:8080 # Comunicação via rede interna
+      - NUXT_PUBLIC_API_BASE=http://obol-server:8080 # Comunicação via rede interna
     networks:
       - obol_net
     depends_on:
-      - server
+      - obol-server
 
   # 2. Server (ElysiaJS no Bun)
   obol-server:
@@ -23,13 +23,13 @@ services:
       dockerfile: Dockerfile
     container_name: obol-elysia
     environment:
-      - POCKETBASE_URL=http://database:8090 # Comunicação interna com o banco
+      - POCKETBASE_URL=http://obol-database:8090 # Comunicação interna com o banco
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
       - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
     networks:
       - obol_net
     depends_on:
-      - database
+      - obol-database
 
   # 3. Banco de Dados (PocketBase)
   obol-database:
