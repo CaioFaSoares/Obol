@@ -6,7 +6,7 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile.dev
-    container_name: obol-nuxt
+    container_name: nuxt
     ports:
       - "3000:3000"
     environment:
@@ -25,7 +25,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile.dev
-    container_name: obol-elysia
+    container_name: elysia
     environment:
       - POCKETBASE_URL=http://obol-database:8090 # Comunicação interna com o banco
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
@@ -41,7 +41,7 @@ services:
   # 3. Banco de Dados (PocketBase)
   obol-database:
     image: ghcr.io/muchobien/pocketbase:latest
-    container_name: obol-pocketbase
+    container_name: pocketbase
     ports:
       - "8090:8090" # Portal de Admin acessível em http://localhost:8090/_/
     environment:
@@ -58,7 +58,7 @@ services:
   # 4. Laboratório de Desenvolvimento (Notas Markdown)
   obol-docs:
     image: zefhemel/silverbullet
-    container_name: obol-docs
+    container_name: docs
     ports:
       - "3030:3000" # Acessível em http://localhost:3030
     volumes:
