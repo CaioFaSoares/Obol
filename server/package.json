@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@elysiajs/cron": "^1.4.2",
+    "awilix": "^13.0.3",
     "elysia": "latest",
     "pocketbase": "^0.26.9"
   },

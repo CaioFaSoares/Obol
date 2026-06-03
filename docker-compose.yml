@@ -6,11 +6,12 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile.dev
-    container_name: nuxt
+    container_name: obol-nuxt
     ports:
-      - "3000:3000"
+      - "13000:13000"
     environment:
-      - NUXT_PUBLIC_API_BASE=http://obol-server:8080 # Comunicação via rede interna
+      - PORT=13000
+      - NUXT_PUBLIC_API_BASE=http://obol-server:13080 # Comunicação via rede interna
     volumes:
       - ./app:/app
       - /app/node_modules
@@ -25,9 +26,12 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile.dev
-    container_name: elysia
+    container_name: obol-elysia
+    ports:
+      - "13080:13080"
     environment:
-      - POCKETBASE_URL=http://obol-database:8090 # Comunicação interna com o banco
+      - PORT=13080
+      - POCKETBASE_URL=http://obol-database:13090 # Comunicação interna com o banco
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
       - PB_ADMIN_PASSWORD=${PB_ADMIN_PASSWORD:-sua_senha_forte_aqui}
     volumes:
@@ -41,9 +45,9 @@ services:
   # 3. Banco de Dados (PocketBase)
   obol-database:
     image: ghcr.io/muchobien/pocketbase:latest
-    container_name: pocketbase
+    container_name: obol-pocketbase
     ports:
-      - "8090:8090" # Portal de Admin acessível em http://localhost:8090/_/
+      - "13090:13090" # Portal de Admin acessível em http://localhost:13090/_/
     environment:
       # Variáveis que nosso script de migração vai ler
       - PB_ADMIN_EMAIL=${PB_ADMIN_EMAIL:-caio@copland.studio}
@@ -53,14 +57,14 @@ services:
       - ./db/pb_migrations:/pb_migrations # Aqui vai a nossa magia
     networks:
       - obol_net
-    command: [ "serve", "--http=0.0.0.0:8090", "--dir=/pb_data", "--migrationsDir=/pb_migrations" ]
+    command: [ "serve", "--http=0.0.0.0:13090", "--dir=/pb_data", "--migrationsDir=/pb_migrations" ]
 
   # 4. Laboratório de Desenvolvimento (Notas Markdown)
   obol-docs:
     image: zefhemel/silverbullet
-    container_name: docs
+    container_name: obol-silverbullet
     ports:
-      - "3030:3000" # Acessível em http://localhost:3030
+      - "13030:3000" # Acessível em http://localhost:13030
     volumes:
       - ./docs:/space # Seus arquivos .md ficam salvos nesta pasta do projeto
     networks:

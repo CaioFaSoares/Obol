@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase';
 
-const pb = new PocketBase('http://database:8090');
+const pb = new PocketBase(process.env.POCKETBASE_URL || 'http://localhost:13090');
 await pb.collection('_superusers').authWithPassword('caio@copland.studio', 'sua_senha_forte_aqui');
 
 // 1. Limpar
@@ -18,9 +18,9 @@ await pb.collection('recurring_incomes').create({
 });
 
 console.log("Mock data created. Triggering first cron execution...");
-const r1 = await fetch('http://localhost:8080/api/jobs/recurrence', { method: 'POST' }).then(r=>r.json());
+const r1 = await fetch('http://localhost:13080/api/jobs/recurrence', { method: 'POST' }).then(r=>r.json());
 console.log("Result 1:", r1);
 
 console.log("Triggering second cron execution (Idempotency Test)...");
-const r2 = await fetch('http://localhost:8080/api/jobs/recurrence', { method: 'POST' }).then(r=>r.json());
+const r2 = await fetch('http://localhost:13080/api/jobs/recurrence', { method: 'POST' }).then(r=>r.json());
 console.log("Result 2:", r2);

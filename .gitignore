@@ -21,3 +21,4 @@ db/pb_data
 .env
 .env.*
 !.env.example
+.agents/
