@@ -203,4 +203,24 @@ describe('HTTP use-case dispatch boundary', () => {
       ],
     ]);
   });
+
+  test('dispatch invokes the resolved class method with its instance receiver', async () => {
+    const container = createContainer({ injectionMode: InjectionMode.CLASSIC });
+    const listFake = {
+      calls: 0,
+      result: [{ id: 'cat_1', name: 'Food' }],
+      async execute() {
+        this.calls += 1;
+        return this.result;
+      }
+    };
+    container.register({ listCategoriesUseCase: asValue(listFake) });
+    const app = bootApp(container);
+
+    const response = await app.handle(jsonRequest('/api/categories', 'GET'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(listFake.result);
+    expect(listFake.calls).toBe(1);
+  });
 });

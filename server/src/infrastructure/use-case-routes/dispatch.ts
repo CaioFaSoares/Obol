@@ -13,9 +13,8 @@ import { AwilixContainer } from 'awilix';
 import { UseCaseRegistry, UseCaseToken } from './registry';
 
 type UseCaseInput<K extends UseCaseToken> = Parameters<UseCaseRegistry[K]['execute']>;
-type UseCaseExecutor<K extends UseCaseToken> = (
-  ...args: UseCaseInput<K>
-) => ReturnType<UseCaseRegistry[K]['execute']>;
+type UseCaseExecutor<K extends UseCaseToken> =
+  (this: UseCaseRegistry[K], ...args: UseCaseInput<K>) => ReturnType<UseCaseRegistry[K]['execute']>;
 
 /**
  * Resolves the use case registered under `token` and executes it with `args`.
@@ -31,7 +30,7 @@ export function executeUseCase<K extends UseCaseToken>(
 ): ReturnType<UseCaseRegistry[K]['execute']> {
   const instance = container.resolve<UseCaseRegistry[K]>(token);
   const execute = instance.execute as UseCaseExecutor<K>;
-  return execute(...args);
+  return execute.call(instance, ...args);
 }
 
 /**
