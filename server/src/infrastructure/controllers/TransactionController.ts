@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { TransactionDTO } from '../validators/transactionSchemas';
 import { executeUseCase } from '../use-case-routes';
+import { TransactionListQueryDTO, TransactionQueryFiltersDTO } from '../validators/transactionQuerySchemas';
 
 export const transactionController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/transactions' })
@@ -15,20 +16,28 @@ export const transactionController = (container: AwilixContainer) =>
     })
 
     // GET /api/transactions
-    .get('/', async ({ query }) => {
-      const page = Number(query?.page) || 1;
-      const perPage = Number(query?.perPage) || 15;
-      const sort = query?.sort || '-expected_date';
-      const filter = query?.filter;
-
-      return await executeUseCase(container, 'listTransactionsUseCase', { page, perPage, sort, filter });
+    .get('/summary', async ({ query }) => {
+      return await executeUseCase(container, 'summarizeTransactionsUseCase', query);
     }, {
-      query: t.Optional(t.Object({
-        filter: t.Optional(t.String()),
-        sort: t.Optional(t.String()),
-        page: t.Optional(t.String()),
-        perPage: t.Optional(t.String())
-      }))
+      query: TransactionQueryFiltersDTO
+    })
+
+    .get('/', async ({ query }) => {
+      const page = Number(query.page) || 1;
+      const perPage = Number(query.perPage) || 15;
+      const sort = query.sort || '-expected_date';
+      const { filter, expandInvoice, ...filters } = query;
+
+      return await executeUseCase(container, 'listTransactionsUseCase', {
+        ...filters,
+        page,
+        perPage,
+        sort,
+        ...(expandInvoice === 'true' ? { expandInvoice: true } : {}),
+        filter
+      });
+    }, {
+      query: TransactionListQueryDTO
     })
 
     // DELETE /api/transactions/:id

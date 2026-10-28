@@ -14,6 +14,7 @@ import { DeleteTransactionUseCase } from '../../application/use-cases/transactio
 import { UpdateTransactionUseCase } from '../../application/use-cases/transactions/UpdateTransactionUseCase';
 import { RealizeTransactionUseCase } from '../../application/use-cases/transactions/RealizeTransactionUseCase';
 import { ListTransactionsUseCase } from '../../application/use-cases/transactions/ListTransactionsUseCase';
+import { SummarizeTransactionsUseCase } from '../../application/use-cases/transactions/SummarizeTransactionsUseCase';
 import { GenerateForecastUseCase } from '../../application/use-cases/forecast/GenerateForecastUseCase';
 import { ListCardsUseCase } from '../../application/use-cases/cards/ListCardsUseCase';
 import { CreateCardUseCase } from '../../application/use-cases/cards/CreateCardUseCase';
@@ -48,6 +49,7 @@ export interface UseCaseRegistry {
   updateTransactionUseCase: UpdateTransactionUseCase;
   realizeTransactionUseCase: RealizeTransactionUseCase;
   listTransactionsUseCase: ListTransactionsUseCase;
+  summarizeTransactionsUseCase: SummarizeTransactionsUseCase;
 
   generateForecastUseCase: GenerateForecastUseCase;
 
