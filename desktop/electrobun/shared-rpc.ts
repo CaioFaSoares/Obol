@@ -12,11 +12,35 @@ export interface ApiFetchResponse {
   body: string;
 }
 
-/** Only the desktop API request is exposed to the trusted main Obol window. */
+export interface LocalAccountSummary {
+  name: string;
+  email: string;
+}
+
+export interface LocalAuthStatus {
+  setupRequired: boolean;
+  account: LocalAccountSummary | null;
+}
+
+export interface LocalAuthSetupRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LocalAuthUnlockRequest {
+  email: string;
+  password: string;
+}
+
+/** The desktop view can unlock one local profile and then call the existing Obol API. */
 export type ObolBridgeSchema = {
   bun: {
     requests: {
       'api.fetch': { params: ApiFetchRequest; response: ApiFetchResponse };
+      'auth.status': { params: {}; response: LocalAuthStatus };
+      'auth.setup': { params: LocalAuthSetupRequest; response: LocalAccountSummary };
+      'auth.unlock': { params: LocalAuthUnlockRequest; response: LocalAccountSummary };
     };
     messages: {};
   };

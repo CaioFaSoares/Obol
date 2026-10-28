@@ -80,12 +80,13 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 ## §10 Operations
 
 - Hosted dev: `nix develop` → `docker compose up -d --build` → app :13000, server :13080, PocketBase :13090 (admin `/_/`).
-- Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies; `cd desktop && bun run eb:dev`. The dev app uses `copland.obol.eb-dev`; packaged identity/data use `copland.obol`.
+- Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies; `cd desktop && bun run eb:dev`. The local setup/unlock gate uses `copland.obol.eb-dev`; packaged identity/data use `copland.obol`.
 - Desktop data: `Utils.paths.appData/copland.obol/pb_data`; no automatic import from hosted `db/pb_data`, which remains unchanged.
-- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release workflows are in `.github/workflows/`; Cask is generated after the first actual release.
-- Env: hosted uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`. Desktop generates and stores a per-user PB admin password.
+- Local login: one profile per application-data directory; `local_profile.json` stores a salted PBKDF2 verifier. Each unlock derives the internal PB superuser credential and runs `superuser upsert` before the service starts. The login does not encrypt PB files at rest.
+- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release workflows are in `.github/workflows/`; `dev`→`main` produces `release-<version>`, GitHub assets/manifest, and the Homebrew cask.
+- Env: hosted uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`. Desktop creates its local profile on first launch.
 - Migrations: `db/pb_migrations/*.js`, executed by PocketBase on boot.
 
 ## §11 Roadmap
 
-Implemented epics: E001 — ledger hardening + local Electrobun runtime and release pipeline code (first public release not run); E002 — typed use-case dispatch. Details: [epics/](epics/). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
+Implemented epics: E001 — ledger hardening + local Electrobun runtime; E002 — typed use-case dispatch. The first public release, 0.1.0, is published. Version 0.1.0a adds first-run local login and PocketBase credential recovery; release notes are in [`releases/0.1.0a.md`](releases/0.1.0a.md). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).

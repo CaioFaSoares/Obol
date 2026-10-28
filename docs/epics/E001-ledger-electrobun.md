@@ -1,7 +1,7 @@
 # E001 - Local-first Obol: ledger hardening + Electrobun desktop packaging
 
-**Status**: code implemented · **Completed**: 2026-10-28 · **Owner**: Caio
-**Related decisions**: D001 (Triad), D003 (clean architecture), D005 (accepted local Electrobun architecture)
+**Status**: implemented · **First release**: 0.1.0 published 2026-10-28 · **Hotfix**: 0.1.0a in preparation
+**Related decisions**: D001 (Triad), D003 (clean architecture), D005 (local Electrobun), D007 (local profile unlock)
 
 ## Goal
 
@@ -83,11 +83,11 @@ Acceptance and observed results:
 - The final stable launcher smoke started PocketBase under an isolated `OBOL_APP_ID`; `/api/health` returned 200, app quit stopped the child, and the temporary profile was removed.
 - Nuxt production `npm run build` and desktop static `npm run generate` succeeded; app typecheck and server tests/typechecks passed.
 - The hosted Docker Compose topology remains in place and its configuration validates.
-- Release workflows parse and local arm64 zip + sha256 + manifest generation succeeds. No GitHub release was published and no Homebrew installation was attempted; those are external release operations, not silently run by this implementation.
+- GitHub release `release-0.1.0` succeeded: macOS arm64/x86_64 archives, checksum manifest, and `Casks/obol.rb` were published. Version 0.1.0a adds first-run login and local PocketBase credential recovery.
 
 ## Risks and boundaries
 
-- **Existing hosted data is not imported automatically.** Desktop data starts in `Utils.paths.appData/copland.obol/pb_data`; the existing `db/pb_data` volume remains untouched. This prevents accidental mutation of the hosted/dev database, but the first desktop profile starts empty.
+- **Hosted data is not imported automatically.** A fresh desktop profile starts empty; an existing local 0.1.0 `pb_data` directory is retained during the 0.1.0a login migration.
 - **PB version maintenance**: desktop pins v0.40.6 because the upstream GitHub repo was archived on 2026-10-26. Any upgrade requires a new trusted binary source, checksum, and migration test.
 - **Port collisions**: PB binds 127.0.0.1:13090; the embedded Elysia lifecycle binds 127.0.0.1:13080. Startup shows an error and stops the PB child if either cannot start.
 - **Unexpected PB exit**: the Electrobun `before-quit` hook stops Elysia and the child; an unexpected PB exit shows a native error and closes the app rather than continuing against an unavailable database.
@@ -95,6 +95,6 @@ Acceptance and observed results:
 - **Platform scope**: v1 builds macOS arm64 and x86_64. Windows/Linux Electrobun packaging is not implemented.
 ## Non-goals
 
-- Multi-user auth (Épico 1 security lock stays future work).
+- Multi-user/hosted authentication and sync remain out of scope; the desktop has one local profile with a setup/unlock gate (D007).
 - Replacing PocketBase with embedded SQLite (rejected: would rewrite all repositories for no local-run benefit).
 - Hosted sync between desktop instances.

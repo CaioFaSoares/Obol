@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BrowserView, BrowserWindow, BuildConfig, Utils } from 'electrobun/main';
 import { RESOURCES_FOLDER } from 'electrobun/main/paths';
@@ -8,7 +8,17 @@ import type { ElectrobunEvent } from 'electrobun/main/events';
 import appConfig from '../../app.json';
 import { createServer } from '../../../server/src/index';
 import { createPocketBaseClient } from '../../../server/src/infrastructure/plugins/pocketbase';
-import type { ApiFetchRequest, ApiFetchResponse, ObolBridgeSchema } from '../shared-rpc';
+import { createLocalAccount, parseLocalAccountProfile, verifyLocalAccount } from './local-auth';
+import type { LocalAccountProfile } from './local-auth';
+import type {
+  ApiFetchRequest,
+  ApiFetchResponse,
+  LocalAccountSummary,
+  LocalAuthSetupRequest,
+  LocalAuthStatus,
+  LocalAuthUnlockRequest,
+  ObolBridgeSchema
+} from '../shared-rpc';
 
 const isDev = BuildConfig.getSync().channel === 'dev';
 const identifier = process.env.OBOL_APP_ID?.trim() || appConfig.id;
@@ -23,30 +33,23 @@ const pocketBaseBinary = join(resourcesDir, 'pocketbase');
 const migrationsDir = join(resourcesDir, 'pb_migrations');
 const pocketBaseUrl = 'http://127.0.0.1:13090';
 const pocketBaseEmail = 'obol@localhost.invalid';
-const passwordPath = join(dataRoot, 'pb_admin_password');
+const localProfilePath = join(dataRoot, 'local_profile.json');
+const legacyPasswordPath = join(dataRoot, 'pb_admin_password');
 let pocketBaseProcess: Bun.Subprocess | undefined;
 let apiServer: ReturnType<typeof createServer> | undefined;
 let shuttingDown = false;
 let runtimeReady = false;
+let authenticationInProgress = false;
 
-async function adminPassword(): Promise<string> {
+async function readLocalProfile(): Promise<LocalAccountProfile | null> {
   try {
-    const saved = (await readFile(passwordPath, 'utf8')).trim();
-    if (saved.length >= 32) return saved;
-  } catch {
-    // First run: create a per-user secret that stays stable for future launches.
-  }
-
-  const generated = randomBytes(32).toString('base64url');
-  try {
-    await writeFile(passwordPath, generated, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    return parseLocalAccountProfile(await readFile(localProfilePath, 'utf8'));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    return (await readFile(passwordPath, 'utf8')).trim();
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
   }
-  if (process.platform !== 'win32') await chmod(passwordPath, 0o600);
-  return generated;
 }
+
 
 async function waitForPocketBase(child: Bun.Subprocess): Promise<void> {
   const deadline = Date.now() + 30_000;
@@ -64,17 +67,167 @@ async function waitForPocketBase(child: Bun.Subprocess): Promise<void> {
   }
   throw new Error('PocketBase did not become healthy within 30 seconds');
 }
+async function localAuthStatus(): Promise<LocalAuthStatus> {
+  const profile = await readLocalProfile();
+  return {
+    setupRequired: profile === null,
+    account: profile === null ? null : { name: profile.name, email: profile.email }
+  };
+}
+
+async function saveLocalProfile(profile: LocalAccountProfile): Promise<void> {
+  const temporaryPath = `${localProfilePath}.${randomBytes(8).toString('hex')}.tmp`;
+  await writeFile(temporaryPath, JSON.stringify(profile, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+    flag: 'wx'
+  });
+  if (process.platform !== 'win32') await chmod(temporaryPath, 0o600);
+  try {
+    await link(temporaryPath, localProfilePath);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
+async function ensurePocketBaseSuperuser(password: string): Promise<void> {
+  const result = Bun.spawnSync([
+    pocketBaseBinary,
+    `--dir=${pbDataDir}`,
+    `--migrationsDir=${migrationsDir}`,
+    'superuser',
+    'upsert',
+    pocketBaseEmail,
+    password
+  ], {
+    cwd: dataRoot,
+    env: {
+      ...process.env,
+      PB_ADMIN_EMAIL: pocketBaseEmail,
+      PB_ADMIN_PASSWORD: password
+    },
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe'
+  });
+  if (result.exitCode !== 0) {
+    console.error('PocketBase superuser upsert failed:', result.stderr.toString());
+    throw new Error('Could not prepare local PocketBase access. Existing data was not deleted.');
+  }
+}
+
+async function startLocalBackend(password: string): Promise<void> {
+  if (runtimeReady) return;
+  if (shuttingDown) throw new Error('Obol is closing.');
+
+  await ensurePocketBaseSuperuser(password);
+  try {
+    await unlink(legacyPasswordPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('Could not remove the obsolete PocketBase password file.');
+    }
+  }
+  pocketBaseProcess = Bun.spawn([
+    pocketBaseBinary,
+    'serve',
+    '--http=127.0.0.1:13090',
+    `--dir=${pbDataDir}`,
+    `--migrationsDir=${migrationsDir}`
+  ], {
+    cwd: dataRoot,
+    env: {
+      ...process.env,
+      PB_ADMIN_EMAIL: pocketBaseEmail,
+      PB_ADMIN_PASSWORD: password
+    },
+    stdin: 'ignore',
+    stdout: 'inherit',
+    stderr: 'inherit'
+  });
+  const child = pocketBaseProcess;
+  void child.exited.then(code => {
+    if (!runtimeReady || shuttingDown) return;
+    const message = `The local PocketBase process exited unexpectedly (code ${code}). Obol will close.`;
+    console.error(message);
+    void Utils.showMessageBox({
+      type: 'error',
+      title: 'Obol data service stopped',
+      message
+    }).finally(() => Utils.quit());
+  });
+
+  try {
+    await waitForPocketBase(child);
+    const pb = await createPocketBaseClient({
+      url: pocketBaseUrl,
+      adminEmail: pocketBaseEmail,
+      adminPassword: password,
+      retries: 5,
+      retryDelayMs: 500
+    });
+    const server = createServer(pb);
+    server.listen({ hostname: '127.0.0.1', port: 13080 });
+    if (!server.server) throw new Error('Could not bind Obol BFF to 127.0.0.1:13080');
+    apiServer = server;
+    runtimeReady = true;
+    console.log(`Obol local profile unlocked (${identifier})`);
+  } catch (error) {
+    await stopBackend();
+    throw error;
+  }
+}
+
+async function withAuthentication<T>(operation: () => Promise<T>): Promise<T> {
+  if (authenticationInProgress) throw new Error('Obol is already starting. Try again in a moment.');
+  authenticationInProgress = true;
+  try {
+    return await operation();
+  } finally {
+    authenticationInProgress = false;
+  }
+}
+
+async function setupLocalAccount(request: LocalAuthSetupRequest): Promise<LocalAccountSummary> {
+  return withAuthentication(async () => {
+    if (await readLocalProfile()) throw new Error('A local account already exists. Unlock it instead.');
+    const created = await createLocalAccount(request);
+    await saveLocalProfile(created.profile);
+    await startLocalBackend(created.pocketBasePassword);
+    return { name: created.profile.name, email: created.profile.email };
+  });
+}
+
+async function unlockLocalAccount(request: LocalAuthUnlockRequest): Promise<LocalAccountSummary> {
+  return withAuthentication(async () => {
+    const profile = await readLocalProfile();
+    if (!profile) throw new Error('Set up a local account to open this profile.');
+    const password = await verifyLocalAccount(request, profile);
+    if (!password) throw new Error('Invalid email or password.');
+    await startLocalBackend(password);
+    return { name: profile.name, email: profile.email };
+  });
+}
+
+async function stopBackend(): Promise<void> {
+  const server = apiServer;
+  apiServer = undefined;
+  server?.server?.stop(true);
+
+  const child = pocketBaseProcess;
+  pocketBaseProcess = undefined;
+  if (child && child.exitCode === null) {
+    child.kill('SIGTERM');
+    await Promise.race([child.exited, Bun.sleep(3000)]);
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+  runtimeReady = false;
+}
 
 async function stopRuntime(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  apiServer?.server?.stop(true);
-
-  if (pocketBaseProcess && pocketBaseProcess.exitCode === null) {
-    pocketBaseProcess.kill('SIGTERM');
-    await Promise.race([pocketBaseProcess.exited, Bun.sleep(3000)]);
-    if (pocketBaseProcess.exitCode === null) pocketBaseProcess.kill('SIGKILL');
-  }
+  await stopBackend();
 }
 
 function appFrame(): { width: number; height: number } {
@@ -128,88 +281,35 @@ async function main(): Promise<void> {
     throw new Error(`Bundled PocketBase migrations are missing: ${migrationsDir}`);
   }
 
-  const password = await adminPassword();
-  pocketBaseProcess = Bun.spawn([
-    pocketBaseBinary,
-    'serve',
-    '--http=127.0.0.1:13090',
-    `--dir=${pbDataDir}`,
-    `--migrationsDir=${migrationsDir}`
-  ], {
-    cwd: dataRoot,
-    env: {
-      ...process.env,
-      PB_ADMIN_EMAIL: pocketBaseEmail,
-      PB_ADMIN_PASSWORD: password
-    },
-    stdin: 'ignore',
-    stdout: 'inherit',
-    stderr: 'inherit'
-  });
-  const child = pocketBaseProcess;
-  void child.exited.then(code => {
-    if (!runtimeReady || shuttingDown) return;
-    const message = `The local PocketBase process exited unexpectedly (code ${code}). Obol will close.`;
-    console.error(message);
-    void Utils.showMessageBox({
-      type: 'error',
-      title: 'Obol data service stopped',
-      message
-    }).finally(() => Utils.quit());
-  });
-
-  try {
-    await waitForPocketBase(pocketBaseProcess);
-    const pb = await createPocketBaseClient({
-      url: pocketBaseUrl,
-      adminEmail: pocketBaseEmail,
-      adminPassword: password,
-      retries: 5,
-      retryDelayMs: 500
-    });
-
-    apiServer = createServer(pb);
-    // The embedded listener activates Elysia's scheduler and supports Nuxt SSR in `eb:dev`.
-    // The packaged WebView uses RPC and never calls this loopback listener directly.
-    apiServer.listen({ hostname: '127.0.0.1', port: 13080 });
-    if (!apiServer.server) throw new Error('Could not bind Obol BFF to 127.0.0.1:13080');
-
-    const mainRpc = BrowserView.defineRPC<ObolBridgeSchema>({
-      maxRequestTime: 120_000,
-      handlers: {
-        requests: {
-          'api.fetch': dispatchApiRequest
-        },
-        messages: {}
-      }
-    });
-    const preload = await bridgePreload();
-    const mainUrl = isDev
-      ? process.env.OBOL_MAIN_URL || 'http://127.0.0.1:3303/'
-      : 'views://mainview/index.html';
-
-    new BrowserWindow({
-      title: appConfig.title,
-      frame: { width: appFrame().width, height: appFrame().height },
-      url: mainUrl,
-      preload,
-      rpc: mainRpc,
-      renderer: 'native',
-      allowedProtocols: { views: true, appData: false }
-    });
-    runtimeReady = true;
-    console.log(`Obol desktop ready (${identifier}); data: ${dataRoot}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    try {
-      await Utils.showMessageBox({ type: 'error', title: 'Obol could not start', message });
-    } catch {
-      console.error(message);
+  const mainRpc = BrowserView.defineRPC<ObolBridgeSchema>({
+    maxRequestTime: 120_000,
+    handlers: {
+      requests: {
+        'api.fetch': dispatchApiRequest,
+        'auth.status': localAuthStatus,
+        'auth.setup': setupLocalAccount,
+        'auth.unlock': unlockLocalAccount
+      },
+      messages: {}
     }
-    await stopRuntime();
-    throw error;
-  }
+  });
+  const preload = await bridgePreload();
+  const mainUrl = isDev
+    ? process.env.OBOL_MAIN_URL || 'http://127.0.0.1:3303/'
+    : 'views://mainview/index.html';
+
+  new BrowserWindow({
+    title: appConfig.title,
+    frame: { width: appFrame().width, height: appFrame().height },
+    url: mainUrl,
+    preload,
+    rpc: mainRpc,
+    renderer: 'native',
+    allowedProtocols: { views: true, appData: false }
+  });
+  console.log(`Obol local login ready (${identifier}); data: ${dataRoot}`);
 }
+
 
 electrobunEventEmitter.on(
   'before-quit',
@@ -239,4 +339,15 @@ process.on('exit', () => {
 process.on('SIGINT', () => Utils.quit());
 process.on('SIGTERM', () => Utils.quit());
 
-await main();
+try {
+  await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    await Utils.showMessageBox({ type: 'error', title: 'Obol could not start', message });
+  } catch {
+    console.error(message);
+  }
+  await stopRuntime();
+  throw error;
+}
