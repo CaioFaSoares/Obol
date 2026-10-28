@@ -1,26 +1,18 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { RecurrenceDTO } from '../validators/recurrenceSchemas';
-import { ListRecurrencesUseCase } from '../../application/use-cases/recurrences/ListRecurrencesUseCase';
-import { CreateRecurrenceUseCase } from '../../application/use-cases/recurrences/CreateRecurrenceUseCase';
-import { UpdateRecurrenceUseCase } from '../../application/use-cases/recurrences/UpdateRecurrenceUseCase';
-import { DeleteRecurrenceUseCase } from '../../application/use-cases/recurrences/DeleteRecurrenceUseCase';
-import { ToggleRecurrenceStatusUseCase } from '../../application/use-cases/recurrences/ToggleRecurrenceStatusUseCase';
-import { LaunchRecurrenceUseCase } from '../../application/use-cases/recurrences/LaunchRecurrenceUseCase';
-import { GetRecurrenceTransactionsUseCase } from '../../application/use-cases/recurrences/GetRecurrenceTransactionsUseCase';
+import { executeUseCase } from '../use-case-routes';
 
 export const recurrenceController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/recurrences' })
     // GET /api/recurrences
     .get('/', async () => {
-      const useCase = container.resolve<ListRecurrencesUseCase>('listRecurrencesUseCase');
-      return await useCase.execute();
+      return await executeUseCase(container, 'listRecurrencesUseCase');
     })
 
     // POST /api/recurrences
     .post('/', async ({ body, set }) => {
-      const useCase = container.resolve<CreateRecurrenceUseCase>('createRecurrenceUseCase');
-      const record = await useCase.execute(body);
+      const record = await executeUseCase(container, 'createRecurrenceUseCase', body);
       set.status = 201;
       return record;
     }, {
@@ -29,28 +21,24 @@ export const recurrenceController = (container: AwilixContainer) =>
 
     // PUT /api/recurrences/:id
     .put('/:id', async ({ params, body }) => {
-      const useCase = container.resolve<UpdateRecurrenceUseCase>('updateRecurrenceUseCase');
-      return await useCase.execute(params.id, body);
+      return await executeUseCase(container, 'updateRecurrenceUseCase', params.id, body);
     }, {
       body: t.Partial(RecurrenceDTO)
     })
 
     // DELETE /api/recurrences/:id
     .delete('/:id', async ({ params }) => {
-      const useCase = container.resolve<DeleteRecurrenceUseCase>('deleteRecurrenceUseCase');
-      return await useCase.execute(params.id);
+      return await executeUseCase(container, 'deleteRecurrenceUseCase', params.id);
     })
 
     // GET /api/recurrences/:id/transactions
     .get('/:id/transactions', async ({ params }) => {
-      const useCase = container.resolve<GetRecurrenceTransactionsUseCase>('getRecurrenceTransactionsUseCase');
-      return await useCase.execute(params.id);
+      return await executeUseCase(container, 'getRecurrenceTransactionsUseCase', params.id);
     })
 
     // PATCH /api/recurrences/:id/toggle-status
     .patch('/:id/toggle-status', async ({ params, body }) => {
-      const useCase = container.resolve<ToggleRecurrenceStatusUseCase>('toggleRecurrenceStatusUseCase');
-      return await useCase.execute(params.id, body.status);
+      return await executeUseCase(container, 'toggleRecurrenceStatusUseCase', params.id, body.status);
     }, {
       body: t.Object({
         status: t.Union([t.Literal('active'), t.Literal('paused')])
@@ -59,8 +47,7 @@ export const recurrenceController = (container: AwilixContainer) =>
 
     // POST /api/recurrences/:id/launch
     .post('/:id/launch', async ({ params, set }) => {
-      const useCase = container.resolve<LaunchRecurrenceUseCase>('launchRecurrenceUseCase');
-      const transaction = await useCase.execute(params.id);
+      const transaction = await executeUseCase(container, 'launchRecurrenceUseCase', params.id);
       set.status = 201;
       return transaction;
     });

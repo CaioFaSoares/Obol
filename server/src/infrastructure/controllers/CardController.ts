@@ -1,25 +1,19 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { CardDTO, CardInvoicesResponseDTO, PayInvoiceDTO } from '../validators/cardSchemas';
-import { ListCardsUseCase } from '../../application/use-cases/cards/ListCardsUseCase';
-import { CreateCardUseCase } from '../../application/use-cases/cards/CreateCardUseCase';
-import { UpdateCardUseCase } from '../../application/use-cases/cards/UpdateCardUseCase';
-import { GetCardInvoicesUseCase } from '../../application/use-cases/cards/GetCardInvoicesUseCase';
-import { PayInvoiceUseCase } from '../../application/use-cases/cards/PayInvoiceUseCase';
-import { DeleteInvoiceUseCase } from '../../application/use-cases/cards/DeleteInvoiceUseCase';
+import { executeUseCase } from '../use-case-routes';
+import type { Card } from '../../domain/entities/Card';
 
 export const cardController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/cards' })
     // GET /api/cards
     .get('/', async () => {
-      const useCase = container.resolve<ListCardsUseCase>('listCardsUseCase');
-      return await useCase.execute();
+      return await executeUseCase(container, 'listCardsUseCase');
     })
 
     // POST /api/cards
     .post('/', async ({ body, set }) => {
-      const useCase = container.resolve<CreateCardUseCase>('createCardUseCase');
-      const card = await useCase.execute(body);
+      const card = await executeUseCase(container, 'createCardUseCase', body);
       set.status = 201;
       return card;
     }, {
@@ -28,14 +22,12 @@ export const cardController = (container: AwilixContainer) =>
 
     // PATCH /api/cards/:id
     .patch('/:id', async ({ params, body }) => {
-      const useCase = container.resolve<UpdateCardUseCase>('updateCardUseCase');
-      return await useCase.execute(params.id, body);
+      return await executeUseCase(container, 'updateCardUseCase', params.id, body as Partial<Card>);
     })
 
     // GET /api/cards/:id/invoices
     .get('/:id/invoices', async ({ params }) => {
-      const useCase = container.resolve<GetCardInvoicesUseCase>('getCardInvoicesUseCase');
-      return await useCase.execute(params.id);
+      return await executeUseCase(container, 'getCardInvoicesUseCase', params.id);
     }, {
       response: {
         200: CardInvoicesResponseDTO,
@@ -45,8 +37,7 @@ export const cardController = (container: AwilixContainer) =>
 
     // POST /api/cards/:id/pay-invoice
     .post('/:id/pay-invoice', async ({ params, body }) => {
-      const useCase = container.resolve<PayInvoiceUseCase>('payInvoiceUseCase');
-      return await useCase.execute({
+      return await executeUseCase(container, 'payInvoiceUseCase', {
         cardId: params.id,
         period: body.period,
         accountId: body.account_id,
@@ -59,6 +50,5 @@ export const cardController = (container: AwilixContainer) =>
 
     // DELETE /api/cards/:id/invoices/:period
     .delete('/:id/invoices/:period', async ({ params }) => {
-      const useCase = container.resolve<DeleteInvoiceUseCase>('deleteInvoiceUseCase');
-      return await useCase.execute(params.id, params.period);
+      return await executeUseCase(container, 'deleteInvoiceUseCase', params.id, params.period);
     });
