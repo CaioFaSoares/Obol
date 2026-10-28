@@ -35,7 +35,7 @@ In desktop mode, the WebView sends typed API requests over Electrobun RPC. The m
 
 ## Releases
 
-Merging a pull request from `dev` into `main` creates a `release-<version>` branch. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
+The current `desktop/app.json` version is `0.1.0`. Once the release workflows are on `main` and a `dev` branch exists, merging a pull request from `dev` into `main` creates `release-0.1.0`. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
 
 The manifest records release metadata; Obol does not currently update itself. Builds are ad-hoc signed, not Developer ID signed or notarized. The cask clears the quarantine flag during installation.
 
