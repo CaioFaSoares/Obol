@@ -1,28 +1,23 @@
 import { Elysia } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { CategoryDTO } from '../validators/categorySchemas';
-import { ListCategoriesUseCase } from '../../application/use-cases/categories/ListCategoriesUseCase';
-import { GetBudgetsUseCase } from '../../application/use-cases/categories/GetBudgetsUseCase';
-import { CreateCategoryUseCase } from '../../application/use-cases/categories/CreateCategoryUseCase';
+import { executeUseCase } from '../use-case-routes';
 
 export const categoryController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/categories' })
     // GET /api/categories
     .get('/', async () => {
-      const useCase = container.resolve<ListCategoriesUseCase>('listCategoriesUseCase');
-      return await useCase.execute();
+      return await executeUseCase(container, 'listCategoriesUseCase');
     })
 
     // GET /api/categories/budgets
     .get('/budgets', async () => {
-      const useCase = container.resolve<GetBudgetsUseCase>('getBudgetsUseCase');
-      return await useCase.execute();
+      return await executeUseCase(container, 'getBudgetsUseCase');
     })
 
     // POST /api/categories
     .post('/', async ({ body, set }) => {
-      const useCase = container.resolve<CreateCategoryUseCase>('createCategoryUseCase');
-      const category = await useCase.execute(body);
+      const category = await executeUseCase(container, 'createCategoryUseCase', body);
       set.status = 201;
       return category;
     }, {

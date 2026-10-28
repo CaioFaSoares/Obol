@@ -1,13 +1,12 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { ForecastQueryDTO, ForecastResponseDTO } from '../validators/forecastSchemas';
-import { GenerateForecastUseCase } from '../../application/use-cases/forecast/GenerateForecastUseCase';
+import { executeUseCase } from '../use-case-routes';
 
 export const forecastController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/forecast' })
     .get('/', async ({ query }) => {
-      const useCase = container.resolve<GenerateForecastUseCase>('generateForecastUseCase');
-      return await useCase.execute(query);
+      return await executeUseCase(container, 'generateForecastUseCase', query);
     }, {
       query: ForecastQueryDTO,
       response: {
