@@ -1,10 +1,9 @@
 import { Elysia } from 'elysia';
-import { pb } from './infrastructure/plugins/pocketbase';
-import { container } from './infrastructure/di/container';
+import type PocketBase from 'pocketbase';
+import { createPocketBaseClient } from './infrastructure/plugins/pocketbase';
+import { createContainer } from './infrastructure/di/container';
 import { errorPlugin } from './infrastructure/plugins/errorPlugin';
 import { schedulerPlugin } from './infrastructure/scheduler';
-
-// Import Controllers
 import { transactionController } from './infrastructure/controllers/TransactionController';
 import { forecastController } from './infrastructure/controllers/ForecastController';
 import { cardController } from './infrastructure/controllers/CardController';
@@ -14,38 +13,42 @@ import { projectController } from './infrastructure/controllers/ProjectControlle
 import { accountController } from './infrastructure/controllers/AccountController';
 import { jobController } from './infrastructure/controllers/JobController';
 
-const port = process.env.PORT || 8080;
 
-const app = new Elysia()
-  // Mount the global error plugin
-  .use(errorPlugin)
-  
-  // Mount the background scheduler (cron job)
-  .use(schedulerPlugin(container))
-  
-  // Mount controllers passing the DI container
-  .use(transactionController(container))
-  .use(forecastController(container))
-  .use(cardController(container))
-  .use(recurrenceController(container))
-  .use(categoryController(container))
-  .use(projectController(container))
-  .use(accountController(container))
-  .use(jobController(container))
+/** Builds the BFF around an already authenticated PocketBase client. */
+export function createServer(pb: PocketBase) {
+  const container = createContainer(pb);
 
-  // Rota de Health Check
-  .get('/', async () => {
-    const adminEmail = pb.authStore.record?.email;
-    return { 
-      status: 'Online', 
-      message: 'BFF conectado ao PocketBase',
-      admin: adminEmail
-    };
-  })
-  
-  .listen({ port, hostname: '0.0.0.0' });
+  return new Elysia()
+    .use(errorPlugin)
+    .use(schedulerPlugin(container))
+    .use(transactionController(container))
+    .use(forecastController(container))
+    .use(cardController(container))
+    .use(recurrenceController(container))
+    .use(categoryController(container))
+    .use(projectController(container))
+    .use(accountController(container))
+    .use(jobController(container))
+    .get('/', () => ({
+      status: 'Online',
+      message: 'BFF connected to PocketBase',
+      admin: pb.authStore.record?.email
+    }));
+}
 
-console.log(`🚀 Obol BFF running at ${app.server?.hostname}:${app.server?.port}`);
+export type App = ReturnType<typeof createServer>;
 
-// Exportamos o tipo para o Nuxt consumir via Eden Treaty!
-export type App = typeof app;
+export async function startHostedServer() {
+  const pb = await createPocketBaseClient({
+    url: process.env.POCKETBASE_URL ?? '',
+    adminEmail: process.env.PB_ADMIN_EMAIL ?? '',
+    adminPassword: process.env.PB_ADMIN_PASSWORD ?? ''
+  });
+  const app = createServer(pb);
+  const port = Number(process.env.PORT) || 8080;
+  app.listen({ port, hostname: '0.0.0.0' });
+  console.log(`🚀 Obol BFF running at ${app.server?.hostname}:${app.server?.port}`);
+  return app;
+}
+
+if (import.meta.main) await startHostedServer();

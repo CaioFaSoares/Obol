@@ -1,7 +1,7 @@
 # E001 - Local-first Obol: ledger hardening + Electrobun desktop packaging
 
-**Status**: proposed · **Owner**: Caio · **Created**: 2026-10-28
-**Related decisions**: D001 (Triad), D003 (clean architecture — the lever for this epic), D005 (Electrobun local packaging, proposed)
+**Status**: code implemented · **Completed**: 2026-10-28 · **Owner**: Caio
+**Related decisions**: D001 (Triad), D003 (clean architecture), D005 (accepted local Electrobun architecture)
 
 ## Goal
 
@@ -18,81 +18,81 @@ The ledger gaps are known and small (below); the Electrobun port is a structural
 
 ## Sprint 1 — s01-ledger-hardening
 
-Current state (verified from `app/pages/ledger.vue`, 2026-10-28): paginated table (20/page), debounced title search, status/type/simulation/scheduled filters, simulation→reality conversion modal, edit modal integration. Gaps:
+### Baseline before E001
 
-| Gap | Change |
+The ledger had pagination, title search, status/type/simulation/scheduled filters, and edit integration. It lacked date/entity filters, filtered-set totals, sorting, lifecycle context, reliable fetch errors, and export. The dashboard also passed raw PocketBase expressions in transaction requests.
+
+### Implemented ledger contract
+
+| Baseline gap | Implemented outcome |
 |---|---|
-| No date-range filter | `expected_date`/`realized_date` range in the filter bar (mode follows status filter) |
-| No entity filter | Account / card / category selects, joined into the PocketBase filter |
-| No filtered-set totals | New `SummarizeTransactionsUseCase` + `/api/transactions/summary` returning income/expense/net/count for the exact same filter string; row above the table |
-| Fixed sort | Sort selector (`expected_date`/`amount`/`created`, asc/desc) passed through `ListTransactionsUseCase` |
-| Raw filter interpolation | Escape `'` and quotes in search text before building `title ~ '...'` (currently `ledger.vue:63` interpolates raw) |
-| `confirm()` delete | App modal (matches the app's modal language) |
-| Missing lifecycle badges | Show `is_silent`, `invoice_id` (invoice period), `recurrence_id` badges next to title |
-| Swallowed fetch errors | Toast on fetch failure (`ledger.vue:106` currently `console.error` only) |
-| No export | CSV export of the current filtered set (client-side from fetched pages, cap 1000) |
+| No date/entity filters | Structured date, account, card, and category filters, plus status/type/simulation/scheduled/search |
+| No filtered-set totals | `/api/transactions/summary` uses the same structured filters; transfer rows count but do not affect income/expense/net |
+| Fixed sort | Allowlisted sort by expected date, realized date, amount, or creation time |
+| Raw filter interpolation | All app transaction-list callers use structured query parameters; unknown/raw PocketBase query keys are rejected at the HTTP boundary; repository expressions use PocketBase parameter binding |
+| `confirm()` delete / missing lifecycle context | App delete modal and transaction lifecycle/invoice/recurrence badges |
+| Swallowed fetch errors / no export | Visible error and success feedback; CSV export of current filters, capped at 1,000 rows |
 
-Acceptance:
-- Filtering by date range + entity + status returns exactly the PocketBase filter result (verified via `/api/transactions` response count).
-- Summary row totals reconcile with a manual sum over the filtered pages.
-- No `confirm()`/`alert()` calls remain in `ledger.vue`.
-- Server still typechecks; ledger page boots against the dev stack.
+Acceptance was exercised against PocketBase fixtures and in the browser: filters and summary totals matched, export included invoice period, and delete cancellation left the row unchanged.
 
 ## Sprint 2 — s02-electrobun-shell
 
 Port Nod's system (full inventory: Nod `docs/electrobun.md`, `docs/distribuicao.md`, its `scripts/`). Target facts from Nod: Electrobun 2.0.5, `bundleCEF: false`, system webview, Bun main process, IPC via `defineElectrobunRPC`, views bridge as document-start preload.
 
-Architecture (the minimal-rework path — Nod pattern, adapted):
+Implemented architecture (Nod's local-main-process model, with the existing Elysia app retained):
 
 ```
-┌─ Electrobun window ─────────────────────────────────────────┐
-│  view: Nuxt SPA build (ssr:false → nuxi generate → dist/)    │
-│        Eden base = http://127.0.0.1:13080                    │
-└──────────────▲──────────────────────────────────────────────┘
-        IPC (bridge preload)
-┌──────────────┴──────────────────────────────────────────────┐
-│  main process (Bun) — electrobun/bun/index.ts                │
-│   1. data dir = ~/Library/Application Support/copland.obol   │
-│   2. spawn PocketBase binary child (--http 127.0.0.1:13090   │
-│      --dir <datadir>/pb_data --migrationsDir bundled)        │
-│   3. run Elysia BFF in-process (server/src, PORT=13080)      │
-│   4. create window(s); exit policy on last window closed     │
-└─────────────────────────────────────────────────────────────┘
+┌─ Electrobun window (`views://mainview`) ──────────────────────┐
+│  Nuxt static SPA (`app.baseURL = './'`)                        │
+│  Eden Treaty custom fetcher → `window.obol.apiFetch` over RPC  │
+└───────────────────────────┬───────────────────────────────────┘
+                            │ typed RPC request/response
+┌───────────────────────────▼───────────────────────────────────┐
+│ Electrobun main process (Bun)                                  │
+│  1. Create per-user data directory + mode-0600 PB secret       │
+│  2. Start pinned PocketBase 0.40.6 child on 127.0.0.1:13090    │
+│  3. Wait for health/migrations; authenticate admin client      │
+│  4. Build existing Elysia app; start loopback lifecycle on     │
+│     127.0.0.1:13080 (scheduler); dispatch UI RPC to app.handle │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-Design choices (record as D005 when accepted):
-- **Keep the Triad shapes, not the Docker shape.** PocketBase runs as a managed child process (MIT-licensed binary, per-OS builds published upstream) instead of a container; repositories in `server/src/infrastructure/repositories/` are untouched — that is D003's payoff.
-- **Nuxt SPA, not SSR.** Desktop view is a static build; `NUXT_PUBLIC_API_BASE` becomes `127.0.0.1:13080`. Plugins are already client-safe (`echarts.client.ts`).
-- **Server in-process** (import `App` and `listen` inside the main process) — single Bun runtime, no HTTP hop between two local processes.
+The UI does not call the loopback BFF over HTTP. Elysia's loopback listener exists for hosted-compatible lifecycle/scheduler behavior; the desktop WebView reaches `app.handle(Request)` through Electrobun RPC. No external server, Docker, or network-facing port is needed.
 
-Port checklist (from the Nod audit):
+Implemented decisions (D005):
 
-1. `app.json` — name Obol, id `copland.obol`, scheme `obol`, version, window size, permission strings (drop camera/microphone if unused).
-2. `scripts/` — `gen-electrobun-config.ts`, `app-config.ts`, `eb-icon.ts`, `eb-build.ts`, `eb-dev.ts`, `eb-postwrap.ts`, `eb-postbuild.ts`, `eb-sign.ts` (rename every `NOD_*` env and `nod` prefix to `OBOL_*`/`obol`).
-3. `electrobun/` — `bun/index.ts` (boot order above; drop the `tjs:sqlite` shim — Obol's server is Bun-native), `view/bridge.ts`, `shared-rpc.ts` (only window/dialog/clipboard methods Obol needs; no host sync), skip `native/` Swift helper for v1.
-4. `package.json` — dev dep `electrobun@2.0.5`, scripts `eb:dev`, `eb:build`, `eb:verify`, `validate`.
-5. PocketBase binary handling — download the per-OS binary at build time into `build/` (gitignore), bundle via `build.copy` into `Resources/`, locate via `app.paths().resources` at boot; fail loudly if missing.
-6. `eb-dev.ts` — dev mode: vite dev server + spawned local PocketBase + BFF watch; dev id `copland.obol.eb-dev` (Nod refuses the release id in dev — keep that guard).
+- **Keep the Triad's business/application shape, not the Docker topology.** Elysia use cases and PocketBase repositories stay unchanged; `server/src/index.ts` now exports a side-effect-free `createServer(pb)` factory and `startHostedServer()` for Docker.
+- **Electrobun 2.0.5, system WebView, macOS arm64/x86_64.** Identity is `copland.obol`, scheme `obol`, window `1100x720`; development identity is `copland.obol.eb-dev`.
+- **Nuxt is static only in the packaged build.** `OBOL_DESKTOP_STATIC=true` sets `ssr:false` and a relative asset base; development keeps SSR/HMR. Nuxt UI v2 uses a local icon bundle so the app does not depend on Iconify's network API.
+- **PocketBase is version-pinned, not `latest`.** `desktop/pocketbase.json` pins v0.40.6 and the official macOS arm64/amd64 asset SHA-256 values. The GitHub repository was archived on 2026-10-26; future PB upgrades need an explicit source/checksum decision.
+- **Local lifecycle**: main process creates `Utils.paths.appData/copland.obol[/pb_data]`, stores a random superuser password mode 0600, launches PB on loopback :13090, waits for health/migrations, authenticates, then builds/listens on the Elysia app on loopback :13080 and opens the window. `before-quit` shuts down Elysia and the PB child. No Docker or remote host.
+- **Desktop API transport**: Eden remains typed against `server/src/index.ts` `App`; the document-start preload exposes `window.obol.apiFetch`, RPC carries path/method/headers/body, and the main process passes a `Request` to `app.handle`. Only `/api/*` is accepted. This avoids a WebView-to-loopback HTTP/CORS surface.
 
-Acceptance:
-- `bun run eb:dev` opens the window on macOS with dashboard + ledger functional against a local `pb_data`.
-- `bun run eb:build` produces a signed `Obol.app` that boots, runs migrations on first launch, and holds data across restarts (relaunch test).
-- No Docker involved anywhere in the local path.
-- The hosted Triad (`docker-compose.yml`) keeps working unchanged — this is additive, not a cutover.
+## Implemented files
 
-## Sprint 3 — s03-release-pipeline
+- `desktop/app.json`, `desktop/package.json`, `desktop/pocketbase.json`, generated `desktop/electrobun.config.ts`.
+- `desktop/electrobun/{bun/index.ts,view/bridge.ts,shared-rpc.ts}`.
+- `desktop/scripts/{ensure-pocketbase,prepare-migrations,gen-electrobun-config,eb-dev,eb-build,eb-sign,eb-verify,eb-publish,brew-cask}.ts`.
+- `.github/workflows/{release-branch.yml,release.yml}`, `Casks/obol.rb` is generated by the first actual release (no placeholder hash is tracked).
 
-Port Nod's release system: `release-branch.yml` (merge `dev`→`main` ⇒ push `release-<version>` ⇒ run), `release.yml` (prepare/build matrix/upload/merge manifests), `eb-publish.ts` (ditto zip + sha256 + `manifest.json`), `brew-cask.ts` (`Casks/obol.rb`, repo as its own tap, postflight `xattr -dr com.apple.quarantine`), version source of truth `app.json`, notes from `Release <version>:` commit subjects.
+Acceptance and observed results:
 
-Acceptance: merge to `main` produces a GitHub release with `obol-<version>-macos-<arch>.zip` + `manifest.json`; `brew install --cask` of the tap installs and launches Obol.
+- `bun run eb:dev` launched the Electrobun app, started local PB, authenticated, and issued Ledger API calls through the RPC bridge.
+- Created a smoke transaction through the local API, restarted the desktop app, confirmed the row persisted, then deleted the test row.
+- `bun run eb:build` produced a signed `Obol.app`; `bun run eb:verify` checked bundle identity, signature, launcher, generated view, and staged PB/migration resources.
+- The final stable launcher smoke started PocketBase under an isolated `OBOL_APP_ID`; `/api/health` returned 200, app quit stopped the child, and the temporary profile was removed.
+- Nuxt production `npm run build` and desktop static `npm run generate` succeeded; app typecheck and server tests/typechecks passed.
+- The hosted Docker Compose topology remains in place and its configuration validates.
+- Release workflows parse and local arm64 zip + sha256 + manifest generation succeeds. No GitHub release was published and no Homebrew installation was attempted; those are external release operations, not silently run by this implementation.
 
-## Risks
+## Risks and boundaries
 
-- **Nuxt inside Electrobun views**: the view loads from a custom `views://` scheme; Nuxt's SPA payload/router base must be relative (`--base=./`). Spike early in s02 (Nod hit this with vite `--base=./`).
-- **PocketBase child lifecycle**: crash/kills need supervision (restart policy + window error surface). Simplest: watchdog in main process, exit app on repeated failure.
-- **Port collisions** (13080/13090 already in use by a running Docker stack): boot-time port probe, fail with a human-readable message.
-- **Windows/Linux**: defer — v1 targets macOS only (matches Nod's primary path); matrix legs are s03 scope.
-
+- **Existing hosted data is not imported automatically.** Desktop data starts in `Utils.paths.appData/copland.obol/pb_data`; the existing `db/pb_data` volume remains untouched. This prevents accidental mutation of the hosted/dev database, but the first desktop profile starts empty.
+- **PB version maintenance**: desktop pins v0.40.6 because the upstream GitHub repo was archived on 2026-10-26. Any upgrade requires a new trusted binary source, checksum, and migration test.
+- **Port collisions**: PB binds 127.0.0.1:13090; the embedded Elysia lifecycle binds 127.0.0.1:13080. Startup shows an error and stops the PB child if either cannot start.
+- **Unexpected PB exit**: the Electrobun `before-quit` hook stops Elysia and the child; an unexpected PB exit shows a native error and closes the app rather than continuing against an unavailable database.
+- **Icon**: the app currently uses Electrobun's default icon; no designer-provided 1024×1024 icon asset was present.
+- **Platform scope**: v1 builds macOS arm64 and x86_64. Windows/Linux Electrobun packaging is not implemented.
 ## Non-goals
 
 - Multi-user auth (Épico 1 security lock stays future work).

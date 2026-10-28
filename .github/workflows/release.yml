@@ -1,0 +1,254 @@
+# Builds Obol for macOS arm64 and x86_64, publishes app zips plus a checksum manifest, and
+# generates the Homebrew cask from the merged manifest. The manifest is release metadata; Obol
+# does not currently implement an in-app updater. Linux/Windows legs are outside E001.
+#
+# Code signing is ad hoc (no Developer ID or notarization secret is declared). Direct downloads can
+# trigger Gatekeeper; the cask clears the quarantine attribute in its postflight step.
+
+name: release
+
+on:
+  push:
+    branches: ['release-*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  BUN_VERSION: 1.4.3
+
+jobs:
+  prepare:
+    name: check version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: read version
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          version=$(jq -r '.version' desktop/app.json)
+          # semver, plus hotfix letters right after the patch: 0.1.0a, 0.1.0b.
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z]*([-+].*)?$ ]]; then
+            echo "::error file=desktop/app.json::version '$version' is not X.Y.Z or X.Y.Z<letters> (a hotfix, as in 0.1.0a)"
+            exit 1
+          fi
+          # release-0.1.0 (or release-0.1.0a) must match desktop/app.json; other release-* names skip the check.
+          suffix="${BRANCH#release-}"
+          if [[ "$suffix" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]] && [[ "${suffix#v}" != "$version" ]]; then
+            echo "::error file=desktop/app.json::branch $BRANCH says ${suffix#v} but desktop/app.json says $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The tag carries the release prefix: releases are always `release-<version>`.
+          echo "tag=release-$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every leg runs to the end so one failure does not hide another; the release job still needs
+      # all of them.
+      fail-fast: false
+      matrix:
+        include:
+          - { target: macos-arm64,  os: macos-15,       arch: arm64,  runtime_arch: arm64 }
+          - { target: macos-x86_64, os: macos-15-intel, arch: x86_64, runtime_arch: x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The notes step looks back for the `Release <version>:` commit (see below).
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+
+      - run: bun install --frozen-lockfile
+        working-directory: server
+
+      - run: npm ci
+        working-directory: app
+
+      # One command per host: the app bundle, the ad-hoc signature, the bundled PocketBase binary
+      # and the generated Electrobun config (`desktop/package.json` scripts, maintained with the
+      # desktop build system).
+      # OBOL_RELEASE_BASE_URL: the update channel base the generated config records, so the
+      # packaged app reads its `manifest.json` from this repository's latest release.
+      - name: build the app
+        env:
+          OBOL_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/latest/download
+        run: bun run eb:build
+        working-directory: desktop
+
+      - name: verify the macOS bundle
+        run: bun run eb:verify
+        working-directory: desktop
+
+      - name: verify the shipped signature
+        run: codesign --verify --strict --deep "build/stable-macos-${{ matrix.runtime_arch }}/Obol.app"
+        working-directory: desktop
+
+      # The notes are the body of the `Release <version>:` commit — what users see in the release
+      # page. A merge commit (`Merge pull request #…`) or a dispatched run (no head_commit; the
+      # release-branch.yml case) would otherwise publish a header or nothing.
+      - name: release notes
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # `--no-merges`: a merge commit's body is the PR title (`Release X — …`), which would match
+          # first and publish one line instead of the notes.
+          pattern="^Release ${VERSION//./\\.}:"
+          notes=$(git log -1 --no-merges --extended-regexp --grep="$pattern" --format=%B)
+          [ -n "$notes" ] || notes="$MESSAGE"
+          [ -n "$notes" ] || notes=$(git log -1 --format=%B)
+          # GitHub's merge header (and the blank line after it) is not news for anyone.
+          notes=$(printf '%s\n' "$notes" | sed '/^Merge pull request #/,/^$/d')
+          printf '%s\n' "${notes:-Obol $VERSION}" > "${{ runner.temp }}/release-notes.md"
+
+      # One macOS half (`mac.<arch>` entry + the zip). The release job merges the two halves.
+      - name: publish
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          bun scripts/eb-publish.ts build \
+            --arch "$ARCH" \
+            --version "$VERSION" \
+            --base-url "https://github.com/${{ github.repository }}/releases/latest/download" \
+            --notes-file "${{ runner.temp }}/release-notes.md" \
+            --out dist/publish
+          ls -la dist/publish
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: publish-${{ matrix.target }}
+          path: desktop/dist/publish/
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    name: publish GitHub release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: publish-*
+          path: parts
+
+      # Each macOS leg writes its own half (`mac.arm64` / `mac.x86_64`). A recursive merge gives
+      # the one manifest the Homebrew cask reads. The top-level `url`/`sha256` stay the arm64 zip:
+      # that is what a reader that predates the `mac` block would install.
+      - name: merge manifests and collect artifacts
+        run: |
+          mkdir -p out
+          shopt -s nullglob
+          manifests=(parts/*/manifest.json)
+          if [ ${#manifests[@]} -eq 0 ]; then
+            echo "::error::no macOS manifest halves were published"
+            exit 1
+          fi
+          versions=$(jq -s '[.[].version] | unique | length' "${manifests[@]}")
+          [ "$versions" = 1 ] || { echo "::error::manifests disagree on version"; jq -s '[.[].version]' "${manifests[@]}"; exit 1; }
+          jq -s 'reduce .[] as $m ({}; . * $m) | .url = .mac.arm64.url | .sha256 = .mac.arm64.sha256' \
+            "${manifests[@]}" > out/manifest.json
+          jq -e '.mac.arm64.url and .mac.arm64.sha256 and .mac.x86_64.url and .mac.x86_64.sha256' out/manifest.json > /dev/null \
+            || { echo "::error::manifest.json is missing a macOS architecture"; exit 1; }
+          find parts -type f ! -name manifest.json -exec cp -n {} out/ \;
+          ls -la out
+          {
+            echo "### Obol $VERSION"
+            echo
+            echo '```json'
+            jq 'del(.notes)' out/manifest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: create or update release
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          jq -r '.notes // empty' out/manifest.json > "$notes"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::warning::release $TAG already exists: assets replaced. Installed apps only auto-update when desktop/app.json version goes up."
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --notes-file "$notes" --latest
+          else
+            gh release create "$TAG" out/* \
+              --target "${{ github.sha }}" \
+              --title "Obol $VERSION" \
+              --notes-file "$notes" \
+              --latest
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The Homebrew cask (`Casks/obol.rb`, this repository is the tap) names the release just
+  # published, with the sha256 its manifest carries for each macOS zip. It is committed to `main`,
+  # which every `release-*` branch starts from; a re-run of an older release leaves a newer cask
+  # alone (`desktop/scripts/brew-cask.ts`). A push by GITHUB_TOKEN starts no workflow.
+  cask:
+    name: update the Homebrew cask
+    needs: [prepare, release]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: write Casks/obol.rb
+        run: |
+          gh release download "$TAG" --pattern manifest.json --dir "$RUNNER_TEMP"
+          bun desktop/scripts/brew-cask.ts "$RUNNER_TEMP/manifest.json" --repo="$GITHUB_REPOSITORY"
+
+      - name: commit to main
+        run: |
+          # The cask file may not exist yet on the first release: a new untracked file also
+          # counts as a change (git diff alone would report nothing).
+          if ! git status --porcelain -- Casks/obol.rb | grep -q .; then
+            echo "Casks/obol.rb unchanged"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898699+github-actions[bot]@users.noreply.github.com'
+          git add Casks/obol.rb
+          git commit -m "Casks/obol.rb: Obol $VERSION"
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          echo "::error::could not push Casks/obol.rb to main"
+          exit 1

@@ -1,56 +1,101 @@
-# 🪙 Obol
+# Obol
 
-Obol is a personal cash flow forecaster designed for granular control, precise financial predictions, and at-a-glance dashboard visualization. Unlike traditional static budgeting tools, Obol projects your daily balance into the future, helping you visualize the exact day a cash crunch might occur.
+Obol is a personal cash-flow ledger and forecaster. It reconstructs past balances from realized transactions and projects future balances from pending transactions, invoices, and recurrences.
 
-## 🏗️ Architecture (The Triad)
+The desktop app runs locally: an Electrobun window hosts the Nuxt interface, while Bun starts the Elysia API and a bundled PocketBase process. No deployed server or Docker installation is required. The hosted web stack remains available for people who prefer a server.
 
-This system is built using a strict 3-layer architecture:
+## Features
 
-1. **App (Nuxt 3 + Nuxt UI)**: Focuses purely on UX, global state caching (Pinia), and rendering high-performance reactive charts (ECharts). It implements optimistic UI updates and never talks directly to the database.
-2. **Server (ElysiaJS + Bun)**: The brain of the operation. Orchestrates dashboard payloads, calculates mathematical projections via strict type contracts (Eden Treaty), and runs the **Virtual Invoices Engine** to resolve credit card billing cycles on the fly.
-3. **Data Layer (PocketBase v0.23+)**: A robust SQLite wrapper running in isolation. Secures the data, handles zero-touch superuser creation, and manages the Relational mapping via Javascript migrations.
+- Daily balance projections for 15, 30, 60, or 90 days.
+- A transaction ledger with structured search and filters, matching summary totals, lifecycle details, sorting, and CSV export.
+- Accounts, credit cards, invoices, budgets, projects, and recurring transactions.
+- Credit-card budgets use purchase dates; cash-flow projections account for invoice due dates and partial payments.
+- A persistent local desktop profile, separated from hosted PocketBase data.
 
-## ✨ Core Features
+## How it works
 
-* **Advanced Credit Card Handling**: Obol separates *credit consumption* from *cash outflow*. Credit card transactions consume category budgets on the exact date of purchase (`purchase_date`), but only impact your checking account cashflow projection on the invoice due date.
-* **Flexible Invoices**: Automatically groups pending card expenses into Monthly Invoices. Supports partial payments, early full payments, and automatic transaction matching to ensure your cash flow trajectory stays completely accurate.
-* **Category Budgets**: Track your monthly "pots" in real-time. Budgets are strictly enforced on an accrual basis, meaning spending on credit cards immediately debits your budget allowance for that month, avoiding false surpluses.
-* **Cashflow Trajectory**: A dynamic ECharts projection line that maps your checking account balance up to 90 days into the future, accounting for all pending bills, credit card invoices, and recurring incomes.
-* **Interactive Editing**: A seamless UX that allows for quick-editing transaction values, modifying credit card limits, and managing financial recurrences directly from the UI without page reloads.
+The hosted and desktop modes share the same Elysia use cases and PocketBase repositories:
 
-## 🚀 Quick Start
+```mermaid
+flowchart LR
+  web["Nuxt web app"] -->|"Eden Treaty / same-origin proxy"| hosted["Elysia BFF"]
+  hosted --> pbHosted[("Hosted PocketBase")]
+  view["Electrobun WebView"] -->|"Eden Treaty / RPC"| main["Bun main process / Elysia app.handle"]
+  main --> pbLocal[("Local PocketBase child")]
+```
 
-Obol uses a Nix flake for reproducible development environments and Docker Compose for infrastructure.
+In desktop mode, the WebView sends typed API requests over Electrobun RPC. The main process dispatches them to the existing Elysia app; the UI does not call PocketBase or a network-facing server.
 
-1. **Start the Nix Shell** (Requires [Nix](https://nixos.org/download/)):
-   ```bash
-   nix develop
-   ```
+## Local data
 
-2. **Environment Setup**:
-   Before starting the containers, set up your `.env` file based on the provided example. This is important to configure secure credentials (like PocketBase admin access).
-   ```bash
-   cp .env.example .env
-   ```
-   *Note: Open `.env` and change `PB_ADMIN_PASSWORD` to a secure password.*
+- Desktop data lives in the current user's application-data directory under `copland.obol`; development uses the isolated identity `copland.obol.eb-dev`.
+- The app creates a local PocketBase profile and runs the bundled migrations on startup.
+- Desktop data is not imported from or synchronized with the hosted `db/pb_data` volume.
+- The desktop build pins PocketBase 0.40.6 and verifies the downloaded binary checksum.
 
-3. **Boot the Infrastructure**:
-   This will spin up PocketBase, the Nuxt App, and the Elysia Server.
-   ```bash
-   docker-compose up -d --build
-   ```
+## Releases
 
-4. **Access the Services**:
-   - 🌐 App: [http://localhost:13000](http://localhost:13000)
-   - 🛠️ PocketBase Admin: [http://localhost:13090/_/](http://localhost:13090/_/)
+The current `desktop/app.json` version is `0.1.0`. Once the release workflows are on `main` and a `dev` branch exists, merging a pull request from `dev` into `main` creates `release-0.1.0`. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
 
-## 🗄️ Database Migrations
+The manifest records release metadata; Obol does not currently update itself. Builds are ad-hoc signed, not Developer ID signed or notarized. The cask clears the quarantine flag during installation.
 
-PocketBase migrations are written in JavaScript and executed automatically on boot. They map exactly to our business rules (like the addition of `purchase_date` for accrual tracking) and reside in `db/pb_migrations/`.
+```mermaid
+flowchart LR
+  merge["Merge dev → main"] --> branch["Create release-<version>"]
+  branch --> build["Build macOS arm64 + x86_64"]
+  build --> release["GitHub release / archives / manifest"]
+  release --> cask["Update Casks/obol.rb"]
+```
 
-## 📚 Documentation
+After the first public release, install with Homebrew:
 
-- [`docs/canon.md`](docs/canon.md) — numbered source of truth (product, rules, data model, operations).
-- [`docs/arquitetura.md`](docs/arquitetura.md) — module map and layering.
-- [`docs/decisions/`](docs/decisions/log.md) — ADRs.
-- `AGENTS.md` / `CONTEXT.md` — agent charter and vocabulary.
+```sh
+brew tap caiofasoares/obol https://github.com/CaioFaSoares/Obol
+brew install --cask obol
+```
+
+## Documents
+
+| Document | Contents |
+| --- | --- |
+| [`docs/canon.md`](docs/canon.md) | Product rules, data model, operations, and current status. |
+| [`docs/arquitetura.md`](docs/arquitetura.md) | Runtime modes, module boundaries, and API flow. |
+| [`docs/decisions/`](docs/decisions/log.md) | Accepted architecture decisions. |
+| [`docs/epics/`](docs/epics/) | E001 ledger/desktop and E002 use-case dispatch. |
+| [`docs/handovers/`](docs/handovers/) | Current-state handoff for design work. |
+| [`AGENTS.md`](AGENTS.md) / [`CONTEXT.md`](CONTEXT.md) | Repository rules and project vocabulary. |
+
+## Running
+
+Enter the Nix environment:
+
+```sh
+nix develop
+```
+
+From that shell, install dependencies once and start the local desktop app:
+
+```sh
+(cd app && npm ci)
+(cd server && bun install --frozen-lockfile)
+(cd desktop && bun install --frozen-lockfile)
+(cd desktop && bun run eb:dev)
+```
+
+Build and verify a packaged app:
+
+```sh
+(cd desktop && bun run eb:build)
+(cd desktop && bun run eb:verify)
+```
+
+## Hosted development
+
+From the Nix shell, configure the PocketBase superuser credentials and start the Compose stack:
+
+```sh
+cp .env.example .env
+docker compose up -d --build
+```
+
+The web app is available at `http://localhost:13000`; PocketBase Admin is at `http://localhost:13090/_/`.

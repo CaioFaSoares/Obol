@@ -1,7 +1,7 @@
 # E002 - Thin use-case dispatch layer
 
-**Status**: proposed · **Created**: 2026-10-28
-**Related**: `docs/arquitetura.md`, `docs/canon.md §2`, D003 (Clean Architecture)
+**Status**: implemented · **Completed**: 2026-10-28
+**Related**: `docs/arquitetura.md`, `docs/canon.md §2`, D003 (Clean Architecture), D006 (typed dispatch)
 
 ## Goal
 
@@ -15,109 +15,62 @@ This is **not** a rewrite of the application layer. Existing `execute()` classes
 
 `_Copland/Tickety/middleware/src/controllers/bff.controller.ts` matches a declarative `BFF_ROUTES` table; `src/usecases/types.ts` defines the use-case input/environment/result types; `src/contracts/parse.ts` validates at the edge; one `ErrorFilter` maps failures. A request is matched, validated, dispatched to a use-case handler, and serialized. The legacy gateway and Clojure upstream exist because Tickety is a proxy BFF.
 
-### Obol today
+### Obol baseline (before E002)
 
-`server/src/infrastructure/controllers/TransactionController.ts` repeats this pattern per endpoint: declare Elysia route + TypeBox schema, resolve a concrete class from Awilix, call `.execute()`, set status/return. `CategoryController.ts` is the smaller version. Business rules are already isolated in `application/use-cases/`; `errorPlugin.ts` already maps domain errors to HTTP. `package.json` has no meaningful test script (`test` exits with an error), so there is no existing controller/use-case integration harness to extend.
+Controllers repeated direct `container.resolve()` + `.execute()`. `errorPlugin.ts` declared domain mappings but its local hook did not propagate when mounted; runtime tests returned 500 for domain errors. `server/package.json` had no meaningful test script, so the dispatch boundary had no behavior tests.
 
-## Decision direction
+## Implemented architecture
 
-Adopt **declarative route descriptors plus one Elysia adapter**, retaining class-based use cases and Awilix:
+E002 uses a typed invocation helper rather than a route-descriptor DSL. This keeps Elysia route declarations, TypeBox validation, and Eden Treaty inference on the existing handlers.
 
-```ts
-useCaseRoute({
-  method: 'POST',
-  path: '/',
-  body: TransactionDTO,
-  useCase: 'createTransactionUseCase',
-  status: 201,
-  input: ({ body }) => body,
-})
-```
+`server/src/infrastructure/use-case-routes/` contains:
 
-The adapter should do only four jobs:
+- `registry.ts`: maps every Awilix registration token to its concrete use-case class.
+- `dispatch.ts`: `executeUseCase(container, token, ...args)` type-checks the token/arguments and calls `execute` with the resolved class as its receiver. `resolveUseCase` handles composed Job routes.
+- `index.ts`: exports the typed boundary.
 
-1. register the Elysia method/path and TypeBox request schemas;
-2. resolve the registered use-case token from the scoped Awilix container;
-3. map the validated HTTP inputs to the use-case's `execute(...)` arguments;
-4. return its result and apply an optional HTTP status.
-
-Domain errors continue to bubble to `errorPlugin`; Elysia/TypeBox validation continues to produce the existing 400 behavior. The adapter must not wrap errors or implement domain policy.
-
-Proposed home: `server/src/infrastructure/use-case-routes/` (or `infrastructure/http/` if naming proves clearer). Keep route descriptors close to their controller; do not create a second domain/application layer or a new top-level `middleware/` workspace. Tickety's `middleware/` is a separate BFF/proxy application, not a drop-in Elysia package.
+Controllers still own method/path, TypeBox schema, HTTP status, and request-to-use-case argument mapping. All use-case business logic remains in `application/use-cases/`; `errorPlugin` is global and maps domain errors centrally. Cron jobs resolve and execute use cases directly from Awilix, not through HTTP dispatch.
 
 ## Borrow / do not borrow
 
 | Borrow from Tickety | Do not port to Obol |
 |---|---|
-| Explicit route table: endpoint → contract → use-case handler | NestJS/Express, `UpstreamClient`, gateway passthrough, or Clojure proxy semantics |
-| Validate and strip input at the boundary before use-case execution | Zod in parallel with existing TypeBox validators |
-| One response/error boundary; use cases do not touch request/response objects | `UseCaseEnv` tuple replacing Awilix constructor injection without a concrete need |
-| Behavioral tests that assert client response and dependency interaction | Auth presence gates, rate limits, request-id/security middleware, SSE/streaming, partial-upstream composition (not current Obol requirements) |
+| One explicit dispatch boundary for endpoint → use-case | NestJS/Express, `UpstreamClient`, gateway passthrough, or Clojure proxy semantics |
+| Validate at the edge before use-case execution | Zod in parallel with existing TypeBox validators |
+| Central error mapping and behavioral boundary tests | `UseCaseEnv` replacing Awilix constructor injection without a concrete need |
+| Use-case methods never receive request/response objects | Auth presence gates, rate limits, request tracing, SSE/streaming, or partial-upstream composition |
 
-## Scope
+## Implemented scope
 
-### Included
+- All existing HTTP controller handlers call `executeUseCase` or the typed resolver. `container.resolve()` remains directly in the scheduler, which is intentionally outside HTTP.
+- E002 did not change route paths, request contracts, defaults, statuses, or response shapes. E001 later replaced transaction-list raw filters with structured query parameters; see that epic for the current contract.
+- `server/test/http-dispatch.test.ts` verifies valid dispatch, defaults and parsed request values, invalid-body rejection before execution, domain error mapping, creation status/result, composed input mapping, and preservation of the method receiver.
+- No new domain behavior or HTTP response contract was introduced.
 
-- A typed descriptor for method/path, optional query/body/params schemas, Awilix use-case registration key, input mapping, and optional success status.
-- A generic `useCaseRoute` adapter used by one representative route group first.
-- Thin migration of all existing controller endpoints to the descriptor pattern only after the pilot proves type safety and behavior parity.
-- One centralized rule for route-level status handling; domain errors remain in `errorPlugin`.
-- A test harness that boots the real Elysia controller with a test Awilix container and substitutes only repository dependencies/use-case registrations; assert status, response shape, validation rejection before execution, and domain error mapping.
+## Migration record
 
-### Explicitly excluded
-
-- Rewriting use-case classes as standalone functions.
-- Moving use cases into `infrastructure/` or creating another `middleware/` package.
-- Changing transaction, invoice, recurrence, forecast, or PocketBase behavior.
-- Replacing TypeBox, Awilix, or `errorPlugin`.
-- Authentication, rate limiting, request tracing, retries, telemetry, partial failures, or an additional error hierarchy.
-- Frontend or API response-contract changes.
-
-## Migration plan
-
-### Step 0 — Baseline
-
-- Record current route behavior for the pilot controller: method/path, TypeBox schema, default status, response shape, and errors.
-- Add the smallest server test setup using Bun's test runner; prove it can boot an Elysia app with an isolated Awilix container without PocketBase/network access.
-- Do not migrate controllers before this baseline passes.
-
-### Step 1 — Adapter and pilot
-
-- Add descriptor types and `useCaseRoute` under `server/src/infrastructure/`.
-- Pilot `CategoryController` (three straightforward endpoints) or `ForecastController` (one query-only endpoint); choose the smallest surface after inspecting its contract.
-- Compare requests/responses and validation/error behavior against the baseline. Remove the pilot's direct `container.resolve()` only if parity is proven.
-
-### Step 2 — Expand by controller
-
-Migrate one controller at a time, in small isolated commits: `Category` → `Account` → `Project` → `Recurrence` → `Card` → `Transaction` → `Forecast` → `Job`. Keep route prefixes, TypeBox schemas, default page/sort values, status codes, and response shapes unchanged. The more complex Transaction/Card routes come last.
-
-### Step 3 — Consolidate and document
-
-- Remove duplicated resolve/execute/status boilerplate from controllers; preserve controllers as route-group declarations.
-- Update `docs/arquitetura.md` with the adapter boundary and `AGENTS.md`/`server/context.md` with its constraints.
-- Add an accepted ADR only after the pilot and migration establish the actual design; do not record a proposal as a settled architectural decision.
+1. Added a deterministic Bun test harness using the real Elysia controllers and isolated Awilix containers; no PocketBase process is needed.
+2. Pilot-tested typed dispatch on Account/Category/Transaction/Card handlers, then migrated all controller groups.
+3. Confirmed scheduled use cases remain directly resolved from Awilix and added the class-receiver regression test after an actual desktop smoke exposed the importance of `this` binding.
+4. Updated architecture and agent guidance to point to `use-case-routes/`.
 
 ## Invariants
 
 - Controllers declare HTTP; use cases own business rules; repositories own PocketBase access.
-- The adapter knows Awilix + Elysia + TypeBox, but no domain semantics.
-- Use-case classes receive dependencies through constructors and remain directly callable outside HTTP (cron jobs must continue resolving `ProcessMonthlyRecurrencesUseCase` and `ReconcileInvoicesUseCase` directly).
-- Every existing endpoint keeps its route, validation, status, response and error contract.
-- Invalid input never executes a use case. Domain errors still reach `errorPlugin` unchanged.
-- No behavior changes in this epic; future business changes are separate work.
+- The dispatch boundary knows Awilix and use-case types but no domain rules.
+- Use-case classes remain constructor-injected and directly callable outside HTTP. The scheduler still resolves its use cases directly.
+- E002 preserved endpoint paths, defaults, statuses, and response bodies. The current transaction-list filter contract is the later E001 structured-query change.
 
-## Acceptance criteria
+## Verification
 
-- A pilot controller is fully covered by deterministic tests without a running PocketBase.
-- Tests prove: valid request dispatches once to the expected use case with parsed input; invalid input returns 400 and does not execute the use case; domain `NotFoundError`/`ValidationError` map through the existing `errorPlugin`; creation endpoints retain 201; result bodies are unchanged.
-- All current controllers use the adapter, with no direct `container.resolve()` in their route handlers (except explicitly documented non-use-case infrastructure routes).
-- Cron/scheduler still resolves and executes the same use-case classes; no HTTP adapter dependency enters application or domain layers.
-- `bun run src/index.ts` reaches the same PocketBase boot/auth boundary; existing compose/dev runtime remains unchanged.
-- TypeScript check succeeds using the repository-pinned toolchain; no new compiler or validation framework is added.
+- `cd server && bun test`: 11 passed (including the later E001 raw-filter boundary regression).
+- `cd server && bun x --package typescript@5.5.4 tsc --noEmit`: passed.
+- `server/test/http-dispatch.test.ts` covers parsed input/defaults, validation-before-execution, domain errors, 201/result parity, composed arguments, instance `this` binding, and rejection of raw transaction filter parameters.
+- All controller handlers use `executeUseCase` or `resolveUseCase`; the scheduler remains direct Awilix dispatch.
 
-## Risks and stop conditions
+## Deliberately not included
 
-- **Over-abstraction**: if descriptors require type casts that erase Elysia's Eden Treaty inference, stop and keep the current explicit controller pattern. The goal is less duplication without losing the typed API contract.
-- **Awilix scoping**: resolve use cases from the same scoped container lifecycle as today; do not accidentally share request-scoped instances or build a global singleton dispatcher.
-- **TypeBox/Elysia generic friction**: first prove request and response inference on one pilot. If the adapter cannot preserve it, narrow the adapter to a helper around `container.resolve()` rather than force a route DSL.
-- **Business-logic leakage**: reject any descriptor callback that implements invoice/balance/recurrence rules; it may only map validated transport input to the existing use-case arguments.
+- No route descriptor DSL, proxy/gateway, middleware package, auth/rate limit layer, tracing, retries, or partial-upstream failure model.
+- No domain behavior or frontend API contract change was introduced by E002; E001 later introduced the structured transaction query contract.
+
+The decision is recorded in [D006](../decisions/D006-thin-usecase-dispatch.md).

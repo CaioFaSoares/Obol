@@ -1,5 +1,5 @@
 {
-  description = "Ambiente de desenvolvimento para o Obol (Nuxt + Elysia)";
+  description = "Reproducible development environment for Obol (Nuxt, Elysia, PocketBase and Electrobun)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -17,18 +17,19 @@
             nodejs_22
             bun
             docker-compose
+            unzip
           ];
 
           shellHook = ''
-            echo "🚀 Bem-vindo ao ambiente de desenvolvimento do Obol!"
-            echo "📦 Ferramentas disponíveis:"
-            echo "  - Node.js $(node -v)"
-            echo "  - Bun $(bun -v)"
+            echo "Obol development environment"
+            echo "Node.js: $(node --version)"
+            echo "Bun: $(bun --version)"
             echo ""
-            echo "💡 Para resolver o erro do Docker (falta de arquivos de lock), faça o setup inicial:"
-            echo "  1. cd app && npm install && cd .."
-            echo "  2. cd server && bun install && cd .."
-            echo "  3. docker-compose -f docker-compose.yml up -d --build"
+            echo "Install app dependencies: (cd app && npm ci)"
+            echo "Install server dependencies: (cd server && bun install)"
+            echo "Install desktop dependencies: (cd desktop && bun install)"
+            echo "Run the hosted stack: docker compose up -d --build"
+            echo "Run the local desktop app: (cd desktop && bun run eb:dev)"
           '';
         };
       }

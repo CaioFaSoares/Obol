@@ -1,4 +1,12 @@
+const apiBase = process.env.NUXT_PUBLIC_API_BASE || 'http://obol-server:13080'
+const desktopStaticBuild = process.env.OBOL_DESKTOP_STATIC === 'true'
+
 export default defineNuxtConfig({
+  // Only packaged output is a static SPA; Electrobun development keeps Nuxt SSR/HMR.
+  ssr: !desktopStaticBuild,
+  app: {
+    baseURL: desktopStaticBuild ? './' : '/'
+  },
   compatibilityDate: '2024-04-03',
   devtools: { enabled: true },
   modules: [
@@ -16,16 +24,27 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080'
+      apiBase
     }
   },
   icon: {
     clientBundle: {
+      icons: [
+        'heroicons:arrow-down-tray',
+        'heroicons:arrow-path-20-solid',
+        'heroicons:chevron-down',
+        'heroicons:chevron-down-20-solid',
+        'heroicons:chevron-double-left-20-solid',
+        'heroicons:chevron-double-right-20-solid',
+        'heroicons:chevron-left-20-solid',
+        'heroicons:chevron-right-20-solid',
+        'heroicons:circle-stack-20-solid'
+      ],
       scan: true
     }
   },
   routeRules: {
     '/api/_nuxt_icon/**': {},
-    '/api/**': { proxy: 'http://obol-server:13080/api/**' }
+    '/api/**': { proxy: `${apiBase}/api/**` }
   }
 })
