@@ -1,33 +1,49 @@
 import PocketBase from 'pocketbase';
-import { Elysia } from 'elysia';
 
-// Instância global Singleton
-export const pb = new PocketBase(process.env.POCKETBASE_URL);
-pb.autoCancellation(false); // Impede que o SDK aborte requisições concorrentes no backend
-
-// Autentica no startup do container usando top-level await (suportado no Bun)
-let retries = 5;
-while (retries > 0) {
-  try {
-    console.log(`🔄 Autenticando Admin no PocketBase (Tentativas restantes: ${retries})...`);
-    await pb.collection('_superusers').authWithPassword(
-      process.env.PB_ADMIN_EMAIL!,
-      process.env.PB_ADMIN_PASSWORD!
-    );
-    console.log("✅ Admin autenticado!");
-    break;
-  } catch (err: any) {
-    console.error("❌ Erro ao autenticar no PocketBase:", err.message);
-    retries--;
-    if (retries === 0) {
-      console.error("🚨 Falha crítica: Não foi possível autenticar após várias tentativas.");
-    } else {
-      console.log("⏳ Aguardando 2 segundos para tentar novamente...");
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  }
+export interface PocketBaseClientOptions {
+  url: string;
+  adminEmail: string;
+  adminPassword: string;
+  retries?: number;
+  retryDelayMs?: number;
 }
 
-// Plugin do Elysia que injeta a instância (pb) de forma estática (mais rápido que derive)
-export const pbPlugin = new Elysia({ name: 'pocketbase-plugin' })
-  .decorate('pb', pb);
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+/** Creates and authenticates one PocketBase client after its server is reachable. */
+export async function createPocketBaseClient(options: PocketBaseClientOptions): Promise<PocketBase> {
+  if (!options.url || !options.adminEmail || !options.adminPassword) {
+    throw new Error('PocketBase URL and superuser credentials are required');
+  }
+
+  const pb = new PocketBase(options.url);
+  pb.autoCancellation(false);
+
+  const retries = options.retries ?? 5;
+  const retryDelayMs = options.retryDelayMs ?? 2000;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      console.log(`🔄 Authenticating PocketBase superuser (attempt ${attempt}/${retries})...`);
+      await pb.collection('_superusers').authWithPassword(
+        options.adminEmail,
+        options.adminPassword
+      );
+      console.log('✅ PocketBase superuser authenticated');
+      return pb;
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await delay(retryDelayMs);
+      }
+    }
+  }
+
+  const details = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Could not authenticate PocketBase superuser after ${retries} attempts: ${details}`);
+}

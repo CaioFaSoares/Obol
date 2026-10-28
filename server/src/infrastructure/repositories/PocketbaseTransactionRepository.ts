@@ -102,7 +102,6 @@ export class PocketbaseTransactionRepository implements TransactionRepository {
   private buildFilter(options: ListOptions & TransactionQueryFilters): string | undefined {
     const conditions: string[] = [];
     if (options.filter?.trim()) conditions.push(options.filter);
-
     const search = options.search?.trim();
     if (search) {
       conditions.push(this.pb.filter('title ~ {:search}', { search }));

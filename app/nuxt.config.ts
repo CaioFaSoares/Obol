@@ -1,8 +1,12 @@
 const apiBase = process.env.NUXT_PUBLIC_API_BASE || 'http://obol-server:13080'
+const desktopStaticBuild = process.env.OBOL_DESKTOP_STATIC === 'true'
 
 export default defineNuxtConfig({
-  // Desktop builds are a static SPA; hosted/development remains SSR by default.
-  ssr: process.env.OBOL_DESKTOP !== 'true',
+  // Only packaged output is a static SPA; Electrobun development keeps Nuxt SSR/HMR.
+  ssr: !desktopStaticBuild,
+  app: {
+    baseURL: desktopStaticBuild ? './' : '/'
+  },
   compatibilityDate: '2024-04-03',
   devtools: { enabled: true },
   modules: [
