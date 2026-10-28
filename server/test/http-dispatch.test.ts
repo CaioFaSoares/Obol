@@ -68,17 +68,41 @@ describe('HTTP use-case dispatch boundary', () => {
 
     const response = await app.handle(
       jsonRequest(
-        '/api/transactions?page=2&perPage=5&sort=amount&filter=type%3Dexpense',
+        '/api/transactions?page=2&perPage=5&sort=amount&status=realized',
         'GET'
       )
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(listResult);
-    // Inputs are the controller-mapped values (strings, numbers), not raw query.
     expect(listFake.calls).toEqual([
-      [{ page: 2, perPage: 5, sort: 'amount', filter: 'type=expense' }],
+      [{ page: 2, perPage: 5, sort: 'amount', status: 'realized' }],
     ]);
+  });
+
+  test('raw PocketBase filter parameters are rejected by both transaction query endpoints', async () => {
+    const container = createContainer({ injectionMode: InjectionMode.CLASSIC });
+    const listFake = recordingUseCase({ items: [], page: 1, perPage: 15, totalItems: 0, totalPages: 0 });
+    const summaryFake = recordingUseCase({ incomeTotal: 0, expenseTotal: 0, netTotal: 0, count: 0 });
+    container.register({
+      listTransactionsUseCase: asValue(listFake),
+      summarizeTransactionsUseCase: asValue(summaryFake),
+    });
+    const app = bootApp(container);
+
+    for (const path of [
+      '/api/transactions?filter=status%3Dpending',
+      '/api/transactions/summary?filter=status%3Dpending',
+    ]) {
+      const response = await app.handle(jsonRequest(path, 'GET'));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: 'Validation Error',
+        details: 'Unsupported transaction query parameter: filter',
+      });
+    }
+    expect(listFake.calls).toHaveLength(0);
+    expect(summaryFake.calls).toHaveLength(0);
   });
 
   test('list request applies default page/sort when query is absent', async () => {
@@ -97,7 +121,7 @@ describe('HTTP use-case dispatch boundary', () => {
 
     expect(response.status).toBe(200);
     expect(listFake.calls).toEqual([
-      [{ page: 1, perPage: 15, sort: '-expected_date', filter: undefined }],
+      [{ page: 1, perPage: 15, sort: '-expected_date' }],
     ]);
   });
 

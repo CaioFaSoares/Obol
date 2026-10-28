@@ -4,33 +4,42 @@ import { formatCurrency, formatDate } from '../utils/formatters'
 import { api } from '../utils/api'
 import { useFinanceStore } from '../stores/finance'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
+import type { Transaction } from '../../server/src/domain/entities/Transaction'
+import type { TransactionListItem, TransactionQueryFilters, TransactionSummary } from '../../server/src/domain/interfaces/TransactionQuery'
+
+type LedgerSortField = 'expected_date' | 'realized_date' | 'amount' | 'created'
+
 
 const { open: openEditModal } = useTransactionEdit()
 const { globalRefreshTrigger } = useRefresh()
 const financeStore = useFinanceStore()
 const toast = useToast()
 
-watch(globalRefreshTrigger, () => {
-  fetchLedgerData()
-  financeStore.loadBaseData(true)
-})
-
-// 1. Estados Reativos dos Filtros
+// 1. Filtro states (structured params — no PocketBase filter syntax built client-side)
 const searchQuery = ref('')
-const selectedStatus = ref('all') // 'all', 'realized', 'pending'
-const selectedType = ref('all')   // 'all', 'income', 'expense', 'transfer'
-const simulationFilter = ref('exclude_simulated') // 'exclude_simulated', 'only_simulated', 'all'
-const scheduledFilter = ref('all') // 'all', 'only_scheduled', 'exclude_scheduled'
+const selectedStatus = ref<TransactionQueryFilters['status']>('all')
+const selectedType = ref<TransactionQueryFilters['type']>('all')
+const simulationFilter = ref<TransactionQueryFilters['simulation']>('real')
+const scheduledFilter = ref<TransactionQueryFilters['scheduled']>('all')
+const dateFrom = ref('')
+const dateTo = ref('')
+const accountIdFilter = ref('')
+const cardIdFilter = ref('')
+const categoryIdFilter = ref('')
+const sortField = ref<LedgerSortField>('expected_date')
+const sortDirection = ref<'asc' | 'desc'>('desc')
 
-// 2. Estados de Paginação e Dados
-const transactions = ref<any[]>([])
+// 2. Data states
+const transactions = ref<TransactionListItem[]>([])
 const page = ref(1)
 const perPage = ref(20)
 const totalItems = ref(0)
 const totalPages = ref(0)
 const isLoading = ref(false)
+const fetchError = ref('')
+const summary = ref<TransactionSummary>({ incomeTotal: 0, expenseTotal: 0, netTotal: 0, count: 0 })
 
-// Opções para os Selects
+// Options
 const statusOptions = [
   { label: 'Todos os Status', value: 'all' },
   { label: 'Realizados', value: 'realized' },
@@ -45,97 +54,162 @@ const typeOptions = [
 ]
 
 const simulationOptions = [
-  { label: 'Apenas Reais', value: 'exclude_simulated' },
-  { label: 'Apenas Simulações', value: 'only_simulated' },
+  { label: 'Apenas Reais', value: 'real' },
+  { label: 'Apenas Simulações', value: 'simulated' },
   { label: 'Misturado', value: 'all' }
 ]
 
 const scheduledOptions = [
   { label: 'Todos', value: 'all' },
-  { label: 'Apenas Agendados', value: 'only_scheduled' },
-  { label: 'Sem Agendados', value: 'exclude_scheduled' }
+  { label: 'Apenas Agendados', value: 'scheduled' },
+  { label: 'Sem Agendados', value: 'unscheduled' }
 ]
 
-// 3. Construtor de Filtros Estritos (Sintaxe PocketBase)
-const filterString = computed(() => {
-  const conditions = []
+const sortFieldOptions = [
+  { label: 'Data Prevista', value: 'expected_date' },
+  { label: 'Data Realizada', value: 'realized_date' },
+  { label: 'Valor', value: 'amount' },
+  { label: 'Data de Criação', value: 'created' }
+]
 
-  if (searchQuery.value) {
-    conditions.push(`title ~ '${searchQuery.value}'`)
-  }
-  if (selectedStatus.value !== 'all') {
-    conditions.push(`status = '${selectedStatus.value}'`)
-  }
-  if (selectedType.value !== 'all') {
-    conditions.push(`type = '${selectedType.value}'`)
-  }
+const sortDirectionOptions = [
+  { label: 'Descendente', value: 'desc' },
+  { label: 'Ascendente', value: 'asc' }
+]
 
-  // Regra de Isolamento de Simulação
-  if (simulationFilter.value === 'exclude_simulated') {
-    conditions.push(`is_simulated = false`)
-  } else if (simulationFilter.value === 'only_simulated') {
-    conditions.push(`is_simulated = true`)
-  }
+// Entity selects (financeStore is loaded globally; base data refreshed on mount below)
+const accountOptions = computed(() => financeStore.accounts.map(a => ({ label: a.name, value: a.id })))
+const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name, value: c.id })))
+const categoryOptions = computed(() => financeStore.categories.map(c => ({ label: c.name, value: c.id })))
 
-  // Regra de Isolamento de Agendados
-  if (scheduledFilter.value === 'only_scheduled') {
-    conditions.push(`is_scheduled = true`)
-  } else if (scheduledFilter.value === 'exclude_scheduled') {
-    conditions.push(`is_scheduled = false`)
-  }
+const anyEntityOption = { label: 'Todas', value: '' }
+const accountFilterOptions = computed(() => [anyEntityOption, ...accountOptions.value])
+const cardFilterOptions = computed(() => [anyEntityOption, ...cardOptions.value])
+const categoryFilterOptions = computed(() => [anyEntityOption, ...categoryOptions.value])
 
-  return conditions.join(' && ')
-})
+// Structured filters are shared by the list and summary requests; sorting and
+// pagination belong only to the list request.
+const dateFieldComputed = computed<TransactionQueryFilters['dateField']>(() =>
+  selectedStatus.value === 'realized' ? 'realized_date' : 'expected_date'
+)
 
-// 4. Função de Busca no BFF
+function buildFilters(): TransactionQueryFilters {
+  const filters: TransactionQueryFilters = {};
+  const search = searchQuery.value.trim();
+  if (search) filters.search = search;
+  if (selectedStatus.value && selectedStatus.value !== 'all') filters.status = selectedStatus.value;
+  if (selectedType.value && selectedType.value !== 'all') filters.type = selectedType.value;
+  if (simulationFilter.value && simulationFilter.value !== 'all') filters.simulation = simulationFilter.value;
+  if (scheduledFilter.value && scheduledFilter.value !== 'all') filters.scheduled = scheduledFilter.value;
+  if (accountIdFilter.value) filters.accountId = accountIdFilter.value;
+  if (cardIdFilter.value) filters.cardId = cardIdFilter.value;
+  if (categoryIdFilter.value) filters.categoryId = categoryIdFilter.value;
+  if (dateFrom.value) filters.dateFrom = dateFrom.value;
+  if (dateTo.value) filters.dateTo = dateTo.value;
+  if (dateFrom.value || dateTo.value) filters.dateField = dateFieldComputed.value;
+  return filters;
+}
+
+function buildSort(): string {
+  return `${sortDirection.value === 'desc' ? '-' : ''}${sortField.value}`;
+}
+
+// 4. Fetch list + summary using one filter snapshot.
+let latestRequestId = 0;
+function clearLedgerData() {
+  transactions.value = [];
+  totalItems.value = 0;
+  totalPages.value = 0;
+  summary.value = { incomeTotal: 0, expenseTotal: 0, netTotal: 0, count: 0 };
+}
+
 async function fetchLedgerData() {
-  isLoading.value = true
-  try {
-    const res = await api.api.transactions.get({
-      query: {
-        page: String(page.value),
-        perPage: String(perPage.value),
-        sort: '-expected_date',
-        filter: filterString.value || undefined
-      }
-    })
+  const requestId = ++latestRequestId;
+  const filters = buildFilters();
+  isLoading.value = true;
+  fetchError.value = '';
 
-    if (!res.error) {
-      const data: any = res.data
-      transactions.value = data.items || []
-      totalItems.value = data.totalItems || 0
-      totalPages.value = data.totalPages || 0
+  try {
+    const query = {
+      ...filters,
+      page: String(page.value),
+      perPage: String(perPage.value),
+      sort: buildSort(),
+      expandInvoice: 'true' as const
+    };
+    const [resList, resSummary] = await Promise.all([
+      api.api.transactions.get({ query }),
+      api.api.transactions.summary.get({ query: filters })
+    ]);
+    if (requestId !== latestRequestId) return;
+
+    const errors: string[] = [];
+    if (resList.error) errors.push('Falha ao carregar os lançamentos');
+    if (resSummary.error) errors.push('Falha ao carregar os totais');
+    if (errors.length > 0) {
+      fetchError.value = errors.join(' · ');
+      clearLedgerData();
+      toast.add({ title: fetchError.value, color: 'red' });
+      return;
     }
-  } catch (err) {
-    console.error('Falha na busca do Ledger:', err)
+
+    if (!resList.data || !resSummary.data) {
+      throw new Error('Resposta incompleta do servidor');
+    }
+    transactions.value = resList.data.items;
+    totalItems.value = resList.data.totalItems;
+    totalPages.value = resList.data.totalPages;
+    summary.value = resSummary.data;
+  } catch {
+    if (requestId !== latestRequestId) return;
+    fetchError.value = 'Erro de rede ao buscar o ledger';
+    clearLedgerData();
+    toast.add({ title: fetchError.value, color: 'red' });
   } finally {
-    isLoading.value = false
+    if (requestId === latestRequestId) isLoading.value = false;
   }
 }
 
-let searchTimeout: any = null
+// Debounced plain-text search; no PocketBase syntax is constructed in the UI.
+let searchTimeout: ReturnType<typeof setTimeout> | undefined;
 const onSearchInput = () => {
-  if (searchTimeout) clearTimeout(searchTimeout)
+  if (searchTimeout) clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => {
-    page.value = 1
-    fetchLedgerData()
-  }, 300)
-}
+    if (page.value !== 1) page.value = 1;
+    else void fetchLedgerData();
+  }, 300);
+};
 
-watch([selectedStatus, selectedType, simulationFilter, scheduledFilter], () => {
-  page.value = 1
-  fetchLedgerData()
-})
+// Filter/sort changes return to the first page; changing page itself fetches once.
+watch([
+  selectedStatus,
+  selectedType,
+  simulationFilter,
+  scheduledFilter,
+  accountIdFilter,
+  cardIdFilter,
+  categoryIdFilter,
+  dateFrom,
+  dateTo,
+  sortField,
+  sortDirection
+], () => {
+  if (page.value !== 1) page.value = 1;
+  else void fetchLedgerData();
+});
 
-watch(page, () => {
-  fetchLedgerData()
-})
+watch(page, () => void fetchLedgerData());
+watch(globalRefreshTrigger, () => {
+  void fetchLedgerData();
+  void financeStore.loadBaseData(true);
+});
 
 onMounted(() => {
-  fetchLedgerData()
-})
+  void financeStore.loadBaseData();
+  void fetchLedgerData();
+});
 
-// Mapeamento de Colunas do Grid
+// 5. Table columns
 const columns = [
   { key: 'expected_date', label: 'Data' },
   { key: 'title', label: 'Título' },
@@ -146,35 +220,59 @@ const columns = [
 ]
 
 // ----------------------------------------------------
-// Lógica de Efetivação (Tornar Real)
+// Lifecycle badge helpers (silent / invoice / recurrence)
 // ----------------------------------------------------
-const isConversionModalOpen = ref(false)
-const selectedTxnToEfectuate = ref<any>(null)
-const conversionSource = ref('account')
-const targetAccountId = ref('')
-const targetCardId = ref('')
-const destinationId = ref('')
-const isConverting = ref(false)
+const getInvoiceBadge = (row: TransactionListItem) => {
+  if (!row.invoice_id) return null
+  return row.invoice_period ? `Fatura ${row.invoice_period}` : 'Faturada'
+}
 
-const mapActionsMenu = (row: any) => {
+// ----------------------------------------------------
+// Delete via in-page UModal (no confirm())
+// ----------------------------------------------------
+const isDeleteModalOpen = ref(false)
+const txnToDelete = ref<TransactionListItem | null>(null)
+const isDeleting = ref(false)
+
+function openDeleteModal(txn: TransactionListItem) {
+  txnToDelete.value = txn
+  isDeleteModalOpen.value = true
+}
+
+async function confirmDelete() {
+  if (!txnToDelete.value) return
+  isDeleting.value = true
+  try {
+    const res = await api.api.transactions({ id: txnToDelete.value.id }).delete()
+    if (res.error) throw res.error
+    toast.add({ title: 'Transação excluída.', color: 'emerald' })
+    isDeleteModalOpen.value = false
+    txnToDelete.value = null
+    fetchLedgerData()
+    financeStore.loadBaseData()
+  } catch {
+    toast.add({ title: 'Erro ao excluir transação', color: 'red' })
+  } finally {
+    isDeleting.value = false
+  }
+}
+
+// ----------------------------------------------------
+// Actions menu
+// ----------------------------------------------------
+const mapActionsMenu = (row: TransactionListItem) => {
   const baseActions = [
-    { 
-      label: 'Editar registro', 
-      icon: 'i-heroicons-pencil-square', 
+    {
+      label: 'Editar registro',
+      icon: 'i-heroicons-pencil-square',
       click: () => {
         openEditModal(row)
       }
     },
-    { 
-      label: 'Excluir registro', 
-      icon: 'i-heroicons-trash', 
-      click: async () => {
-        if (confirm('Tem certeza que deseja excluir esta transação?')) {
-          await api.api.transactions({ id: row.id }).delete()
-          fetchLedgerData()
-          financeStore.loadBaseData()
-        }
-      }
+    {
+      label: 'Excluir registro',
+      icon: 'i-heroicons-trash',
+      click: () => openDeleteModal(row)
     }
   ]
 
@@ -189,7 +287,18 @@ const mapActionsMenu = (row: any) => {
   return [baseActions]
 }
 
-function openConversionModal(txn: any) {
+// ----------------------------------------------------
+// Reality conversion (simulated → real)
+// ----------------------------------------------------
+const isConversionModalOpen = ref(false)
+const selectedTxnToEfectuate = ref<TransactionListItem | null>(null)
+const conversionSource = ref<'account' | 'card'>('account')
+const targetAccountId = ref('')
+const targetCardId = ref('')
+const destinationId = ref('')
+const isConverting = ref(false)
+
+function openConversionModal(txn: TransactionListItem) {
   selectedTxnToEfectuate.value = txn
   conversionSource.value = 'account'
   targetAccountId.value = ''
@@ -199,66 +308,151 @@ function openConversionModal(txn: any) {
 }
 
 async function confirmRealityConversion() {
-  if (conversionSource.value === 'account' && !targetAccountId.value && selectedTxnToEfectuate.value.type !== 'transfer') {
-    toast.add({ title: 'Selecione uma conta.', color: 'red' })
-    return
+  const transaction = selectedTxnToEfectuate.value;
+  if (!transaction) return;
+
+  if (conversionSource.value === 'account' && !targetAccountId.value && transaction.type !== 'transfer') {
+    toast.add({ title: 'Selecione uma conta.', color: 'red' });
+    return;
   }
   if (conversionSource.value === 'card' && !targetCardId.value) {
-    toast.add({ title: 'Selecione um cartão.', color: 'red' })
-    return
+    toast.add({ title: 'Selecione um cartão.', color: 'red' });
+    return;
   }
-  if (selectedTxnToEfectuate.value.type === 'transfer' && (!targetAccountId.value || !destinationId.value)) {
-    toast.add({ title: 'Selecione conta de origem e destino.', color: 'red' })
-    return
+  if (transaction.type === 'transfer' && (!targetAccountId.value || !destinationId.value)) {
+    toast.add({ title: 'Selecione conta de origem e destino.', color: 'red' });
+    return;
   }
 
-  isConverting.value = true
+  isConverting.value = true;
   try {
-    const id = selectedTxnToEfectuate.value.id
-    
-    const payload: any = {
+    const payload: Partial<Transaction> = {
       is_simulated: false,
-      status: 'pending' // Default, mas mudamos se for conta
-    }
+      status: 'pending'
+    };
 
-    if (selectedTxnToEfectuate.value.type === 'transfer') {
-      payload.account_id = targetAccountId.value
-      payload.destination_account_id = destinationId.value
-      payload.status = 'realized'
-      payload.realized_date = new Date().toISOString()
-    } else {
-      if (conversionSource.value === 'account') {
-        payload.account_id = targetAccountId.value
-        payload.card_id = null
-        if (selectedTxnToEfectuate.value.type === 'expense') {
-          payload.status = 'realized'
-          payload.realized_date = new Date().toISOString()
-        }
-      } else {
-        payload.card_id = targetCardId.value
-        payload.account_id = null
+    if (transaction.type === 'transfer') {
+      payload.account_id = targetAccountId.value;
+      payload.destination_account_id = destinationId.value;
+      payload.status = 'realized';
+      payload.realized_date = new Date().toISOString();
+    } else if (conversionSource.value === 'account') {
+      payload.account_id = targetAccountId.value;
+      payload.card_id = '';
+      if (transaction.type === 'expense') {
+        payload.status = 'realized';
+        payload.realized_date = new Date().toISOString();
       }
+    } else {
+      payload.card_id = targetCardId.value;
+      payload.account_id = '';
     }
 
-    const res = await api.api.transactions({ id }).patch(payload)
-    if (res.error) throw res.error
+    const res = await api.api.transactions({ id: transaction.id }).patch(payload);
+    if (res.error) throw res.error;
 
-    toast.add({ title: 'Transação materializada no caixa!', color: 'emerald' })
-    isConversionModalOpen.value = false
-    
-    fetchLedgerData()
-    financeStore.loadBaseData() 
-
-  } catch (err) {
-    console.error('Erro na mutação de realidade:', err)
-    toast.add({ title: 'Erro ao materializar transação', color: 'red' })
+    toast.add({ title: 'Transação materializada no caixa!', color: 'emerald' });
+    isConversionModalOpen.value = false;
+    void fetchLedgerData();
+    void financeStore.loadBaseData();
+  } catch {
+    toast.add({ title: 'Erro ao materializar transação', color: 'red' });
   } finally {
-    isConverting.value = false
+    isConverting.value = false;
   }
 }
 
+// ----------------------------------------------------
+// CSV export of the current filter set (cap 1000 rows)
+// ----------------------------------------------------
+const EXPORT_CAP = 1000;
+const isExporting = ref(false);
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /["\n\r,;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+async function exportCsv() {
+  isExporting.value = true;
+  try {
+    const filters = buildFilters();
+    const sort = buildSort();
+    const rows: TransactionListItem[] = [];
+    let exportTotalItems = 0;
+    let pagesFetched = 0;
+
+    while (rows.length < EXPORT_CAP) {
+      const response = await api.api.transactions.get({
+        query: {
+          ...filters,
+          sort,
+          expandInvoice: 'true',
+          page: String(pagesFetched + 1),
+          perPage: String(Math.min(100, EXPORT_CAP - rows.length))
+        }
+      });
+      if (response.error || !response.data) throw new Error('Ledger export request failed');
+      if (pagesFetched === 0) exportTotalItems = response.data.totalItems;
+      const items = response.data.items;
+      if (items.length === 0) break;
+      rows.push(...items);
+      pagesFetched += 1;
+      if (rows.length >= exportTotalItems) break;
+    }
+
+    const truncated = rows.length >= EXPORT_CAP && rows.length < exportTotalItems;
+
+    const header = [
+      'id', 'title', 'amount', 'type', 'status',
+      'expected_date', 'realized_date',
+      'account_id', 'card_id', 'destination_account_id', 'category_id',
+      'is_simulated', 'is_scheduled', 'is_silent', 'invoice_id', 'invoice_period', 'recurrence_id',
+      'created'
+    ];
+    const lines = [header.join(',')];
+    for (const transaction of rows) {
+      lines.push([
+        csvEscape(transaction.id), csvEscape(transaction.title), csvEscape(transaction.amount),
+        csvEscape(transaction.type), csvEscape(transaction.status),
+        csvEscape(transaction.expected_date), csvEscape(transaction.realized_date),
+        csvEscape(transaction.account_id), csvEscape(transaction.card_id),
+        csvEscape(transaction.destination_account_id), csvEscape(transaction.category_id),
+        csvEscape(transaction.is_simulated ? 'true' : 'false'),
+        csvEscape(transaction.is_scheduled ? 'true' : 'false'),
+        csvEscape(transaction.is_silent ? 'true' : 'false'),
+        csvEscape(transaction.invoice_id), csvEscape(transaction.invoice_period),
+        csvEscape(transaction.recurrence_id), csvEscape(transaction.created)
+      ].join(','));
+    }
+
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `obol-ledger-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+
+    if (truncated) {
+      toast.add({ title: `Exportação limitada aos primeiros ${EXPORT_CAP} registros de ${exportTotalItems}.`, color: 'amber' });
+    } else {
+      toast.add({ title: `CSV exportado com ${rows.length} registros.`, color: 'emerald' });
+    }
+  } catch {
+    toast.add({ title: 'Erro ao exportar CSV', color: 'red' });
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+
+
 // Helpers
-const getEntityName = (row: any) => {
+const getEntityName = (row: TransactionListItem) => {
   if (row.type === 'transfer') {
     const src = financeStore.accounts.find(a => a.id === row.account_id)?.name || '?'
     const dst = financeStore.accounts.find(a => a.id === row.destination_account_id)?.name || '?'
@@ -272,9 +466,6 @@ const getEntityName = (row: any) => {
   }
   return '—'
 }
-
-const accountOptions = computed(() => financeStore.accounts.map(a => ({ label: a.name, value: a.id })))
-const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name, value: c.id })))
 </script>
 
 <template>
@@ -284,15 +475,23 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         <UIcon name="i-heroicons-document-text" class="w-8 h-8 text-zinc-400" />
         Auditoria (Ledger)
       </h1>
+      <UButton
+        label="Exportar CSV"
+        icon="i-heroicons-arrow-down-tray"
+        color="gray"
+        variant="soft"
+        :loading="isExporting"
+        @click="exportCsv"
+      />
     </div>
 
     <!-- Filtros -->
     <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
       <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
         <UFormGroup label="Buscar">
-          <UInput 
-            v-model="searchQuery" 
-            placeholder="Buscar lançamentos..." 
+          <UInput
+            v-model="searchQuery"
+            placeholder="Buscar lançamentos..."
             icon="i-heroicons-magnifying-glass"
             @input="onSearchInput"
           />
@@ -306,33 +505,98 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         <UFormGroup label="Simulação">
           <USelect v-model="simulationFilter" :options="simulationOptions" />
         </UFormGroup>
-        <UFormGroup label="Contas Agendadas">
+        <UFormGroup label="Agendamento">
           <USelect v-model="scheduledFilter" :options="scheduledOptions" />
+        </UFormGroup>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4">
+        <UFormGroup label="Conta">
+          <USelect v-model="accountIdFilter" :options="accountFilterOptions" />
+        </UFormGroup>
+        <UFormGroup label="Cartão">
+          <USelect v-model="cardIdFilter" :options="cardFilterOptions" />
+        </UFormGroup>
+        <UFormGroup label="Categoria">
+          <USelect v-model="categoryIdFilter" :options="categoryFilterOptions" />
+        </UFormGroup>
+        <UFormGroup label="Data Inicial">
+          <UInput v-model="dateFrom" type="date" />
+        </UFormGroup>
+        <UFormGroup label="Data Final">
+          <div class="space-y-2">
+            <UInput v-model="dateTo" type="date" />
+            <p class="text-xs text-zinc-500">
+              Campo: {{ selectedStatus === 'realized' ? 'Data Realizada' : 'Data Prevista' }}
+            </p>
+          </div>
+        </UFormGroup>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <UFormGroup label="Ordenar por">
+          <USelect v-model="sortField" :options="sortFieldOptions" />
+        </UFormGroup>
+        <UFormGroup label="Direção">
+          <USelect v-model="sortDirection" :options="sortDirectionOptions" />
         </UFormGroup>
       </div>
     </UCard>
 
+    <!-- Resumo do conjunto filtrado -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
+        <p class="text-xs uppercase tracking-wide text-zinc-500">Entradas</p>
+        <p class="text-lg font-semibold text-emerald-400 font-mono">{{ formatCurrency(summary.incomeTotal) }}</p>
+      </UCard>
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
+        <p class="text-xs uppercase tracking-wide text-zinc-500">Saídas</p>
+        <p class="text-lg font-semibold text-red-400 font-mono">{{ formatCurrency(summary.expenseTotal) }}</p>
+      </UCard>
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
+        <p class="text-xs uppercase tracking-wide text-zinc-500">Saldo</p>
+        <p class="text-lg font-semibold font-mono" :class="summary.netTotal >= 0 ? 'text-white' : 'text-red-400'">
+          {{ formatCurrency(summary.netTotal) }}
+        </p>
+      </UCard>
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
+        <p class="text-xs uppercase tracking-wide text-zinc-500">Registros (incl. transferências)</p>
+        <p class="text-lg font-semibold text-white font-mono">{{ summary.count }}</p>
+      </UCard>
+    </div>
+
+    <UAlert
+      v-if="fetchError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="subtle"
+      :title="fetchError"
+    />
+
     <!-- Grid -->
     <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: '' } }">
-      <UTable 
-        :rows="transactions" 
-        :columns="columns" 
+      <UTable
+        :rows="transactions"
+        :columns="columns"
         :loading="isLoading"
       >
         <template #expected_date-data="{ row }">
           <span class="text-sm" :class="{ 'italic text-purple-400': row.is_simulated, 'text-zinc-400': !row.is_simulated }">
-            {{ formatDate(row.expected_date) }}
+            {{ formatDate(selectedStatus === 'realized' ? (row.realized_date || row.expected_date) : row.expected_date) }}
           </span>
         </template>
-        
+
         <template #title-data="{ row }">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <UIcon v-if="row.is_scheduled" name="i-heroicons-calendar-days" class="w-4 h-4 text-amber-400 flex-shrink-0" />
             <span :class="{ 'italic text-purple-400': row.is_simulated, 'text-white': !row.is_simulated }">
               {{ row.title }}
             </span>
             <UBadge v-if="row.is_simulated" color="purple" variant="subtle" size="xs">Simulado</UBadge>
             <UBadge v-if="row.is_scheduled" color="amber" variant="subtle" size="xs">Agendado</UBadge>
+            <UBadge v-if="row.is_silent" color="gray" variant="subtle" size="xs">Silencioso</UBadge>
+            <UBadge v-if="getInvoiceBadge(row)" color="blue" variant="subtle" size="xs">{{ getInvoiceBadge(row) }}</UBadge>
+            <UBadge v-if="row.recurrence_id" color="cyan" variant="subtle" size="xs">Recorrente</UBadge>
           </div>
         </template>
 
@@ -349,7 +613,7 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         </template>
 
         <template #amount-data="{ row }">
-          <span 
+          <span
             class="font-mono text-sm font-medium"
             :class="{
               'text-zinc-500': row.type === 'transfer',
@@ -373,10 +637,10 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
         <div class="text-sm text-zinc-500">
           Total de {{ totalItems }} registros
         </div>
-        <UPagination 
-          v-model="page" 
-          :total="totalItems" 
-          :page-count="perPage" 
+        <UPagination
+          v-model="page"
+          :total="totalItems"
+          :page-count="perPage"
           :max="7"
         />
       </div>
@@ -394,7 +658,7 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
             Escolha a origem real para materializar "{{ selectedTxnToEfectuate?.title }}" no caixa.
           </p>
         </template>
-        
+
         <div class="space-y-4">
           <UFormGroup v-if="selectedTxnToEfectuate?.type !== 'transfer'" label="Forma de Pagamento">
             <div class="flex gap-4">
@@ -420,6 +684,28 @@ const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name,
           <div class="flex justify-end gap-3">
             <UButton label="Cancelar" variant="ghost" color="gray" @click="isConversionModalOpen = false" />
             <UButton label="Tornar Real" color="emerald" :loading="isConverting" @click="confirmRealityConversion" />
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- Modal de Exclusão -->
+    <UModal v-model="isDeleteModalOpen">
+      <UCard :ui="{ ring: '', divide: 'divide-y divide-zinc-800', background: 'bg-zinc-900' }">
+        <template #header>
+          <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+            <UIcon name="i-heroicons-exclamation-triangle" class="text-red-400" />
+            Excluir Transação
+          </h3>
+          <p class="text-sm text-zinc-400 mt-1">
+            Tem certeza que deseja excluir "{{ txnToDelete?.title }}"? Esta ação não pode ser desfeita.
+          </p>
+        </template>
+
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton label="Cancelar" variant="ghost" color="gray" @click="isDeleteModalOpen = false" />
+            <UButton label="Excluir" color="red" :loading="isDeleting" @click="confirmDelete" />
           </div>
         </template>
       </UCard>

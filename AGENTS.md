@@ -23,13 +23,13 @@ Write everything in English: code, comments, commit messages, docs. Quoted sourc
 | Handover notes between sessions/agents | `docs/handovers/YYYY-MM-DD-slug.md` |
 | Past reality | `docs/history/` (read-only archive) |
 | Vocabulary | `CONTEXT.md` |
-| Folder-level rules | `context.md` inside each top folder (`app/`, `server/`, `db/`) |
+| Folder-level rules | `context.md` inside each top folder (`app/`, `server/`, `db/`, `desktop/`) |
 | PocketBase schema changes | `db/pb_migrations/*.js` (never edit an applied migration; add a new one) |
 | Server business rules | `server/src/application/use-cases/` |
 | Persistence | `server/src/infrastructure/repositories/` only |
-| HTTP shape | `server/src/infrastructure/controllers/` + `validators/` |
+| HTTP shape and invocation | `server/src/infrastructure/controllers/` + `validators/`; `use-case-routes/` is the typed Awilix dispatch boundary (D006) |
 | Frontend state | `app/stores/finance.ts` + `app/composables/` |
-| Local app packaging/deploy | epic E001 will add `scripts/eb-*` + `app.json` (Nod model) |
+| Local desktop packaging/deploy | `desktop/` (`app.json`, `electrobun/`, `scripts/`; D005) |
 
 ## Workflow
 
@@ -39,6 +39,6 @@ Write everything in English: code, comments, commit messages, docs. Quoted sourc
 
 ## May / may not
 
-May: read anything, run the dev stack, write docs under `docs/`, edit code under `app/ server/ db/`.
+May: read anything, run the dev stack, write docs under `docs/`, edit code under `app/ server/ db/ desktop/`.
 
 May not: edit an accepted ADR in merit; commit dumps or artifacts (`db_dump*.json`, `build/`, `dist/`); talk to PocketBase from the frontend; import PocketBase or Elysia inside `server/src/domain/` or `server/src/application/`; edit files under `docs/history/`; invent fields not in `docs/canon.md §3` without a migration + ADR.

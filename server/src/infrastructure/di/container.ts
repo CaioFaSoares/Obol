@@ -1,5 +1,5 @@
-import { createContainer, asClass, asValue, InjectionMode } from 'awilix';
-import { pb } from '../plugins/pocketbase';
+import { createContainer as createAwilixContainer, asClass, asValue, InjectionMode } from 'awilix';
+import type PocketBase from 'pocketbase';
 
 // Import Repositories
 import { PocketbaseTransactionRepository } from '../repositories/PocketbaseTransactionRepository';
@@ -17,6 +17,7 @@ import { DeleteTransactionUseCase } from '../../application/use-cases/transactio
 import { UpdateTransactionUseCase } from '../../application/use-cases/transactions/UpdateTransactionUseCase';
 import { RealizeTransactionUseCase } from '../../application/use-cases/transactions/RealizeTransactionUseCase';
 import { ListTransactionsUseCase } from '../../application/use-cases/transactions/ListTransactionsUseCase';
+import { SummarizeTransactionsUseCase } from '../../application/use-cases/transactions/SummarizeTransactionsUseCase';
 import { GenerateForecastUseCase } from '../../application/use-cases/forecast/GenerateForecastUseCase';
 import { ListCardsUseCase } from '../../application/use-cases/cards/ListCardsUseCase';
 import { CreateCardUseCase } from '../../application/use-cases/cards/CreateCardUseCase';
@@ -43,53 +44,57 @@ import { ReconcileInvoicesUseCase } from '../../application/use-cases/reconcilia
 import { ListAccountsUseCase } from '../../application/use-cases/accounts/ListAccountsUseCase';
 import { CreateAccountUseCase } from '../../application/use-cases/accounts/CreateAccountUseCase';
 
-export const container = createContainer({
-  injectionMode: InjectionMode.CLASSIC
-});
+export function createContainer(pbClient: PocketBase) {
+  const container = createAwilixContainer({
+    injectionMode: InjectionMode.CLASSIC
+  });
 
-container.register({
-  // Infrastructure / Global Clients
-  pb: asValue(pb),
+  container.register({
+    // Infrastructure / Global Clients
+    pb: asValue(pbClient),
 
-  // Repositories
-  transactionRepository: asClass(PocketbaseTransactionRepository).singleton(),
-  accountRepository: asClass(PocketbaseAccountRepository).singleton(),
-  cardRepository: asClass(PocketbaseCardRepository).singleton(),
-  invoiceRepository: asClass(PocketbaseInvoiceRepository).singleton(),
-  recurrenceRepository: asClass(PocketbaseRecurrenceRepository).singleton(),
-  categoryRepository: asClass(PocketbaseCategoryRepository).singleton(),
-  projectRepository: asClass(PocketbaseProjectRepository).singleton(),
+    // Repositories
+    transactionRepository: asClass(PocketbaseTransactionRepository).singleton(),
+    accountRepository: asClass(PocketbaseAccountRepository).singleton(),
+    cardRepository: asClass(PocketbaseCardRepository).singleton(),
+    invoiceRepository: asClass(PocketbaseInvoiceRepository).singleton(),
+    recurrenceRepository: asClass(PocketbaseRecurrenceRepository).singleton(),
+    categoryRepository: asClass(PocketbaseCategoryRepository).singleton(),
+    projectRepository: asClass(PocketbaseProjectRepository).singleton(),
 
-  // Use Cases
-  syncInvoiceUseCase: asClass(SyncInvoiceUseCase).scoped(),
-  createTransactionUseCase: asClass(CreateTransactionUseCase).scoped(),
-  deleteTransactionUseCase: asClass(DeleteTransactionUseCase).scoped(),
-  updateTransactionUseCase: asClass(UpdateTransactionUseCase).scoped(),
-  realizeTransactionUseCase: asClass(RealizeTransactionUseCase).scoped(),
-  listTransactionsUseCase: asClass(ListTransactionsUseCase).scoped(),
-  generateForecastUseCase: asClass(GenerateForecastUseCase).scoped(),
-  listCardsUseCase: asClass(ListCardsUseCase).scoped(),
-  createCardUseCase: asClass(CreateCardUseCase).scoped(),
-  updateCardUseCase: asClass(UpdateCardUseCase).scoped(),
-  getCardInvoicesUseCase: asClass(GetCardInvoicesUseCase).scoped(),
-  payInvoiceUseCase: asClass(PayInvoiceUseCase).scoped(),
-  deleteInvoiceUseCase: asClass(DeleteInvoiceUseCase).scoped(),
-  listRecurrencesUseCase: asClass(ListRecurrencesUseCase).scoped(),
-  createRecurrenceUseCase: asClass(CreateRecurrenceUseCase).scoped(),
-  updateRecurrenceUseCase: asClass(UpdateRecurrenceUseCase).scoped(),
-  deleteRecurrenceUseCase: asClass(DeleteRecurrenceUseCase).scoped(),
-  toggleRecurrenceStatusUseCase: asClass(ToggleRecurrenceStatusUseCase).scoped(),
-  launchRecurrenceUseCase: asClass(LaunchRecurrenceUseCase).scoped(),
-  processMonthlyRecurrencesUseCase: asClass(ProcessMonthlyRecurrencesUseCase).scoped(),
-  getRecurrenceTransactionsUseCase: asClass(GetRecurrenceTransactionsUseCase).scoped(),
-  listCategoriesUseCase: asClass(ListCategoriesUseCase).scoped(),
-  getBudgetsUseCase: asClass(GetBudgetsUseCase).scoped(),
-  createCategoryUseCase: asClass(CreateCategoryUseCase).scoped(),
-  listProjectsUseCase: asClass(ListProjectsUseCase).scoped(),
-  createProjectUseCase: asClass(CreateProjectUseCase).scoped(),
-  registerPaymentUseCase: asClass(RegisterPaymentUseCase).scoped(),
-  completeProjectUseCase: asClass(CompleteProjectUseCase).scoped(),
-  reconcileInvoicesUseCase: asClass(ReconcileInvoicesUseCase).scoped(),
-  listAccountsUseCase: asClass(ListAccountsUseCase).scoped(),
-  createAccountUseCase: asClass(CreateAccountUseCase).scoped(),
-});
+    // Use Cases
+    syncInvoiceUseCase: asClass(SyncInvoiceUseCase).scoped(),
+    createTransactionUseCase: asClass(CreateTransactionUseCase).scoped(),
+    deleteTransactionUseCase: asClass(DeleteTransactionUseCase).scoped(),
+    updateTransactionUseCase: asClass(UpdateTransactionUseCase).scoped(),
+    realizeTransactionUseCase: asClass(RealizeTransactionUseCase).scoped(),
+    listTransactionsUseCase: asClass(ListTransactionsUseCase).scoped(),
+    summarizeTransactionsUseCase: asClass(SummarizeTransactionsUseCase).scoped(),
+    generateForecastUseCase: asClass(GenerateForecastUseCase).scoped(),
+    listCardsUseCase: asClass(ListCardsUseCase).scoped(),
+    createCardUseCase: asClass(CreateCardUseCase).scoped(),
+    updateCardUseCase: asClass(UpdateCardUseCase).scoped(),
+    getCardInvoicesUseCase: asClass(GetCardInvoicesUseCase).scoped(),
+    payInvoiceUseCase: asClass(PayInvoiceUseCase).scoped(),
+    deleteInvoiceUseCase: asClass(DeleteInvoiceUseCase).scoped(),
+    listRecurrencesUseCase: asClass(ListRecurrencesUseCase).scoped(),
+    createRecurrenceUseCase: asClass(CreateRecurrenceUseCase).scoped(),
+    updateRecurrenceUseCase: asClass(UpdateRecurrenceUseCase).scoped(),
+    deleteRecurrenceUseCase: asClass(DeleteRecurrenceUseCase).scoped(),
+    toggleRecurrenceStatusUseCase: asClass(ToggleRecurrenceStatusUseCase).scoped(),
+    launchRecurrenceUseCase: asClass(LaunchRecurrenceUseCase).scoped(),
+    processMonthlyRecurrencesUseCase: asClass(ProcessMonthlyRecurrencesUseCase).scoped(),
+    getRecurrenceTransactionsUseCase: asClass(GetRecurrenceTransactionsUseCase).scoped(),
+    listCategoriesUseCase: asClass(ListCategoriesUseCase).scoped(),
+    getBudgetsUseCase: asClass(GetBudgetsUseCase).scoped(),
+    createCategoryUseCase: asClass(CreateCategoryUseCase).scoped(),
+    listProjectsUseCase: asClass(ListProjectsUseCase).scoped(),
+    createProjectUseCase: asClass(CreateProjectUseCase).scoped(),
+    registerPaymentUseCase: asClass(RegisterPaymentUseCase).scoped(),
+    completeProjectUseCase: asClass(CompleteProjectUseCase).scoped(),
+    reconcileInvoicesUseCase: asClass(ReconcileInvoicesUseCase).scoped(),
+    listAccountsUseCase: asClass(ListAccountsUseCase).scoped(),
+    createAccountUseCase: asClass(CreateAccountUseCase).scoped(),
+  });
+  return container;
+}

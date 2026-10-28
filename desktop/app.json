@@ -1,0 +1,10 @@
+{
+  "name": "Obol",
+  "title": "Obol",
+  "version": "0.1.0",
+  "size": "1100x720",
+  "id": "copland.obol",
+  "urlScheme": "obol",
+  "popups": "window",
+  "downloads": "auto"
+}
