@@ -8,7 +8,7 @@ This system is built using a strict 3-layer architecture:
 
 1. **App (Nuxt 3 + Nuxt UI)**: Focuses purely on UX, global state caching (Pinia), and rendering high-performance reactive charts (ECharts). It implements optimistic UI updates and never talks directly to the database.
 2. **Server (ElysiaJS + Bun)**: The brain of the operation. Orchestrates dashboard payloads, calculates mathematical projections via strict type contracts (Eden Treaty), and runs the **Virtual Invoices Engine** to resolve credit card billing cycles on the fly.
-3. **Data Layer (PocketBase v0.23+)**: A robust SQLite wrapper running in isolation. Secures the data, handles zero-touch superuser creation, and manages the Relational mapping via Javascript migrations.
+3. **Data layer (PocketBase)**: SQLite persistence, locked-down collection rules, and JavaScript migrations. Hosted Compose uses the configured image; the Electrobun desktop bundles PocketBase 0.40.6 with a verified checksum.
 
 ## ✨ Core Features
 
@@ -17,6 +17,19 @@ This system is built using a strict 3-layer architecture:
 * **Category Budgets**: Track your monthly "pots" in real-time. Budgets are strictly enforced on an accrual basis, meaning spending on credit cards immediately debits your budget allowance for that month, avoiding false surpluses.
 * **Cashflow Trajectory**: A dynamic ECharts projection line that maps your checking account balance up to 90 days into the future, accounting for all pending bills, credit card invoices, and recurring incomes.
 * **Interactive Editing**: A seamless UX that allows for quick-editing transaction values, modifying credit card limits, and managing financial recurrences directly from the UI without page reloads.
+
+## 🖥️ Local Desktop (macOS)
+
+The Electrobun app starts its own PocketBase child process and Elysia main process; no Docker or remote server is required. The packaged app stores its data under the current user's application-data directory (`copland.obol`). It starts with a new local database; it does not import the hosted `db/pb_data`.
+
+```bash
+nix develop
+(cd app && npm ci)
+(cd server && bun install)
+(cd desktop && bun install && bun run eb:dev)
+```
+
+Build a packaged app with `(cd desktop && bun run eb:build)`. The first build downloads the pinned, checksum-verified PocketBase binary. The GitHub release workflow is implemented in `.github/workflows/`; it has not been run to publish a release.
 
 ## 🚀 Quick Start
 
