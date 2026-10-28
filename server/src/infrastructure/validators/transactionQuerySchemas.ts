@@ -32,15 +32,12 @@ export const TransactionQueryFiltersDTO = t.Object({
     t.Literal('expected_date'),
     t.Literal('realized_date')
   ])),
-});
+}, { additionalProperties: false });
 
 export const TransactionListQueryDTO = t.Object({
   ...TransactionQueryFiltersDTO.properties,
   page: t.Optional(t.String({ pattern: '^[1-9][0-9]*$' })),
   perPage: t.Optional(t.String({ pattern: '^[1-9][0-9]*$' })),
   sort: t.Optional(t.String({ maxLength: 40 })),
-  // Preserved for existing trusted clients (dashboard and application-level use cases).
-  // The Ledger UI uses structured filters and never sends this PocketBase expression.
-  filter: t.Optional(t.String({ maxLength: 2000 })),
   expandInvoice: t.Optional(t.Literal('true')),
-});
+}, { additionalProperties: false });

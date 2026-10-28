@@ -25,3 +25,11 @@ db/pb_data
 # Local artifacts
 db_dump*.json
 *.dump
+
+# Electrobun generated artifacts and downloaded runtime
+desktop/build/
+desktop/artifacts/
+desktop/resources/
+desktop/electrobun.config.ts
+desktop/.eb-icon*
+desktop/.hutch/

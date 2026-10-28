@@ -1,0 +1,13 @@
+{
+  "version": "0.40.6",
+  "assets": {
+    "darwin_arm64": {
+      "file": "pocketbase_0.40.6_darwin_arm64.zip",
+      "sha256": "7f2f7544e9ee5994ab69f84b22a4ab9a3bcfed58c1dad7206d05ebeb753f968b"
+    },
+    "darwin_amd64": {
+      "file": "pocketbase_0.40.6_darwin_amd64.zip",
+      "sha256": "970464cfdb8faf0ad57e0b6b806fd85e81f99cb78000a1c9f78cdcb1b36d4b7a"
+    }
+  }
+}

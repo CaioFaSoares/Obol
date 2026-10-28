@@ -1,6 +1,5 @@
 import { Transaction } from '../entities/Transaction';
 import { ListOptions } from './Common';
-
 export type TransactionStatusFilter = 'all' | 'pending' | 'realized';
 export type TransactionTypeFilter = 'all' | Transaction['type'];
 export type TransactionSimulationFilter = 'all' | 'real' | 'simulated';
@@ -22,7 +21,7 @@ export interface TransactionQueryFilters {
   dateField?: TransactionDateField;
 }
 
-/** Paginated and sorted transaction query; `filter` remains for trusted existing callers. */
+/** Paginated and sorted transaction query; filters are always structured over HTTP. */
 export interface TransactionListOptions extends ListOptions, TransactionQueryFilters {
   expandInvoice?: boolean;
 }
