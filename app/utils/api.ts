@@ -7,5 +7,4 @@ const apiUrl = import.meta.server
   ? process.env.NUXT_PUBLIC_API_BASE || 'http://obol-server:13080'
   : window.location.origin
 
-// @ts-expect-error type mismatch entre as versões locais do elysia no monorepo
 export const api = treaty<App>(apiUrl)
