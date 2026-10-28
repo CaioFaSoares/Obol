@@ -83,4 +83,4 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 
 ## §11 Roadmap
 
-Next: epic E001 — local Electrobun build + ledger strengthening ([epics/E001-ledger-electrobun.md](epics/E001-ledger-electrobun.md)). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
+Planned epics (order to be sequenced): E001 — local Electrobun build + ledger strengthening ([epics/E001-ledger-electrobun.md](epics/E001-ledger-electrobun.md)); E002 — thin use-case dispatch layer ([epics/E002-thin-usecase-middleware.md](epics/E002-thin-usecase-middleware.md)). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
