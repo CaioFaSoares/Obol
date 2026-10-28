@@ -157,6 +157,12 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
+      # gh release create needs the checked-out repository to resolve the target commit.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v8
         with:
           pattern: publish-*
