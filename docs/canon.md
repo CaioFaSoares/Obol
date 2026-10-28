@@ -14,9 +14,11 @@ Three layers with one responsibility each (D001), server layered by clean archit
 
 - `app/` — Nuxt 3 + Nuxt UI + Pinia + ECharts. Talks only to the BFF via Eden Treaty.
 - `server/` — ElysiaJS on Bun, clean architecture (domain / application / infrastructure), awilix DI, isolated cron scheduler.
-- `db/` — PocketBase v0.23+, public API rules `null`, JS migrations on boot.
+- `db/` — PocketBase persistence, public API rules `null`, JS migrations on boot. Desktop bundles pinned PocketBase 0.40.6 (D005); hosted Compose still uses the configured PocketBase image.
 
 Module map and runtime topology: [arquitetura.md](arquitetura.md).
+
+Runtime modes: hosted web uses the Nuxt same-origin proxy to the Elysia BFF; local desktop uses Electrobun, a managed local PocketBase child, and Eden-to-Elysia IPC (D005). No hosted server or Docker is required for the desktop app.
 
 ## §3 Data model
 
@@ -72,15 +74,18 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 ## §9 Frontend data flow
 
 - `stores/finance.ts` caches `accounts`/`cards`/`categories`/`projects` (`loadBaseData(force)`); `useRefresh` broadcasts a global refresh counter; every mutation triggers `triggerRefresh()` + refetch.
-- Pages: dashboard (forecast chart, 15/30/60/90-day range, simulation toggle, Realizados/Pendentes/Simulados tabs), `ledger` (paginated table, title search `title ~`, status/type/simulation/scheduled filters, client-built PocketBase filter string), `cards` (invoice timeline + payment), `management` (Contas & Cartões / Recorrências / Orçamentos / Projetos), `admin`.
+- Pages: dashboard (forecast chart, 15/30/60/90-day range, simulation toggle, Realizados/Pendentes/Simulados tabs), `ledger` (paginated table, structured search/status/type/simulation/scheduled/date/entity filters, sort, filtered totals, lifecycle badges, CSV export), `cards` (invoice timeline + payment), `management` (Contas & Cartões / Recorrências / Orçamentos / Projetos), `admin`.
+- Ledger summary returns filtered `incomeTotal`, `expenseTotal`, `netTotal`, and `count`; transfer rows contribute to count but not money totals. Account filters match both `account_id` and `destination_account_id`; realized-date filtering uses `realized_date`, otherwise date ranges use `expected_date`.
 
 ## §10 Operations
 
-- Dev: `nix develop` → `docker-compose up -d --build` → app :13000, server :13080, PocketBase :13090 (admin `/_/`).
-- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy).
-- Env: `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`.
+- Hosted dev: `nix develop` → `docker compose up -d --build` → app :13000, server :13080, PocketBase :13090 (admin `/_/`).
+- Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies; `cd desktop && bun run eb:dev`. The dev app uses `copland.obol.eb-dev`; packaged identity/data use `copland.obol`.
+- Desktop data: `Utils.paths.appData/copland.obol/pb_data`; no automatic import from hosted `db/pb_data`, which remains unchanged.
+- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release workflows are in `.github/workflows/`; Cask is generated after the first actual release.
+- Env: hosted uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`. Desktop generates and stores a per-user PB admin password.
 - Migrations: `db/pb_migrations/*.js`, executed by PocketBase on boot.
 
 ## §11 Roadmap
 
-Planned epics (order to be sequenced): E001 — local Electrobun build + ledger strengthening ([epics/E001-ledger-electrobun.md](epics/E001-ledger-electrobun.md)); E002 — thin use-case dispatch layer ([epics/E002-thin-usecase-middleware.md](epics/E002-thin-usecase-middleware.md)). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
+Implemented epics: E001 — ledger hardening + local Electrobun runtime and release pipeline code (first public release not run); E002 — typed use-case dispatch. Details: [epics/](epics/). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
