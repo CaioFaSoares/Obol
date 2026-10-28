@@ -1,18 +1,13 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { TransactionDTO } from '../validators/transactionSchemas';
-import { CreateTransactionUseCase } from '../../application/use-cases/transactions/CreateTransactionUseCase';
-import { ListTransactionsUseCase } from '../../application/use-cases/transactions/ListTransactionsUseCase';
-import { DeleteTransactionUseCase } from '../../application/use-cases/transactions/DeleteTransactionUseCase';
-import { UpdateTransactionUseCase } from '../../application/use-cases/transactions/UpdateTransactionUseCase';
-import { RealizeTransactionUseCase } from '../../application/use-cases/transactions/RealizeTransactionUseCase';
+import { executeUseCase } from '../use-case-routes';
 
 export const transactionController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/transactions' })
     // POST /api/transactions
     .post('/', async ({ body, set }) => {
-      const useCase = container.resolve<CreateTransactionUseCase>('createTransactionUseCase');
-      const transaction = await useCase.execute(body);
+      const transaction = await executeUseCase(container, 'createTransactionUseCase', body);
       set.status = 201;
       return transaction;
     }, {
@@ -26,8 +21,7 @@ export const transactionController = (container: AwilixContainer) =>
       const sort = query?.sort || '-expected_date';
       const filter = query?.filter;
 
-      const useCase = container.resolve<ListTransactionsUseCase>('listTransactionsUseCase');
-      return await useCase.execute({ page, perPage, sort, filter });
+      return await executeUseCase(container, 'listTransactionsUseCase', { page, perPage, sort, filter });
     }, {
       query: t.Optional(t.Object({
         filter: t.Optional(t.String()),
@@ -39,22 +33,19 @@ export const transactionController = (container: AwilixContainer) =>
 
     // DELETE /api/transactions/:id
     .delete('/:id', async ({ params }) => {
-      const useCase = container.resolve<DeleteTransactionUseCase>('deleteTransactionUseCase');
-      return await useCase.execute(params.id);
+      return await executeUseCase(container, 'deleteTransactionUseCase', params.id);
     })
 
     // PATCH /api/transactions/:id
     .patch('/:id', async ({ params, body }) => {
-      const useCase = container.resolve<UpdateTransactionUseCase>('updateTransactionUseCase');
-      return await useCase.execute(params.id, body);
+      return await executeUseCase(container, 'updateTransactionUseCase', params.id, body);
     }, {
       body: t.Partial(TransactionDTO)
     })
 
     // PATCH /api/transactions/:id/realize
     .patch('/:id/realize', async ({ params, body }) => {
-      const useCase = container.resolve<RealizeTransactionUseCase>('realizeTransactionUseCase');
-      return await useCase.execute(params.id, body);
+      return await executeUseCase(container, 'realizeTransactionUseCase', params.id, body);
     }, {
       body: t.Object({
         update_balance: t.Optional(t.Boolean({ default: true }))
