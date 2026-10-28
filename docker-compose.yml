@@ -59,17 +59,6 @@ services:
       - obol_net
     command: [ "serve", "--http=0.0.0.0:13090", "--dir=/pb_data", "--migrationsDir=/pb_migrations" ]
 
-  # 4. Laboratório de Desenvolvimento (Notas Markdown)
-  obol-docs:
-    image: zefhemel/silverbullet
-    container_name: obol-silverbullet
-    ports:
-      - "13030:3000" # Acessível em http://localhost:13030
-    volumes:
-      - ./docs:/space # Seus arquivos .md ficam salvos nesta pasta do projeto
-    networks:
-      - obol_net
-
 networks:
   obol_net:
     driver: bridge

@@ -35,15 +35,14 @@ Obol uses a Nix flake for reproducible development environments and Docker Compo
    *Note: Open `.env` and change `PB_ADMIN_PASSWORD` to a secure password.*
 
 3. **Boot the Infrastructure**:
-   This will spin up PocketBase, the Nuxt App, the Elysia Server, and SilverBullet (for Markdown Docs).
+   This will spin up PocketBase, the Nuxt App, and the Elysia Server.
    ```bash
    docker-compose up -d --build
    ```
 
 4. **Access the Services**:
-   - 🌐 App: [http://localhost:3000](http://localhost:3000)
-   - 🛠️ PocketBase Admin: [http://localhost:8090/_/](http://localhost:8090/_/)
-   - 📝 Documentation (SilverBullet): [http://localhost:3030](http://localhost:3030)
+   - 🌐 App: [http://localhost:13000](http://localhost:13000)
+   - 🛠️ PocketBase Admin: [http://localhost:13090/_/](http://localhost:13090/_/)
 
 ## 🗄️ Database Migrations
 
