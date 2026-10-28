@@ -35,16 +35,22 @@ Obol uses a Nix flake for reproducible development environments and Docker Compo
    *Note: Open `.env` and change `PB_ADMIN_PASSWORD` to a secure password.*
 
 3. **Boot the Infrastructure**:
-   This will spin up PocketBase, the Nuxt App, the Elysia Server, and SilverBullet (for Markdown Docs).
+   This will spin up PocketBase, the Nuxt App, and the Elysia Server.
    ```bash
    docker-compose up -d --build
    ```
 
 4. **Access the Services**:
-   - 🌐 App: [http://localhost:3000](http://localhost:3000)
-   - 🛠️ PocketBase Admin: [http://localhost:8090/_/](http://localhost:8090/_/)
-   - 📝 Documentation (SilverBullet): [http://localhost:3030](http://localhost:3030)
+   - 🌐 App: [http://localhost:13000](http://localhost:13000)
+   - 🛠️ PocketBase Admin: [http://localhost:13090/_/](http://localhost:13090/_/)
 
 ## 🗄️ Database Migrations
 
 PocketBase migrations are written in JavaScript and executed automatically on boot. They map exactly to our business rules (like the addition of `purchase_date` for accrual tracking) and reside in `db/pb_migrations/`.
+
+## 📚 Documentation
+
+- [`docs/canon.md`](docs/canon.md) — numbered source of truth (product, rules, data model, operations).
+- [`docs/arquitetura.md`](docs/arquitetura.md) — module map and layering.
+- [`docs/decisions/`](docs/decisions/log.md) — ADRs.
+- `AGENTS.md` / `CONTEXT.md` — agent charter and vocabulary.
