@@ -36,19 +36,30 @@ const { data: forecastData, pending: pendingForecast, error } = await useAsyncDa
 
 const { data: transactionsData, pending: pendingTransactions } = await useAsyncData(async () => {
   const { startDate, endDate } = forecastQuery.value
-  const res = await api.api.transactions.get({
-    query: {
-      filter: `status = 'pending' || (status = 'realized' && realized_date >= '${startDate} 00:00:00.000Z' && realized_date <= '${endDate} 23:59:59.999Z')`,
-      sort: 'expected_date',
-      perPage: '500'
-    }
-  })
-  if (res.error) {
-    console.error('Failed to fetch transactions:', res.error)
-    throw res.error
-  }
-  const data: any = res.data
-  return Array.isArray(data) ? data : (data?.items ?? [])
+  const [pendingResult, realizedResult] = await Promise.all([
+    api.api.transactions.get({
+      query: {
+        status: 'pending',
+        simulation: 'real',
+        sort: 'expected_date',
+        perPage: '500'
+      }
+    }),
+    api.api.transactions.get({
+      query: {
+        status: 'realized',
+        simulation: 'real',
+        dateFrom: startDate,
+        dateTo: endDate,
+        dateField: 'realized_date',
+        sort: 'expected_date',
+        perPage: '500'
+      }
+    })
+  ])
+  if (pendingResult.error) throw pendingResult.error
+  if (realizedResult.error) throw realizedResult.error
+  return [...pendingResult.data.items, ...realizedResult.data.items]
 }, { watch: [forecastQuery] })
 
 const timelineData = computed(() => {
@@ -171,24 +182,18 @@ const loadRecentTransactions = async (reset = false) => {
     recentPage.value = 1
     recentTransactions.value = []
   }
-  const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
   
-  let filterStr = ''
-  let sortParam = ''
-
-  if (currentTab === 'simulated') {
-    filterStr = `is_simulated = true`
-    sortParam = 'expected_date'
-  } else {
-    filterStr = `status = '${currentTab}' && is_simulated = false`
-    sortParam = currentTab === 'realized' ? '-realized_date' : 'expected_date'
-  }
+  const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
+  const status = currentTab === 'simulated' ? 'all' : currentTab
+  const simulation = currentTab === 'simulated' ? 'simulated' : 'real'
+  const sort = currentTab === 'realized' ? '-realized_date' : 'expected_date'
 
   try {
     const res = await api.api.transactions.get({
       query: {
-        filter: filterStr,
-        sort: sortParam,
+        status,
+        simulation,
+        sort,
         page: String(recentPage.value),
         perPage: '15'
       }

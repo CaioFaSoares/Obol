@@ -1,59 +1,57 @@
 # Architecture
 
-> Facts verified against the code as of 2026-10-28. The numbered source of truth is [`canon.md`](canon.md); decisions live in [`decisions/`](decisions/log.md).
+> Current behavior verified against source on 2026-10-28. Product rules are in [`canon.md`](canon.md); accepted decisions are in [`decisions/log.md`](decisions/log.md).
 
-## The Triad
+## Two runtime modes
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│ app/  Nuxt 3 + Nuxt UI + Pinia + ECharts                      │
-│       Talks ONLY to the BFF via Eden Treaty (typed, strict)   │
-└──────────────────────────┬────────────────────────────────────┘
-                           │ HTTP (TypeBox DTOs)
-┌──────────────────────────▼────────────────────────────────────┐
-│ server/  ElysiaJS on Bun  — all business logic                │
-│   Clean Architecture: domain → application → infrastructure   │
-│   + scheduler (cron, isolated from HTTP)                      │
-└──────────────────────────┬────────────────────────────────────┘
-                           │ PocketBase SDK (localhost, internal)
-┌──────────────────────────▼────────────────────────────────────┐
-│ db/  PocketBase v0.23+ (SQLite)                               │
-│   Public API rules = null; migrations run on boot             │
-└───────────────────────────────────────────────────────────────┘
-```
+| | Hosted web | Local desktop |
+|---|---|---|
+| Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA |
+| UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | Eden Treaty custom fetcher → `window.obol.apiFetch` → Electrobun RPC → Elysia `app.handle(Request)` in the same Bun main process |
+| BFF | Elysia on Bun, listens `0.0.0.0:8080` inside Compose | Same Elysia app, Bun main process; loopback `127.0.0.1:13080` listener activates the existing scheduler and serves Nuxt dev SSR. Packaged WebView API requests use RPC, not that listener. |
+| Data | PocketBase Compose service, SQLite volume `db/pb_data` | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-user `pb_data` and generated admin secret under Electrobun app data |
+| Run command | `docker compose up -d --build` | `cd app && npm ci`; `cd server && bun install`; `cd desktop && bun install && bun run eb:dev` |
+
+The desktop mode has no remote service, Docker dependency, direct WebView-to-PocketBase access, or network-facing BFF endpoint. Its local Elysia socket binds only loopback. The PocketBase binary and migrations are bundled; the app owns child startup, readiness, authentication, and shutdown. See D005.
 
 ## Server layering (`server/src`)
 
 | Layer | Contents | Rule |
 |---|---|---|
-| `domain/` | `entities/` (7 entities), `interfaces/` (7 repository interfaces + `Common`), `errors/`, `utils/` (`mathUtils`) | Pure; imports nothing from outer layers |
-| `application/use-cases/` | One class per operation (33 registered), constructor-injected via domain interfaces | No Elysia, no PocketBase imports |
-| `infrastructure/controllers/` | 8 Elysia route groups (`Transaction`, `Forecast`, `Card`, `Recurrence`, `Category`, `Project`, `Account`, `Job`), each a factory receiving the awilix container | Thin: validate → resolve use case → execute → HTTP |
-| `infrastructure/repositories/` | `Pocketbase*Repository` per domain interface | The only code that knows PocketBase |
-| `infrastructure/validators/` | TypeBox schemas per domain | DTO shape for controllers |
-| `infrastructure/scheduler/` | `schedulerPlugin(container)` — cron engine, isolated from the HTTP thread | Owns recurrence processing |
-| `infrastructure/di/container.ts` | awilix container, `InjectionMode.CLASSIC` | Repositories as singletons, use cases as scoped |
-| `infrastructure/plugins/` | `pocketbase.ts` (authenticated `pb` client), `errorPlugin.ts` (global error shield) | — |
+| `domain/` | Entities, repository interfaces, errors, date/currency math, structured transaction query/summary types | No framework imports |
+| `application/use-cases/` | One class per operation, constructor-injected with repository ports | No Elysia or PocketBase imports |
+| `infrastructure/controllers/` | 8 Elysia route groups; explicit HTTP schemas/status/argument mapping | Dispatch through `use-case-routes/`; controllers contain no business rules |
+| `infrastructure/use-case-routes/` | `executeUseCase` and typed `resolveUseCase`; maps Awilix tokens to concrete use-case classes | Infrastructure-only invocation boundary (D006) |
+| `infrastructure/repositories/` | PocketBase implementations; structured ledger query builder uses PocketBase's `filter()` parameter binding | Only layer that accesses PocketBase |
+| `infrastructure/validators/` | TypeBox request schemas | HTTP boundary validation |
+| `infrastructure/scheduler/` | Daily cron plugin, injected with the Awilix container | Directly resolves use cases; bypasses HTTP dispatch |
+| `infrastructure/di/container.ts` | `createContainer(pb)`, Awilix `InjectionMode.CLASSIC` | Repositories singleton; use cases scoped |
 
-Entry: `server/src/index.ts` mounts `errorPlugin` → `schedulerPlugin` → 8 controllers → health check, listens on `PORT` (default 8080), and exports `type App` for Eden Treaty.
+`server/src/index.ts` exports `createServer(pb)` without side effects and exports its `App` type for Eden Treaty. `startHostedServer()` authenticates PocketBase and listens on the configured `PORT` only when `src/index.ts` is the Bun entrypoint. Electrobun builds the same server factory around its local PocketBase client.
 
 ## Frontend layering (`app/`)
 
 | Path | Role |
 |---|---|
-| `pages/` | `index.vue` (dashboard + forecast chart), `ledger.vue`, `management.vue`, `cards.vue`, `admin.vue` |
-| `components/` | Tabs (`TabFinancial`, `TabBudgets`, `TabProjects`, `TabRecurrences`), modals (`FastEntry`, `TransactionEdit`, `Account/Card/Category/Budget/Project/Recurrence`), `ForecastChart` |
-| `stores/finance.ts` | Pinia cache of base data (accounts, cards, categories, projects) |
-| `composables/useRefresh.ts` | Global reactive refresh: any mutation triggers store reload + page refetch |
-| `utils/api.ts` | Singleton Eden Treaty client bound to the BFF `App` type |
+| `pages/` | Dashboard, ledger, cards, management, admin |
+| `components/` | Domain tabs, modals, `ForecastChart` |
+| `stores/finance.ts` | Pinia cache of accounts/cards/categories/projects |
+| `composables/` | Global refresh and modal state |
+| `utils/api.ts` | Eden client typed from `server/src/index.ts`; browser uses same-origin proxy, Electrobun uses RPC fetch bridge |
+| `app.vue` | Global `UNotifications` host (Nuxt UI v2) |
+
+The web app sends structured filters (`search`, status/type, simulation/scheduled, entity IDs, date range) to the transaction list and summary endpoints; it never constructs PocketBase filter expressions. The HTTP boundary rejects unknown query keys, and the repository applies the exact same server-side filter set to summary totals. See E001 and `canon.md §9`.
 
 ## Persistence (`db/`)
 
-- `db/pb_migrations/` - JavaScript migrations executed by PocketBase on boot (`init_schema` + 11 incremental: transfer destination, purchase date, silent flag, installments, invoices, simulation flag, invoices fix, skipped periods, scheduled flag).
-- `db/pb_data/` - live SQLite data (gitignored).
+- `db/pb_migrations/` - versioned JavaScript schema migrations; never edit an applied migration.
+- `db/pb_data/` - hosted Compose SQLite data (gitignored).
+- Desktop PB data is not stored in the repository; the local runtime uses `Utils.paths.appData/copland.obol` (or the isolated `copland.obol.eb-dev` identifier in development).
 
-## Runtime topology
+## Runtime and packaging topology
 
-- Dev: `docker-compose.yml` - `obol-app` (:13000), `obol-server` (:13080), `obol-database` (:13090) on `obol_net`.
-- Deploy: `docker-compose.coolify.yml` - `expose` only, reverse-proxied by Coolify.
-- Dev environment: `flake.nix` (nodejs_22, bun, docker-compose).
+- Hosted dev: `docker-compose.yml` maps Nuxt :13000, Elysia :13080, PocketBase :13090 on `obol_net`.
+- Hosted deploy: `docker-compose.coolify.yml` exposes services for Coolify's reverse proxy.
+- Desktop: `desktop/app.json` is the app identity/version source; `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle; `desktop/scripts/ensure-pocketbase.ts` downloads only the pinned, SHA-256-verified macOS binary.
+- Release: `.github/workflows/release-branch.yml` creates `release-<version>` after `dev`→`main`; `release.yml` builds macOS arm64/x86_64, publishes zips/manifests, and generates `Casks/obol.rb` from the real merged release manifest. No placeholder Cask checksum is committed.
+- Nix/direnv: `flake.nix` supplies Node, Bun, Docker Compose, and unzip; `.envrc` activates the flake.

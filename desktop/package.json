@@ -1,0 +1,17 @@
+{
+  "name": "obol-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "eb:dev": "bun scripts/eb-dev.ts",
+    "eb:build": "bun scripts/eb-build.ts",
+    "eb:verify": "bun scripts/eb-verify.ts",
+    "typecheck": "bun scripts/typecheck.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "electrobun": "2.0.5",
+    "typescript": "~6.0.2"
+  }
+}
