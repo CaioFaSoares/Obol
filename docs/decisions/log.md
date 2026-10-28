@@ -4,6 +4,7 @@ One line per decision, newest first. Accepted decisions are never edited in meri
 
 | ID | Date | Decision | Status |
 |---|---|---|---|
+| D005 | 2026-10-28 | Local-first Electrobun packaging, Nod model (proposed by epic E001) | proposed |
 | D004 | 2026-10-28 | Docs as plain markdown; SilverBullet dropped; Copland house style | accepted |
 | D003 | 2026-06-03 | Clean Architecture on the BFF (domain/application/infrastructure, awilix DI) | accepted |
 | D002 | 2026-05-26 | Invoices as a first-class table; accrual `purchase_date`; installment auto-termination | accepted |
