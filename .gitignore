@@ -29,6 +29,7 @@ db_dump*.json
 # Electrobun generated artifacts and downloaded runtime
 desktop/build/
 desktop/artifacts/
+desktop/.cottontail-tmp/
 desktop/resources/
 desktop/electrobun.config.ts
 desktop/.eb-icon*
