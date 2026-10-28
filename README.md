@@ -47,3 +47,10 @@ Obol uses a Nix flake for reproducible development environments and Docker Compo
 ## 🗄️ Database Migrations
 
 PocketBase migrations are written in JavaScript and executed automatically on boot. They map exactly to our business rules (like the addition of `purchase_date` for accrual tracking) and reside in `db/pb_migrations/`.
+
+## 📚 Documentation
+
+- [`docs/canon.md`](docs/canon.md) — numbered source of truth (product, rules, data model, operations).
+- [`docs/arquitetura.md`](docs/arquitetura.md) — module map and layering.
+- [`docs/decisions/`](docs/decisions/log.md) — ADRs.
+- `AGENTS.md` / `CONTEXT.md` — agent charter and vocabulary.
