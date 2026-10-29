@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -40,12 +41,22 @@ function platformKey(): string {
 }
 
 /**
- * Extracts the PocketBase archive. Windows ships bsdtar, which unzips
- * directly; macOS keeps the selective `unzip` invocation.
+ * Windows ships bsdtar in System32; resolve it explicitly so Git Bash's GNU tar (which
+ * misreads `D:\...` as a remote host) is never picked up from PATH. macOS keeps the
+ * selective `unzip` invocation.
  */
+function nativeWindowsTar(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const tar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(tar)) {
+    throw new Error(`Windows native tar not found at ${tar} (System32 tar.exe is required for Windows paths)`);
+  }
+  return tar;
+}
+
 function extractArchive(archivePath: string): void {
   if (process.platform === 'win32') {
-    run(['tar', '-xf', archivePath, '-C', OUTPUT_DIR]);
+    run([nativeWindowsTar(), '-xf', archivePath, '-C', OUTPUT_DIR]);
     return;
   }
   run(['unzip', '-o', archivePath, 'pocketbase', 'LICENSE.md', '-d', OUTPUT_DIR]);

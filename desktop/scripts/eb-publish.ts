@@ -123,13 +123,21 @@ interface WindowsZipListing {
   setupExecutableName: string | null;
 }
 
+function nativeWindowsTar(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const tar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(tar)) {
+    throw new Error(`Windows native tar not found at ${tar} (System32 tar.exe is required for Windows paths)`);
+  }
+  return tar;
+}
+
 /**
  * Windows' own tar.exe (shipped in System32) lists zip members; the archive path travels as a
  * spawn argv element, never through a shell, so nothing in it can be reinterpreted as a command.
  */
 function listWindowsZip(setupZip: string, errorPrefix: string): WindowsZipListing {
-  const tar = Bun.which('tar');
-  if (tar === null) throw new Error(`${errorPrefix}: no tar.exe on PATH for archive listing`);
+  const tar = nativeWindowsTar();
   const listing = Bun.spawnSync([tar, '-tf', setupZip], { stdout: 'pipe', stderr: 'pipe' });
   const lines = listing.stdout.toString().split(/\r?\n/).map((name) => name.trim()).filter((name) => name !== '');
   if (listing.exitCode !== 0 || lines.length === 0) {

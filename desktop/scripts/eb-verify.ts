@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { access, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -57,13 +57,21 @@ function windowsSetupZip(): string {
 
 type ZipEntry = { name: string; setupExecutableName: string };
 
+function nativeWindowsTar(errorPrefix: string): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const tar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(tar)) {
+    throw new Error(`${errorPrefix}: Windows native tar not found at ${tar} (System32 tar.exe is required for Windows paths)`);
+  }
+  return tar;
+}
+
 /**
  * Windows' own tar.exe (shipped in System32) lists zip members; the archive path goes in as a
  * spawn argv element, never through a shell, so quoting or injection cannot reinterpret it.
  */
 function listZipEntries(setupZip: string, errorPrefix: string): ZipEntry[] {
-  const tar = Bun.which('tar');
-  if (tar === null) throw new Error(`${errorPrefix}: no tar.exe on PATH for archive listing`);
+  const tar = nativeWindowsTar(errorPrefix);
   const listing = Bun.spawnSync([tar, '-tf', setupZip], { stdout: 'pipe', stderr: 'pipe' });
   const rawEntries = listing.stdout.toString().split(/\r?\n/).map((name) => name.trim());
   if (listing.exitCode !== 0 || rawEntries.every((name) => name === '')) {
