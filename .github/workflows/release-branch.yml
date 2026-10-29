@@ -1,5 +1,7 @@
-# When a pull request from `dev` is merged into `main`, creates the branch `release-<version>` at
-# the merge commit (the version is `desktop/app.json`'s) and starts `release.yml` on it.
+# When a pull request is merged into `main`, creates the branch `release-<version>` at the merge
+# commit (the version is `desktop/app.json`'s) and starts `release.yml` on it. Two origins:
+# `dev` (the standing integration branch) and `pr/release-<version>` (a release branch made out
+# of band; its suffix must match `desktop/app.json`, or the job refuses to publish).
 #
 # A branch pushed with GITHUB_TOKEN does not start other workflows (GitHub's rule against
 # loops), so the `push` trigger of release.yml would not fire; this job dispatches it explicitly
@@ -22,7 +24,10 @@ permissions:
 jobs:
   branch:
     name: create release-<version>
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
+    if: >-
+      github.event.pull_request.merged == true &&
+      (github.event.pull_request.head.ref == 'dev' ||
+       startsWith(github.event.pull_request.head.ref, 'pr/release-'))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -31,6 +36,8 @@ jobs:
 
       - id: version
         name: read version
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           version=$(jq -r '.version' desktop/app.json)
           # semver, plus hotfix letters right after the patch: 0.1.0a, 0.1.0b.
@@ -38,7 +45,20 @@ jobs:
             echo "::error file=desktop/app.json::version '$version' is not X.Y.Z or X.Y.Z<letters> (a hotfix, as in 0.1.0a)"
             exit 1
           fi
+          # A pr/release-<version> merge must carry the matching desktop/app.json: publishing a
+          # branch that claims one version but internally says another would overwrite the
+          # release assets the announced version's installed apps read.
+          case "$HEAD_REF" in
+            pr/release-*)
+              expected="${HEAD_REF#pr/release-}"
+              if [ "$expected" != "$version" ]; then
+                echo "::error file=desktop/app.json::$HEAD_REF says $expected but desktop/app.json says $version"
+                exit 1
+              fi
+              ;;
+          esac
           echo "branch=release-$version" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
 
       # An existing release branch means the version was not bumped: publishing again under the
       # same version would replace that release's files, and installed apps would not update.

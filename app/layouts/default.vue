@@ -1,5 +1,50 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { DesktopUpdaterState } from '../../desktop/electrobun/shared-rpc'
+
 const { open } = useFastEntry()
+
+const updaterState = ref<DesktopUpdaterState | null>(null)
+const updaterBridge = computed(() => (typeof window === 'undefined' ? undefined : window.obol?.updater))
+let unsubscribeUpdater: (() => void) | undefined
+
+onMounted(() => {
+  const updater = window.obol?.updater
+  // Hosted web has no Electrobun view bridge: never show the banner.
+  if (!updater) return
+
+  // Subscribe to push messages first so no state update is missed,
+  // then fetch the current snapshot.
+  unsubscribeUpdater = updater.subscribe(state => {
+    updaterState.value = state
+  })
+  updater.status()
+    .then(state => {
+      updaterState.value = state
+    })
+    .catch(() => {
+      // The bridge will surface errors via state updates if the check fails.
+    })
+})
+
+onBeforeUnmount(() => {
+  unsubscribeUpdater?.()
+  unsubscribeUpdater = undefined
+})
+
+function retryUpdaterCheck (): void {
+  updaterBridge.value?.check()
+    .catch(() => {
+      // Errors arrive as state updates ('error' status) via the subscription.
+    })
+}
+
+function installUpdater (): void {
+  updaterBridge.value?.install()
+    .catch(() => {
+      // Installation failures also surface as state updates via the subscription.
+    })
+}
 </script>
 
 <template>
@@ -61,6 +106,14 @@ const { open } = useFastEntry()
         </div>
       </div>
     </nav>
+
+    <!-- Desktop updater banner; only rendered when the Electrobun bridge exists -->
+    <DesktopUpdaterBanner
+      v-if="updaterState"
+      :state="updaterState"
+      @check="retryUpdaterCheck"
+      @install="installUpdater"
+    />
 
     <!-- Main page content -->
     <slot />

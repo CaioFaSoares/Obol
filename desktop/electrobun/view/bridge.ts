@@ -2,6 +2,7 @@ import { Electroview } from 'electrobun/view';
 import type {
   ApiFetchRequest,
   ApiFetchResponse,
+  DesktopUpdaterState,
   LocalAccountSummary,
   LocalAuthSetupRequest,
   LocalAuthStatus,
@@ -15,6 +16,12 @@ interface ObolViewBridge {
     status(): Promise<LocalAuthStatus>;
     setup(request: LocalAuthSetupRequest): Promise<LocalAccountSummary>;
     unlock(request: LocalAuthUnlockRequest): Promise<LocalAccountSummary>;
+  };
+  updater: {
+    status(): Promise<DesktopUpdaterState>;
+    check(): Promise<DesktopUpdaterState>;
+    install(): Promise<void>;
+    subscribe(callback: (state: DesktopUpdaterState) => void): () => void;
   };
 }
 
@@ -33,6 +40,20 @@ view.obol = {
     status: () => rpc.request['auth.status']({}),
     setup: request => rpc.request['auth.setup'](request),
     unlock: request => rpc.request['auth.unlock'](request)
+  },
+  updater: {
+    status: () => rpc.request['updater.status']({}),
+    check: () => rpc.request['updater.check']({}),
+    install: () => rpc.request['updater.install']({}),
+    subscribe: callback => {
+      const listener = (state: DesktopUpdaterState) => {
+        callback(state);
+      };
+      rpc.addMessageListener('updater.state', listener);
+      return () => {
+        rpc.removeMessageListener('updater.state', listener);
+      };
+    }
   }
 };
 

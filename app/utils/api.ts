@@ -3,11 +3,14 @@ import type { App } from '../../server/src/index'
 import type {
   ApiFetchRequest,
   ApiFetchResponse,
+  DesktopUpdaterState,
   LocalAccountSummary,
   LocalAuthSetupRequest,
   LocalAuthStatus,
   LocalAuthUnlockRequest
 } from '../../desktop/electrobun/shared-rpc'
+
+export type DesktopUpdaterUnsubscribe = () => void
 
 export interface ObolViewBridge {
   apiFetch(request: ApiFetchRequest): Promise<ApiFetchResponse>
@@ -15,6 +18,12 @@ export interface ObolViewBridge {
     status(): Promise<LocalAuthStatus>
     setup(request: LocalAuthSetupRequest): Promise<LocalAccountSummary>
     unlock(request: LocalAuthUnlockRequest): Promise<LocalAccountSummary>
+  }
+  updater: {
+    status(): Promise<DesktopUpdaterState>
+    check(): Promise<DesktopUpdaterState>
+    install(): Promise<void>
+    subscribe(callback: (state: DesktopUpdaterState) => void): DesktopUpdaterUnsubscribe
   }
 }
 

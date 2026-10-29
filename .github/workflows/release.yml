@@ -1,6 +1,8 @@
 # Builds Obol for macOS arm64/x86_64 (app zips plus a checksum manifest) and Windows x64 (a
 # setup ZIP with a sha256 sidecar, no manifest), and generates the Homebrew cask from the
-# merged macOS manifest. Pull requests to `main` run the build matrix as validation only.
+# merged macOS manifest. Each leg also copies Electrobun's stable updater pair
+# (`stable-…-update.json` + matching full tar) out of `desktop/artifacts/` unchanged — the
+# in-app updater's channel. Pull requests to `main` run the build matrix as validation only.
 #
 # Code signing is ad hoc (no Developer ID or notarization secret is declared). Direct downloads can
 # trigger Gatekeeper; the cask clears the quarantine attribute in its postflight step.
@@ -151,7 +153,8 @@ jobs:
         working-directory: desktop
 
       # The Windows leg publishes no manifest half: the setup archive goes straight into the
-      # release assets and the mac manifest stays the only Homebrew cask input.
+      # release assets and the mac manifest stays the only Homebrew cask input, and the
+      # Electrobun updater pair rides beside the setup zip for Windows installs' in-app updater.
       - name: publish the Windows setup
         if: runner.os == 'Windows'
         env:
@@ -214,6 +217,27 @@ jobs:
           jq -e '.mac.arm64.url and .mac.arm64.sha256 and .mac.x86_64.url and .mac.x86_64.sha256' out/manifest.json > /dev/null \
             || { echo "::error::manifest.json is missing a macOS architecture"; exit 1; }
           find parts -type f ! -name manifest.json -exec cp -n {} out/ \;
+          # The in-app updater fetches these by name from the release `baseUrl`; a leg that
+          # skipped Electrobun's build would publish a release with a dead update channel.
+          # (The *.app.tar.zst/.tar.zst names ride beside each `update.json` in the same leg.)
+          shopt -s nullglob
+          updates=(out/stable-*-update.json)
+          [ ${#updates[@]} -eq 3 ] \
+            || { echo "::error::expected 3 Electrobun update.json files (macos arm64/x64, win x64), got ${#updates[@]}: ${updates[*]}"; exit 1; }
+          expected_json=(stable-macos-arm64-update.json stable-macos-x64-update.json stable-win-x64-update.json)
+          for i in "${!expected_json[@]}"; do
+            json="out/${expected_json[$i]}"
+            [ -f "$json" ] || { echo "::error::missing required Electrobun metadata file $json"; exit 1; }
+            artifact=$(jq -er '.artifact.file' "$json") \
+              || { echo "::error::$json is missing .artifact.file"; exit 1; }
+            [ -n "$artifact" ] \
+              || { echo "::error::$json has an empty .artifact.file"; exit 1; }
+            [[ "$artifact" =~ ^[^/\\]+$ ]] \
+              || { echo "::error::$json .artifact.file must be a bare filename, got '$artifact'"; exit 1; }
+            tar="out/$artifact"
+            [ -f "$tar" ] || { echo "::error::$tar is missing — the update channel would be broken"; exit 1; }
+          done
+          shopt -u nullglob
           ls -la out
           {
             echo "### Obol $VERSION"

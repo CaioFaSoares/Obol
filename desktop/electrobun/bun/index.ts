@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { chmod, link, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BrowserView, BrowserWindow, BuildConfig, Utils } from 'electrobun/main';
+import { BrowserView, BrowserWindow, BuildConfig, Updater, Utils } from 'electrobun/main';
+import type { UpdateStatusEntry } from 'electrobun/main';
 import { RESOURCES_FOLDER } from 'electrobun/main/paths';
 import { electrobunEventEmitter } from 'electrobun/main/events';
 import type { ElectrobunEvent } from 'electrobun/main/events';
@@ -13,6 +14,7 @@ import type { LocalAccountProfile } from './local-auth';
 import type {
   ApiFetchRequest,
   ApiFetchResponse,
+  DesktopUpdaterState,
   LocalAccountSummary,
   LocalAuthSetupRequest,
   LocalAuthStatus,
@@ -30,7 +32,7 @@ const dataRoot = join(Utils.paths.appData, identifier);
 const pbDataDir = join(dataRoot, 'pb_data');
 const resourcesDir = join(RESOURCES_FOLDER, 'app', 'resources');
 const pocketBaseBinary = join(resourcesDir, process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase');
-const migrationsDir = join(resourcesDir, 'pb_migrations');
+const migrationsDir = join(RESOURCES_FOLDER, 'app', 'pb_migrations');
 const pocketBaseUrl = 'http://127.0.0.1:13090';
 const pocketBaseEmail = 'obol@localhost.invalid';
 const localProfilePath = join(dataRoot, 'local_profile.json');
@@ -40,6 +42,8 @@ let apiServer: ReturnType<typeof createServer> | undefined;
 let shuttingDown = false;
 let runtimeReady = false;
 let authenticationInProgress = false;
+/** In-memory only; never persisted or logged. Lets a failed update handoff restore the unlocked backend. */
+let activeBackendPassword: string | undefined;
 
 async function readLocalProfile(): Promise<LocalAccountProfile | null> {
   try {
@@ -119,6 +123,7 @@ async function ensurePocketBaseSuperuser(password: string): Promise<void> {
 async function startLocalBackend(password: string): Promise<void> {
   if (runtimeReady) return;
   if (shuttingDown) throw new Error('Obol is closing.');
+  activeBackendPassword = password;
 
   await ensurePocketBaseSuperuser(password);
   try {
@@ -227,7 +232,146 @@ async function stopBackend(): Promise<void> {
 async function stopRuntime(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  activeBackendPassword = undefined;
   await stopBackend();
+}
+
+// ---------------------------------------------------------------------------
+// Desktop auto-updater (packaged builds only)
+// ---------------------------------------------------------------------------
+
+/** Subset of the bun-side RPC instance used to publish updater state. */
+interface UpdaterStatePublisher {
+  send: {
+    'updater.state': (state: DesktopUpdaterState) => void | PromiseLike<void>;
+  };
+}
+
+let mainRpc: UpdaterStatePublisher | undefined;
+let updateHandoffPending = false;
+let updateHandoffApproved = false;
+let updaterError: string | null = null;
+let localUpdateVersion = '';
+let lastUpdateStatus: UpdateStatusEntry | null = null;
+
+function updaterPublishedState(): DesktopUpdaterState {
+  const info = Updater.updateInfo();
+  return {
+    status: lastUpdateStatus?.status ?? 'idle',
+    message: lastUpdateStatus?.message ?? '',
+    currentVersion: localUpdateVersion,
+    availableVersion: info.version,
+    updateAvailable: info.updateAvailable,
+    updateReady: info.updateReady,
+    progress: lastUpdateStatus?.details?.progress ?? null,
+    error: updaterError ?? (info.error || null)
+  };
+}
+
+function publishUpdaterState(): void {
+  if (!mainRpc) return;
+  try {
+    mainRpc.send['updater.state'](updaterPublishedState());
+  } catch {
+    // The webview transport is not connected yet; the initial `updater.status`
+    // fetch covers whatever was missed.
+  }
+}
+
+async function installUpdate(): Promise<void> {
+  const info = Updater.updateInfo();
+  if (!info.updateReady) {
+    throw new Error(
+      info.error || 'No downloaded update is ready to install yet.'
+    );
+  }
+  if (shuttingDown) throw new Error('Obol is closing.');
+
+  let backendWasStopped = false;
+  updateHandoffPending = true;
+  updateHandoffApproved = false;
+  try {
+    // Stop Elysia and PocketBase before the native handoff so no backend
+    // process survives the update replacement.
+    await stopBackend();
+    backendWasStopped = true;
+    await Updater.applyUpdate();
+    // Approval of the native before-quit request means the updater owns the
+    // restart; this process must not restore the backend.
+    if (updateHandoffApproved) return;
+    throw new Error(
+      info.error ||
+        lastUpdateStatus?.message ||
+        'The update could not be applied.'
+    );
+  } catch (error) {
+    updateHandoffPending = false;
+    updateHandoffApproved = false;
+    updaterError = error instanceof Error ? error.message : String(error);
+    if (backendWasStopped && activeBackendPassword) {
+      try {
+        await startLocalBackend(activeBackendPassword);
+      } catch (restoreError) {
+        console.error(
+          'Could not restore the local profile after a failed update:',
+          restoreError
+        );
+      }
+    }
+    throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    publishUpdaterState();
+  }
+}
+
+/** Check the release channel and start a background download when applicable. */
+async function runUpdaterCheckCycle(): Promise<void> {
+  updaterError = null;
+  try {
+    const info = await Updater.checkForUpdate();
+    updaterError = info.error || null;
+    if (info.updateAvailable && !info.updateReady && !updaterError) {
+      void Updater.downloadUpdate().catch(error => {
+        updaterError = error instanceof Error ? error.message : String(error);
+        publishUpdaterState();
+      });
+    }
+  } catch (error) {
+    updaterError = error instanceof Error ? error.message : String(error);
+    console.error('Update check failed:', error);
+  } finally {
+    publishUpdaterState();
+  }
+}
+
+async function ensureUpdateServices(): Promise<void> {
+  // Register first so statuses emitted by local-info reconciliation are seen.
+  Updater.onStatusChange(entry => {
+    lastUpdateStatus = entry;
+    publishUpdaterState();
+  });
+  const local = await Updater.getLocalInfo();
+  localUpdateVersion = local.version;
+  publishUpdaterState();
+  await runUpdaterCheckCycle();
+}
+
+async function updaterCheckRequest(): Promise<DesktopUpdaterState> {
+  // Detection runs to completion; the download stays in the background.
+  if (!isDev) await runUpdaterCheckCycle();
+  return updaterPublishedState();
+}
+
+async function updaterInstallRequest(): Promise<void> {
+  if (isDev) throw new Error('Updates are disabled in development builds.');
+  await installUpdate();
+}
+
+async function startUpdaterServices(): Promise<void> {
+  if (isDev) return;
+  void ensureUpdateServices().catch(error => {
+    console.error('Update services failed to start:', error);
+  });
 }
 
 function appFrame(): { width: number; height: number } {
@@ -281,18 +425,22 @@ async function main(): Promise<void> {
     throw new Error(`Bundled PocketBase migrations are missing: ${migrationsDir}`);
   }
 
-  const mainRpc = BrowserView.defineRPC<ObolBridgeSchema>({
+  const rpc = BrowserView.defineRPC<ObolBridgeSchema>({
     maxRequestTime: 120_000,
     handlers: {
       requests: {
         'api.fetch': dispatchApiRequest,
         'auth.status': localAuthStatus,
         'auth.setup': setupLocalAccount,
-        'auth.unlock': unlockLocalAccount
+        'auth.unlock': unlockLocalAccount,
+        'updater.status': () => updaterPublishedState(),
+        'updater.check': updaterCheckRequest,
+        'updater.install': updaterInstallRequest
       },
       messages: {}
     }
   });
+  mainRpc = rpc;
   const preload = await bridgePreload();
   const mainUrl = isDev
     ? process.env.OBOL_MAIN_URL || 'http://127.0.0.1:3303/'
@@ -303,10 +451,11 @@ async function main(): Promise<void> {
     frame: { width: appFrame().width, height: appFrame().height },
     url: mainUrl,
     preload,
-    rpc: mainRpc,
+    rpc,
     renderer: 'native',
     allowedProtocols: { views: true, appData: false }
   });
+  await startUpdaterServices();
   console.log(`Obol local login ready (${identifier}); data: ${dataRoot}`);
 }
 
@@ -314,7 +463,10 @@ async function main(): Promise<void> {
 electrobunEventEmitter.on(
   'before-quit',
   (event: ElectrobunEvent<Record<string, never>, { allow: boolean }>) => {
-    if (shuttingDown) {
+    // The updater's native handoff asks for quit approval after the backend
+    // has already been stopped; the normal flow stops the backend first.
+    if (shuttingDown || updateHandoffPending) {
+      if (updateHandoffPending) updateHandoffApproved = true;
       event.response = { allow: true };
       return;
     }
