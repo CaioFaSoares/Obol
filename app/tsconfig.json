@@ -1,3 +1,162 @@
 {
-  "extends": "./.nuxt/tsconfig.json"
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": [
+      "./node_modules/@types"
+    ],
+    "types": ["node"],
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "nuxt": [
+        "./node_modules/nuxt"
+      ],
+      "@unhead/vue": [
+        "./node_modules/@unhead/vue"
+      ],
+      "@nuxt/devtools": [
+        "./node_modules/@nuxt/devtools"
+      ],
+      "@vue/runtime-core": [
+        "./node_modules/@vue/runtime-core"
+      ],
+      "@vue/compiler-sfc": [
+        "./node_modules/@vue/compiler-sfc"
+      ],
+      "unplugin-vue-router/client": [
+        "./node_modules/unplugin-vue-router/client"
+      ],
+      "@nuxt/schema": [
+        "./node_modules/nuxt/node_modules/@nuxt/schema"
+      ],
+      "defu": [
+        "./node_modules/defu"
+      ],
+      "h3": [
+        "./node_modules/h3"
+      ],
+      "consola": [
+        "./node_modules/consola"
+      ],
+      "ofetch": [
+        "./node_modules/ofetch"
+      ],
+      "crossws": [
+        "./node_modules/crossws"
+      ],
+      "vite/client": [
+        "./node_modules/vite/client"
+      ],
+      "nitropack/types": [
+        "./node_modules/nitropack/types"
+      ],
+      "nitropack/runtime": [
+        "./node_modules/nitropack/runtime"
+      ],
+      "nitropack": [
+        "./node_modules/nitropack"
+      ],
+      "~": [
+        "."
+      ],
+      "~/*": [
+        "./*"
+      ],
+      "@": [
+        "."
+      ],
+      "@/*": [
+        "./*"
+      ],
+      "~~": [
+        "."
+      ],
+      "~~/*": [
+        "./*"
+      ],
+      "@@": [
+        "."
+      ],
+      "@@/*": [
+        "./*"
+      ],
+      "#shared": [
+        "./shared"
+      ],
+      "#shared/*": [
+        "./shared/*"
+      ],
+      "assets": [
+        "./assets"
+      ],
+      "assets/*": [
+        "./assets/*"
+      ],
+      "public": [
+        "./public"
+      ],
+      "public/*": [
+        "./public/*"
+      ],
+      "#server": [
+        "./server"
+      ],
+      "#server/*": [
+        "./server/*"
+      ],
+      "#app": [
+        "./node_modules/nuxt/dist/app"
+      ],
+      "#app/*": [
+        "./node_modules/nuxt/dist/app/*"
+      ],
+      "vue-demi": [
+        "./node_modules/nuxt/dist/app/compat/vue-demi"
+      ],
+      "#ui": [
+        "./node_modules/@nuxt/ui/dist/runtime"
+      ],
+      "#ui/*": [
+        "./node_modules/@nuxt/ui/dist/runtime/*"
+      ],
+      "#ui-colors": [
+        "./.nuxt/ui.colors"
+      ],
+      "#color-mode-options": [
+        "./.nuxt/color-mode-options.mjs"
+      ],
+      "#vue-router": [
+        "./node_modules/vue-router"
+      ],
+      "#unhead/composables": [
+        "./node_modules/nuxt/dist/head/runtime/composables/v3"
+      ],
+      "#imports": [
+        "./.nuxt/imports"
+      ],
+      "#tailwind-config": [
+        "./.nuxt/tailwind/expose"
+      ],
+      "#tailwind-config/*": [
+        "./.nuxt/tailwind/expose/*"
+      ],
+      "#app-manifest": [
+        "./.nuxt/manifest/meta/520b050b-5004-49e4-b79d-2f3d7bb99c54.json"
+      ],
+      "#components": [
+        "./.nuxt/components"
+      ],
+      "#build": [
+        "./.nuxt"
+      ],
+      "#build/*": [
+        "./.nuxt/*"
+      ],
+      "elysia": [
+        "../server/node_modules/elysia"
+      ],
+      "elysia/*": [
+        "../server/node_modules/elysia/*"
+      ]
+    }
+  }
 }

@@ -51,13 +51,26 @@ const accountOptions = computed(() => financeStore.accounts.map(a => ({ label: a
 const cardOptions = computed(() => financeStore.cards.map(c => ({ label: c.name, value: c.id })))
 const categoryOptions = computed(() => financeStore.categories.map(c => ({ label: c.name, value: c.id })))
 
+// Eden treaty wraps non-success responses as { status, value }; the body shape
+// varies per route (plain string, validation object, or `{ error, details }`),
+// so the human-readable detail is read only after checking the actual shape.
+function readEdenErrorDetail(error: { value?: unknown }): string | undefined {
+  const value = error.value
+  if (typeof value === 'string') return value || undefined
+  if (!value || typeof value !== 'object') return undefined
+  if ('message' in value && typeof value.message === 'string') return value.message || undefined
+  if ('details' in value && typeof value.details === 'string') return value.details || undefined
+  if ('error' in value && typeof value.error === 'string') return value.error || undefined
+  return undefined
+}
+
 const submit = async () => {
   if (!editingTransaction.value) return
   isSubmitting.value = true
   try {
     const payload: any = {
       title: title.value,
-      amount: parseCurrencyInput(amount.value),
+      amount: parseCurrencyInput(amount.value ?? 0),
       type: type.value,
       status: status.value,
       expected_date: expectedDate.value ? new Date(expectedDate.value).toISOString() : new Date().toISOString()
@@ -93,7 +106,7 @@ const submit = async () => {
     const res = await api.api.transactions({ id: transactionId }).patch(payload)
     if (res.error) {
       console.error('API Error:', res.error)
-      throw new Error(res.error.message || 'Erro ao atualizar a transação')
+      throw new Error(readEdenErrorDetail(res.error) || 'Erro ao atualizar a transação')
     }
 
     toast.add({ title: 'Alterações salvas!', color: 'emerald' })
@@ -128,8 +141,20 @@ const deleteTransaction = async () => {
 </script>
 
 <template>
-  <UModal v-model="isOpen" prevent-close>
-    <UCard @click.stop :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
+  <UModal
+    v-model="isOpen"
+    prevent-close
+    :ui="{
+      inner: 'fixed inset-0 overflow-y-auto overscroll-contain',
+      // Cap the panel to the viewport so the card body scrolls internally instead of the page.
+      base: 'relative text-left flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100vh-4rem)]'
+    }"
+  >
+    <UCard @click.stop class="flex flex-col min-h-0" :ui="{
+      ring: '',
+      divide: 'divide-y divide-gray-100 dark:divide-gray-800',
+      body: { base: 'min-h-0 flex-1 overflow-y-auto overscroll-contain' }
+    }">
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-base font-semibold text-white">
@@ -141,13 +166,21 @@ const deleteTransaction = async () => {
 
       <form @submit.prevent="submit" class="space-y-4">
         <UFormGroup label="Valor">
-          <UInput v-model="amount" type="text" placeholder="0.00" icon="i-heroicons-currency-dollar">
+          <UInput
+            v-model="amount"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="0.00"
+            icon="i-heroicons-currency-dollar"
+            input-class="text-base sm:text-sm"
+          >
             <template #leading><span class="text-gray-400 sm:text-sm">R$</span></template>
           </UInput>
         </UFormGroup>
-        
+
         <UFormGroup label="Descrição">
-          <UInput v-model="title" />
+          <UInput v-model="title" autocomplete="off" input-class="text-base sm:text-sm" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">
@@ -160,7 +193,7 @@ const deleteTransaction = async () => {
         </div>
 
         <UFormGroup v-if="type !== 'transfer'" label="Forma de Pagamento">
-          <div class="flex gap-4">
+          <div class="flex flex-wrap gap-4">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-if="type === 'expense'" v-model="source" value="card" label="Cartão" />
           </div>
@@ -183,23 +216,23 @@ const deleteTransaction = async () => {
         </UFormGroup>
 
         <UFormGroup label="Data Esperada">
-          <UInput v-model="expectedDate" type="date" />
-        </UFormGroup>
-        
-        <UFormGroup v-if="status === 'realized'" label="Data de Realização">
-          <UInput v-model="realizedDate" type="date" />
+          <UInput v-model="expectedDate" type="date" input-class="text-base sm:text-sm" />
         </UFormGroup>
 
-        <div class="flex items-center justify-between mt-6">
-          <UButton 
-            icon="i-heroicons-trash" 
-            label="Excluir" 
-            color="red" 
-            variant="ghost" 
+        <UFormGroup v-if="status === 'realized'" label="Data de Realização">
+          <UInput v-model="realizedDate" type="date" input-class="text-base sm:text-sm" />
+        </UFormGroup>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 mt-6">
+          <UButton
+            icon="i-heroicons-trash"
+            label="Excluir"
+            color="red"
+            variant="ghost"
             :loading="isDeleting"
-            @click="deleteTransaction" 
+            @click="deleteTransaction"
           />
-          <div class="flex gap-3">
+          <div class="flex flex-wrap justify-end gap-3 ml-auto">
             <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
             <UButton type="submit" label="Salvar Alterações" color="primary" :loading="isSubmitting" />
           </div>

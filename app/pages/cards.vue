@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 space-y-6">
     <div class="flex items-center justify-between">
-      <h1 class="text-3xl font-bold text-white">Cartões de Crédito</h1>
+      <h1 class="text-2xl sm:text-3xl font-bold text-white">Cartões de Crédito</h1>
     </div>
 
     <!-- Seletor Mestre de Cartão -->
@@ -25,13 +25,13 @@
         :color="selectedPeriod === inv.period ? 'primary' : 'gray'"
         :variant="selectedPeriod === inv.period ? 'solid' : 'soft'"
         @click="selectedPeriod = inv.period"
-        class="capitalize"
+        class="capitalize shrink-0 whitespace-nowrap"
       />
     </div>
 
     <!-- Corpo da Fatura -->
-    <div v-if="currentInvoice" class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-6">
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+    <div v-if="currentInvoice" class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-zinc-800 pb-4">
         <div>
           <p class="text-sm text-zinc-400">Vencimento: {{ formatDate(currentInvoice.dueDate) }}</p>
           <div class="flex items-end gap-3 mt-1 flex-wrap">
@@ -51,8 +51,8 @@
             </div>
           </div>
         </div>
-        <div class="flex flex-col items-end gap-2">
-          <UBadge :color="getStatusProps(currentInvoice.status).color" variant="subtle">
+        <div class="flex flex-col items-stretch sm:items-end gap-2">
+          <UBadge :color="getStatusProps(currentInvoice.status).color" variant="subtle" class="self-start sm:self-end">
             {{ getStatusProps(currentInvoice.status).label }}
           </UBadge>
 
@@ -62,6 +62,7 @@
             :color="currentInvoice.status === 'OPEN' ? 'blue' : 'primary'" 
             icon="i-heroicons-banknotes"
             :loading="isPaying"
+            class="w-full sm:w-auto justify-center"
             @click="payInvoice"
           />
         </div>
@@ -69,7 +70,7 @@
 
       <!-- Lista de Compras -->
       <div class="space-y-3">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
           <h3 class="text-sm font-medium text-zinc-400 uppercase tracking-wider">{{ currentInvoice.status === 'PROJECTED' ? 'Previsão de Cobranças' : 'Compras do Mês' }}</h3>
           <p v-if="currentInvoice.status === 'PROJECTED'" class="text-xs text-blue-400 italic">Estimativa baseada nas recorrências ativas</p>
         </div>
@@ -78,9 +79,9 @@
           Nenhuma transação nesta fatura.
         </div>
 
-        <div v-for="txn in currentInvoice.transactions" :key="txn.id" class="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors">
-          <div>
-            <p class="text-white font-medium flex items-center gap-2">
+        <div v-for="txn in currentInvoice.transactions" :key="txn.id" class="flex items-center justify-between gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-colors">
+          <div class="min-w-0">
+            <p class="text-white font-medium flex items-center gap-2 flex-wrap">
               {{ txn.title.replace(/ - Parcela \d+\/\d+$/, '') }}
               <UBadge v-if="getInstallmentInfo(txn.title)" color="blue" variant="subtle" size="xs">
                 {{ getInstallmentInfo(txn.title) }}
@@ -88,13 +89,13 @@
             </p>
             <p class="text-xs text-zinc-500">Comprado em: {{ formatDate(txn.purchase_date || txn.expected_date) }}</p>
           </div>
-          <div class="flex items-center gap-4">
-            <p class="text-white font-semibold">
+          <div class="flex items-center gap-3 sm:gap-4 shrink-0">
+            <p class="text-sm sm:text-base text-white font-semibold">
               <span v-if="txn.amount < 0" class="text-emerald-400 mr-1">+</span>
               {{ formatCurrency(Math.abs(txn.amount)) }}
             </p>
             <UDropdown v-if="txn.status !== 'projected'" :items="getTransactionItems(txn)" :popper="{ placement: 'bottom-end' }">
-              <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-vertical" class="opacity-50 hover:opacity-100 transition-opacity" />
+              <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-vertical" class="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-50 hover:opacity-100 transition-opacity" />
             </UDropdown>
             <UBadge v-else color="blue" variant="subtle" size="xs">Estimado</UBadge>
           </div>
@@ -140,7 +141,7 @@
           />
         </UFormGroup>
 
-        <div class="flex justify-end gap-3 mt-6">
+        <div class="flex justify-end flex-wrap gap-3 mt-6">
           <UButton label="Cancelar" color="gray" variant="ghost" @click="isPaymentModalOpen = false" />
           <UButton 
             :label="isSilentPayment ? 'Dar Baixa Silenciosa' : 'Confirmar Pagamento'" 
@@ -170,7 +171,7 @@
           </UFormGroup>
         </div>
 
-        <div class="flex justify-end gap-3 mt-6">
+        <div class="flex justify-end flex-wrap gap-3 mt-6">
           <UButton label="Cancelar" color="gray" variant="ghost" @click="isEditModalOpen = false" />
           <UButton label="Salvar Alterações" color="primary" @click="saveEdit" />
         </div>

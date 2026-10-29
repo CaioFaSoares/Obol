@@ -11,7 +11,10 @@ name: release
 
 on:
   push:
-    branches: ['release-*']
+    # Candidates never publish from here: release-* matches stable branches only, and the
+    # explicit `!rc-*` exclusion keeps any rc-* ref out regardless of future glob edits. A
+    # candidate publishes via release-candidate.yml instead.
+    branches: ['release-*', '!rc-*']
   # Validation only: pull requests to `main` run the matrix as a real check,
   # but never publish (see the `release` and `cask` job conditions).
   pull_request:
@@ -42,11 +45,26 @@ jobs:
         name: read version
         env:
           BRANCH: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           version=$(jq -r '.version' desktop/app.json)
+          # rc* and every other non-release ref can dispatch this workflow from the UI; publish
+          # must stay impossible for them. `workflow_dispatch` is the designed republish path for
+          # existing release-* branches only — candidates run release-candidate.yml on rc-*.
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$BRANCH" != release-* ]]; then
+            echo "::error::dispatch release.yml only on release-* branches; rc-* candidates publish via release-candidate.yml"
+            exit 1
+          fi
           # semver, plus hotfix letters right after the patch: 0.1.0a, 0.1.0b.
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z]*([-+].*)?$ ]]; then
             echo "::error file=desktop/app.json::version '$version' is not X.Y.Z or X.Y.Z<letters> (a hotfix, as in 0.1.0a)"
+            exit 1
+          fi
+          # A manually pushed/dispatched release-* branch with a prerelease version (e.g.
+          # release-0.3.0-rc.1, desktop/app.json=0.3.0-rc.1) must fail here, before build or
+          # publish: candidate versions belong on rc-* branches and release-candidate.yml.
+          if [[ "$BRANCH" == release-* && "$version" == *-* ]]; then
+            echo "::error file=desktop/app.json::prerelease version '$version' is not publishable from a release-* branch; candidates belong on rc-* and release-candidate.yml"
             exit 1
           fi
           # release-0.1.0 (or release-0.1.0a) must match desktop/app.json; other release-* names skip the check.
@@ -178,7 +196,10 @@ jobs:
 
   release:
     name: publish GitHub release
-    if: github.event_name != 'pull_request'
+    # Publish only from release-* refs: the job explicitly ignores every other ref (rc-* runs
+    # release-candidate.yml; a stray dispatch from dev/main must not publish `--latest`). Plain
+    # pushes already arrive from release-* only (see the trigger).
+    if: github.event_name != 'pull_request' && startsWith(github.ref_name, 'release-')
     needs: [prepare, build]
     runs-on: ubuntu-24.04
     permissions:
@@ -271,7 +292,8 @@ jobs:
   # alone (`desktop/scripts/brew-cask.ts`). A push by GITHUB_TOKEN starts no workflow.
   cask:
     name: update the Homebrew cask
-    if: github.event_name != 'pull_request'
+    # Same ref guard as the release job: candidates and stray dispatches never update the cask.
+    if: github.event_name != 'pull_request' && startsWith(github.ref_name, 'release-')
     needs: [prepare, release]
     runs-on: ubuntu-24.04
     permissions:

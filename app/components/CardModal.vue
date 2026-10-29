@@ -79,20 +79,20 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`
     <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
       <template #header>
         <div class="flex items-center justify-between">
-          <h3 class="text-base font-semibold leading-6 text-white">
+          <h3 class="min-w-0 text-base font-semibold leading-6 text-white">
             {{ editingId ? 'Editar Cartão' : 'Novo Cartão de Crédito' }}
           </h3>
-          <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" @click="close" />
+          <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="shrink-0 -my-1" @click="close" />
         </div>
       </template>
 
-      <form @submit.prevent="submit" class="space-y-4">
+      <form @submit.prevent="submit" class="space-y-4 [&_input]:text-base [&_select]:text-base sm:[&_input]:text-sm sm:[&_select]:text-sm">
         <UFormGroup label="Nome do Cartão">
           <UInput v-model="name" placeholder="Ex: Cartão XP, Ultravioleta..." />
         </UFormGroup>
 
         <UFormGroup label="Limite Total (R$)">
-          <UInput v-model="limit" type="text" placeholder="Ex: 5000.00" />
+          <UInput v-model="limit" type="text" inputmode="decimal" placeholder="Ex: 5000.00" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">
@@ -105,9 +105,9 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`
           </UFormGroup>
         </div>
 
-        <div class="flex justify-end gap-3 pt-2">
-          <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
-          <UButton type="submit" :label="editingId ? 'Salvar Alterações' : 'Criar Cartão'" color="primary" :loading="isSubmitting" />
+        <div class="sticky bottom-0 bg-zinc-900 -mx-4 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:bg-transparent sm:mx-0 sm:px-0 sm:pb-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <UButton label="Cancelar" variant="ghost" color="gray" class="w-full sm:w-auto" @click="close" />
+          <UButton type="submit" :label="editingId ? 'Salvar Alterações' : 'Criar Cartão'" color="primary" :loading="isSubmitting" class="w-full sm:w-auto" />
         </div>
       </form>
     </UCard>

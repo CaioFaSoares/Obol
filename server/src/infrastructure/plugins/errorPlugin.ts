@@ -10,9 +10,20 @@ export const errorPlugin = new Elysia({ name: 'error-plugin' })
   })
   .onError({ as: 'global' }, ({ code, error, set }) => {
     const message = error instanceof Error ? error.message : String(error);
+    // Elysia's built-in unmatched-route error: without this mapping it falls
+    // through to the generic 500 below, turning a missing route into an
+    // internal error. `message` is Elysia's literal `NOT_FOUND` marker, never
+    // a domain detail, so a stable canonical body is safe here.
+    // Domain NotFoundError must be checked before the generic Elysia
+    // `NOT_FOUND` code branch: Elysia assigns code `NOT_FOUND` to both, and
+    // the domain branch preserves the original error message as `details`.
     if (error instanceof NotFoundError) {
       set.status = 404;
       return { error: 'Not Found', details: message };
+    }
+    if (code === 'NOT_FOUND') {
+      set.status = 404;
+      return { error: 'Not Found', details: 'Route not found.' };
     }
     if (error instanceof ConflictError) {
       set.status = 409;

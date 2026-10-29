@@ -1,0 +1,43 @@
+# Dedicated production image for the self-hosted deployment
+# (docker-compose.self-hosted.yml -> obol-web). It stays separate from
+# app/Dockerfile so the dev compose and Coolify keep building their image
+# untouched. Keep Nuxt in SSR mode: no OBOL_DESKTOP_STATIC, no static build.
+#
+# NUXT_PUBLIC_API_BASE is injected BEFORE `npm run build`: Nuxt bakes it into
+# runtimeConfig.public.apiBase and into the generated routeRules
+# (`/api/**` -> proxy to the BFF), so the container resolves the BFF through
+# the Compose network name http://obol-bff:8080 at runtime. It is never a
+# client value: browsers only talk to the same origin, and the reverse proxy
+# forwards /api/* to the BFF.
+#
+# Tested with the build recipe of app/package.json only (`build` = `nuxt build`).
+
+# node:20-alpine, same major as app/Dockerfile, pinned to the multi-arch index
+# digest (node:20-alpine on Alpine 3.23, verified with `docker buildx
+# imagetools inspect node:20-alpine`; major bumps need a new digest here).
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+
+WORKDIR /app
+
+# Reproducible dependency install from the committed lockfile (npm ci, never
+# npm install). Only the manifests are copied first so source edits do not
+# invalidate the npm cache layer.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+# Bake the internal BFF address into the client bundle and routeRules.
+ENV NUXT_PUBLIC_API_BASE=http://obol-bff:8080
+RUN npm run build
+
+# Production SSR server (node-server preset runtime in .output/server/).
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3000
+EXPOSE 3000
+
+# Health check lives at the compose-service level (docker-compose.self-hosted.yml),
+# next to the obol-bff/obol-pb checks.
+
+CMD ["node", ".output/server/index.mjs"]

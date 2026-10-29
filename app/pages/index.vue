@@ -166,9 +166,18 @@ const dayDetailTransactions = computed(() => {
     .slice(0, 15)
 })
 
+type DashboardTabKey = 'realized' | 'pending' | 'simulated'
+type DashboardStatusFilter = 'all' | 'pending' | 'realized'
+
+const dashboardStatusByTab: Record<DashboardTabKey, DashboardStatusFilter> = {
+  realized: 'realized',
+  pending: 'pending',
+  simulated: 'all'
+}
+
 const activeTab = ref(0)
 const tabItems = computed(() => {
-  const tabs = [
+  const tabs: { label: string; key: DashboardTabKey; icon: string }[] = [
     { label: 'Realizados', key: 'realized', icon: 'i-heroicons-check-badge' },
     { label: 'Pendentes', key: 'pending', icon: 'i-heroicons-clock' }
   ]
@@ -222,7 +231,7 @@ const loadRecentTransactions = async (reset = false) => {
   }
 
   const currentTab = tabItems.value[activeTab.value]?.key || 'realized'
-  const status = currentTab === 'simulated' ? 'all' : currentTab
+  const status = dashboardStatusByTab[currentTab]
   const simulation = currentTab === 'simulated' ? 'simulated' : 'real'
   const sort = currentTab === 'realized' ? '-realized_date' : 'expected_date'
 
@@ -384,9 +393,9 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
         <UCard :ui="cardUi">
           <p class="text-sm text-zinc-400 font-medium mb-1 flex items-center gap-2">
             Saldo disponível
-            <UBadge color="zinc" variant="subtle" size="xs">Hoje</UBadge>
+            <UBadge color="gray" variant="subtle" size="xs">Hoje</UBadge>
           </p>
-          <p class="text-3xl sm:text-4xl font-mono text-white font-semibold">
+          <p class="text-2xl sm:text-3xl md:text-4xl font-mono text-white font-semibold break-all">
             {{ formatCurrency(currentBalance) }}
           </p>
           <p class="text-xs text-zinc-500 mt-1">Conta somada ao caixa real, sem projeções.</p>
@@ -407,7 +416,7 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
               <UButton color="gray" variant="ghost" size="xs" :label="`+${forecastDays} dias`" trailing-icon="i-heroicons-calendar-days" />
             </UDropdown>
           </div>
-          <p class="text-3xl sm:text-4xl font-mono font-semibold" :class="forecastedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'">
+          <p class="text-2xl sm:text-3xl md:text-4xl font-mono font-semibold break-all" :class="forecastedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'">
             {{ formatCurrency(forecastedBalance) }}
           </p>
           <p class="text-xs text-zinc-500 mt-1">Projetado para daqui a {{ forecastDays }} dias.</p>
@@ -468,7 +477,9 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
           </div>
         </template>
 
-        <UTabs v-model="activeTab" :items="tabItems" class="w-full mb-4" />
+        <div class="-mx-1 overflow-x-auto">
+          <UTabs v-model="activeTab" :items="tabItems" class="w-full mb-4 px-1" />
+        </div>
 
         <UAlert
           v-if="transactionsError || recentLoadError"
@@ -501,7 +512,7 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
             <div class="min-w-0">
               <p class="text-white font-medium flex items-center gap-2 flex-wrap">
                 <UIcon v-if="t.is_scheduled" name="i-heroicons-calendar-days" class="w-4 h-4 text-amber-400 flex-shrink-0" />
-                <span class="truncate">{{ t.title }}</span>
+                <span class="truncate max-w-full">{{ t.title }}</span>
                 <UBadge v-if="t.is_scheduled" color="amber" variant="subtle" size="xs">Agendado</UBadge>
                 <UBadge v-else-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs">Pendente</UBadge>
                 <UBadge v-if="t.is_silent" color="gray" variant="subtle" size="xs">Baixa Silenciosa</UBadge>
@@ -590,12 +601,12 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
     <UModal v-model="isDayDetailModalOpen">
       <UCard :ui="{ ring: '', divide: 'divide-y divide-zinc-800', background: 'bg-zinc-900' }">
         <template #header>
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-base font-semibold text-white flex items-center gap-2">
-                Composição do Saldo
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <h3 class="text-base font-semibold text-white flex items-center gap-2 flex-wrap">
+                <span class="min-w-0">Composição do Saldo</span>
                 <UBadge v-if="selectedDayIsFuture" color="purple" variant="subtle" size="xs">Projetado</UBadge>
-                <UBadge v-else color="zinc" variant="subtle" size="xs">Confirmado</UBadge>
+                <UBadge v-else color="gray" variant="subtle" size="xs">Confirmado</UBadge>
               </h3>
               <p class="text-xs text-zinc-400 mt-1">
                 Até {{ selectedDayLabel }} —
@@ -609,18 +620,18 @@ const cardUi = { background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }
         <div class="space-y-4">
           <p class="text-xs text-zinc-500 mb-2">As 15 transações mais recentes (ou agendadas) que impactam este dia:</p>
           <ul v-if="dayDetailTransactions.length > 0" class="divide-y divide-zinc-800">
-            <li v-for="t in dayDetailTransactions" :key="t.id" class="py-2 flex justify-between items-center">
-              <div>
-                <p class="text-white text-sm font-medium flex items-center gap-2">
-                  {{ t.title }}
-                  <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs">Pendente</UBadge>
+            <li v-for="t in dayDetailTransactions" :key="t.id" class="py-2 flex justify-between items-center gap-2">
+              <div class="min-w-0">
+                <p class="text-white text-sm font-medium flex items-center gap-2 min-w-0">
+                  <span class="truncate">{{ t.title }}</span>
+                  <UBadge v-if="t.status === 'pending'" color="yellow" variant="subtle" size="xs" class="shrink-0">Pendente</UBadge>
                 </p>
                 <p class="text-xs text-zinc-400">
                   {{ formatDate(t.status === 'realized' && t.realized_date ? t.realized_date : t.expected_date) }}
                 </p>
               </div>
               <span
-                class="font-mono text-sm"
+                class="font-mono text-sm shrink-0 text-right"
                 :class="{
                   'text-zinc-400': t.type === 'transfer',
                   'text-red-400': t.type === 'expense',

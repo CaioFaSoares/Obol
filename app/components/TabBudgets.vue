@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 
 const { data: budgets, refresh } = await useAsyncData('budgets', async () => {
-  // @ts-expect-error nested route typing
   const res = await api.api.categories.budgets.get()
   if (res.error) throw res.error
   return (res.data as any[]) ?? []
@@ -25,9 +24,9 @@ const budgetModal = ref()
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <p class="text-sm text-zinc-400">Monitoramento dos seus "potes" de orçamento mensal.</p>
-      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Orçamento" @click="budgetModal?.open()" />
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-zinc-400 min-w-0">Monitoramento dos seus "potes" de orçamento mensal.</p>
+      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Orçamento" class="w-full sm:w-auto justify-center" @click="budgetModal?.open()" />
     </div>
 
     <div v-if="!budgets?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
@@ -41,9 +40,9 @@ const budgetModal = ref()
         :key="cat.id"
         class="bg-zinc-800/50 rounded-xl p-4 space-y-2"
       >
-        <div class="flex items-center justify-between">
-          <span class="text-white font-medium">{{ cat.name }}</span>
-          <span class="text-sm text-zinc-400">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-white font-medium min-w-0 break-words">{{ cat.name }}</span>
+          <span class="text-sm text-zinc-400 shrink-0 text-right">
             <template v-if="cat.monthly_budget">
               <span :class="progressPercent(cat.spent, cat.monthly_budget) >= 90 ? 'text-red-400' : 'text-white'">
                 {{ formatCurrency(cat.spent) }}

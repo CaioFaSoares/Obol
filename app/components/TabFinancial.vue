@@ -25,11 +25,11 @@ async function refreshCards() {
 
     <!-- Seção Contas -->
     <section class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-          <UIcon name="i-heroicons-building-library" /> Contas Bancárias
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-lg font-semibold text-white flex items-center gap-2 min-w-0">
+          <UIcon name="i-heroicons-building-library" class="shrink-0" /> Contas Bancárias
         </h2>
-        <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Nova Conta" @click="accountModal?.open()" />
+        <UButton class="shrink-0" icon="i-heroicons-plus" size="sm" color="primary" label="Nova Conta" @click="accountModal?.open()" />
       </div>
 
       <div v-if="!accounts?.length" class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500">
@@ -42,9 +42,9 @@ async function refreshCards() {
           :key="acc.id"
           class="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50"
         >
-          <div class="flex items-start justify-between">
-            <div>
-              <p class="text-white font-medium">{{ acc.name }}</p>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-white font-medium break-words">{{ acc.name }}</p>
               <p class="text-xs text-zinc-400 capitalize">{{ acc.type === 'checking' ? 'Conta Corrente' : acc.type === 'savings' ? 'Poupança' : 'Investimento' }}</p>
             </div>
             <span class="font-mono" :class="acc.initial_balance >= 0 ? 'text-emerald-400' : 'text-red-400'">
@@ -57,11 +57,11 @@ async function refreshCards() {
 
     <!-- Seção Cartões -->
     <section class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-          <UIcon name="i-heroicons-credit-card" /> Cartões de Crédito
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-lg font-semibold text-white flex items-center gap-2 min-w-0">
+          <UIcon name="i-heroicons-credit-card" class="shrink-0" /> Cartões de Crédito
         </h2>
-        <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Cartão" @click="cardModal?.open()" />
+        <UButton class="shrink-0" icon="i-heroicons-plus" size="sm" color="primary" label="Novo Cartão" @click="cardModal?.open()" />
       </div>
 
       <div v-if="!cards?.length" class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500">
@@ -74,8 +74,8 @@ async function refreshCards() {
           :key="card.id"
           class="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 space-y-3"
         >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 w-full">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 w-full min-w-0">
               <p class="text-white font-medium truncate">{{ card.name }}</p>
               <UButton icon="i-heroicons-pencil-square" size="xs" color="gray" variant="ghost" class="flex-shrink-0" @click="cardModal?.open(card)" />
             </div>

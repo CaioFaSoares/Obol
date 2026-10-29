@@ -37,9 +37,9 @@ const triggerCron = async () => {
 </script>
 
 <template>
-  <div class="p-6 max-w-7xl mx-auto space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-3xl font-bold tracking-tight text-white">
+  <div class="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div class="flex items-center justify-between gap-3">
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white">
         Administração
       </h1>
     </div>
@@ -58,12 +58,13 @@ const triggerCron = async () => {
         </p>
 
         <div class="space-y-4">
-          <div class="flex items-center justify-between p-4 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
-            <div>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 p-4 bg-zinc-950/50 rounded-lg border border-zinc-800/50">
+            <div class="min-w-0">
               <p class="font-medium text-white text-sm">Motor de Recorrências</p>
-              <p class="text-xs text-zinc-500 mt-1">Lança transações de bolsas, assinaturas e parcelamentos previstos para o mês atual.</p>
+              <p class="text-xs text-zinc-500 mt-1 break-words">Lança transações de bolsas, assinaturas e parcelamentos previstos para o mês atual.</p>
             </div>
-            <UButton 
+            <UButton
+              class="self-stretch sm:self-auto"
               color="primary" 
               variant="soft" 
               icon="i-heroicons-play" 

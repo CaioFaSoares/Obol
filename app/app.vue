@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { ObolViewBridge } from './utils/api'
 import type {
   LocalAccountSummary,
   LocalAuthSetupRequest,
   LocalAuthUnlockRequest
 } from '../desktop/electrobun/shared-rpc'
+import { hostedServerRequiresAuth, useRemoteSession } from './composables/useRemoteSession'
 
 type LocalAuthMode = 'checking' | 'setup' | 'unlock' | 'unlocked' | 'hosted' | 'error'
 
 const financeStore = useFinanceStore()
+const remote = useRemoteSession()
+
 function isDesktopClient(): boolean {
   return typeof window !== 'undefined' &&
     (window.location.protocol === 'views:' || window.obol?.auth !== undefined)
@@ -28,6 +31,37 @@ function authBridge(): ObolViewBridge['auth'] | undefined {
   return typeof window === 'undefined' ? undefined : window.obol?.auth
 }
 
+// Desktop: set once the local login screen's "Connect to a central server"
+// action is used, or when a previous remote session was configured.
+const remoteModeRequested = ref(false)
+
+const localGateVisible = computed(() =>
+  desktopRuntime && !remoteModeRequested.value &&
+  (authMode.value === 'checking' || authMode.value === 'setup' || authMode.value === 'unlock' || authMode.value === 'error')
+)
+
+// Everything except a verified session and the legacy hosted dashboard is
+// gated; the app stays behind RemoteAuthGate until a session is confirmed.
+const remoteGateVisible = computed(() => {
+  if (!import.meta.client) return false
+  switch (remote.remoteStep.value) {
+    case 'idle':
+    case 'active':
+    case 'sessions':
+      return false
+    default:
+      return true
+  }
+})
+
+const remoteOverlayVisible = computed(() =>
+  import.meta.client && remote.remoteStep.value === 'sessions'
+)
+
+const remoteBadgeVisible = computed(() =>
+  import.meta.client && remote.remoteStep.value === 'active'
+)
+
 const localGateMode = computed(() => {
   switch (authMode.value) {
     case 'checking':
@@ -42,6 +76,9 @@ const localGateMode = computed(() => {
 
 if (import.meta.server) {
   await useAsyncData('global-finance-data', async () => {
+    // Auth-enabled deployments must not expose unauthenticated financial calls
+    // in the prerender: the remote gate fetches data only after verification.
+    if (await hostedServerRequiresAuth()) return false
     await financeStore.loadBaseData()
     return true
   })
@@ -119,15 +156,48 @@ async function unlockLocalAccount(request: LocalAuthUnlockRequest): Promise<void
   }
 }
 
+// Explicit local -> remote path from the local login screen. The local profile
+// is never touched by remote mode (D008 no-sync rule).
+function connectRemote(): void {
+  remote.enterRemoteConfiguration()
+  remoteModeRequested.value = true
+}
+
+// Explicit remote -> local path. The local profile requires unlocking again.
+function switchToLocal(): void {
+  remote.useLocalInstead()
+  remoteModeRequested.value = false
+  void readAuthState()
+}
+
+// After login the session is verified and the remote transport is registered;
+// pull base data exactly like the local unlock path does.
+watch(remote.remoteStep, async (step, previous) => {
+  if (step !== 'active' || previous === 'active' || previous === 'sessions') return
+  await financeStore.loadBaseData(true)
+})
+
 onMounted(async () => {
   if (isDesktopClient()) {
-    if (!authBridge()) {
-      authMode.value = 'error'
-      authMessage.value = 'The desktop authentication bridge is unavailable.'
-      return
+    remoteModeRequested.value = remote.remoteRequested()
+    if (remoteModeRequested.value) {
+      await remote.bootstrapRemote()
+    } else {
+      await readAuthState()
     }
-    await readAuthState()
-  } else if (financeStore.accounts.length === 0) {
+  } else {
+    // Native iOS and hosted web run the same remote identity flow; legacy
+    // (auth-disabled) hosted deployments resolve to 'idle' inside the call
+    // and load the dashboard as before.
+    await remote.bootstrapRemote()
+  }
+
+  // The remoteStep watcher pulls base data as soon as a session goes active.
+  if (
+    remote.remoteStep.value === 'idle' &&
+    !isDesktopClient() &&
+    financeStore.accounts.length === 0
+  ) {
     await financeStore.loadBaseData(true)
   }
 })
@@ -135,8 +205,33 @@ onMounted(async () => {
 
 <template>
   <UNotifications />
+  <RemoteAuthGate
+    v-if="remoteGateVisible"
+    :step="remote.remoteStep.value"
+    :busy="remote.remoteBusy.value"
+    :message="remote.remoteMessage.value"
+    :server-url="remote.remoteServerUrl.value"
+    :server-name="remote.remoteServerName.value"
+    :sessions="remote.remoteSessions.value"
+    :cooldown="remote.remoteCooldown.value"
+    :reset-token="remote.pendingResetToken.value"
+    :smtp-configured="remote.smtpConfigured.value"
+    :allow-local-switch="desktopRuntime"
+    :allow-server-change="remote.endpointConfigurable.value"
+    @choose-server="url => remote.chooseServer(url)"
+    @setup="submission => remote.submitSetup(submission)"
+    @login="request => remote.submitLogin(request)"
+    @show-reset-request="remote.showPasswordReset()"
+    @reset-request-submit="email => remote.requestPasswordReset(email)"
+    @reset-confirm="submission => remote.confirmPasswordReset(submission)"
+    @logout="remote.logout()"
+    @revoke="id => remote.revokeSession(id)"
+    @change-server="remote.changeServerUrl()"
+    @switch-local="switchToLocal"
+    @retry="remote.retryStartup()"
+  />
   <LocalAuthGate
-    v-if="desktopRuntime && (authMode === 'checking' || authMode === 'setup' || authMode === 'unlock' || authMode === 'error')"
+    v-else-if="localGateVisible"
     :mode="localGateMode"
     :account="localAccount"
     :busy="authBusy"
@@ -144,9 +239,47 @@ onMounted(async () => {
     @setup="setupLocalAccount"
     @unlock="unlockLocalAccount"
     @retry="readAuthState"
+    @connect="connectRemote"
   />
-  <NuxtLayout v-else>
-    <NuxtRouteAnnouncer />
-    <NuxtPage />
-  </NuxtLayout>
+  <template v-else>
+    <NuxtLayout>
+      <NuxtRouteAnnouncer />
+      <NuxtPage />
+    </NuxtLayout>
+    <RemoteAuthGate
+      v-if="remoteBadgeVisible"
+      status-badge
+      :step="remote.remoteStep.value"
+      :busy="remote.remoteBusy.value"
+      :message="remote.remoteMessage.value"
+      :server-url="remote.remoteServerUrl.value"
+      :server-name="remote.remoteServerName.value"
+      :sessions="remote.remoteSessions.value"
+      :cooldown="remote.remoteCooldown.value"
+      :reset-token="remote.pendingResetToken.value"
+      :smtp-configured="remote.smtpConfigured.value"
+      :allow-server-change="remote.endpointConfigurable.value"
+      @manage="remote.openSessionManager()"
+    />
+    <RemoteAuthGate
+      v-if="remoteOverlayVisible"
+      overlay
+      step="sessions"
+      :busy="remote.remoteBusy.value"
+      :message="remote.remoteMessage.value"
+      :server-url="remote.remoteServerUrl.value"
+      :server-name="remote.remoteServerName.value"
+      :sessions="remote.remoteSessions.value"
+      :cooldown="remote.remoteCooldown.value"
+      :reset-token="remote.pendingResetToken.value"
+      :smtp-configured="remote.smtpConfigured.value"
+      :allow-server-change="remote.endpointConfigurable.value"
+      :allow-local-switch="desktopRuntime"
+      @logout="remote.logout()"
+      @revoke="id => remote.revokeSession(id)"
+      @back-to-active="remote.backToActive()"
+      @change-server="remote.changeServerUrl()"
+      @switch-local="switchToLocal"
+    />
+  </template>
 </template>
