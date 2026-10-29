@@ -1,9 +1,21 @@
 import { treaty } from '@elysiajs/eden'
 import type { App } from '../../server/src/index'
-import type { ApiFetchRequest, ApiFetchResponse } from '../../desktop/electrobun/shared-rpc'
+import type {
+  ApiFetchRequest,
+  ApiFetchResponse,
+  LocalAccountSummary,
+  LocalAuthSetupRequest,
+  LocalAuthStatus,
+  LocalAuthUnlockRequest
+} from '../../desktop/electrobun/shared-rpc'
 
-interface ObolViewBridge {
+export interface ObolViewBridge {
   apiFetch(request: ApiFetchRequest): Promise<ApiFetchResponse>
+  auth: {
+    status(): Promise<LocalAuthStatus>
+    setup(request: LocalAuthSetupRequest): Promise<LocalAccountSummary>
+    unlock(request: LocalAuthUnlockRequest): Promise<LocalAccountSummary>
+  }
 }
 
 declare global {

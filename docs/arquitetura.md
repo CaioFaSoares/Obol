@@ -7,12 +7,12 @@
 | | Hosted web | Local desktop |
 |---|---|---|
 | Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA |
-| UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | Eden Treaty custom fetcher → `window.obol.apiFetch` → Electrobun RPC → Elysia `app.handle(Request)` in the same Bun main process |
-| BFF | Elysia on Bun, listens `0.0.0.0:8080` inside Compose | Same Elysia app, Bun main process; loopback `127.0.0.1:13080` listener activates the existing scheduler and serves Nuxt dev SSR. Packaged WebView API requests use RPC, not that listener. |
-| Data | PocketBase Compose service, SQLite volume `db/pb_data` | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-user `pb_data` and generated admin secret under Electrobun app data |
+| UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | `LocalAuthGate` unlocks via Electrobun RPC; after unlock, Eden requests use `window.obol.apiFetch` → Elysia `app.handle(Request)` in the same Bun main process |
+| BFF | Elysia on Bun, listens `0.0.0.0:8080` inside Compose | Same Elysia app starts after local profile unlock; loopback `127.0.0.1:13080` activates the scheduler. Desktop development uses Nuxt SPA/HMR; packaged WebView API requests use RPC, not that listener. |
+| Data | PocketBase Compose service, SQLite volume `db/pb_data` | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-user `pb_data` plus `local_profile.json` with a salted PBKDF2 verifier |
 | Run command | `docker compose up -d --build` | `cd app && npm ci`; `cd server && bun install`; `cd desktop && bun install && bun run eb:dev` |
 
-The desktop mode has no remote service, Docker dependency, direct WebView-to-PocketBase access, or network-facing BFF endpoint. Its local Elysia socket binds only loopback. The PocketBase binary and migrations are bundled; the app owns child startup, readiness, authentication, and shutdown. See D005.
+The desktop opens on a local setup/unlock screen before starting PocketBase or Elysia. First setup runs PocketBase `superuser upsert` for the internal local account; upgrading a 0.1.0 profile keeps its records and repairs stale credentials without resetting `pb_data`. The login is an app gate, not encryption at rest. Desktop has no remote service, Docker dependency, direct WebView-to-PocketBase access, or network-facing BFF endpoint. See D005 and D007.
 
 ## Server layering (`server/src`)
 

@@ -1,11 +1,20 @@
 const apiBase = process.env.NUXT_PUBLIC_API_BASE || 'http://obol-server:13080'
 const desktopStaticBuild = process.env.OBOL_DESKTOP_STATIC === 'true'
+const desktopLocalDev = process.env.OBOL_DESKTOP_LOCAL === 'true'
+const desktopSpa = desktopStaticBuild || desktopLocalDev
 
 export default defineNuxtConfig({
-  // Only packaged output is a static SPA; Electrobun development keeps Nuxt SSR/HMR.
-  ssr: !desktopStaticBuild,
+  // Local Electrobun also disables SSR so the login gate runs before desktop API access.
+  ssr: !desktopSpa,
+  // Keep Nuxt's static build metadata path short enough for Electrobun's macOS self-extractor.
+  ...(desktopStaticBuild ? { buildId: 'obol' } : {}),
   app: {
     baseURL: desktopStaticBuild ? './' : '/'
+  },
+  router: {
+    options: {
+      hashMode: desktopStaticBuild
+    }
   },
   compatibilityDate: '2024-04-03',
   devtools: { enabled: true },

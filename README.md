@@ -28,14 +28,17 @@ In desktop mode, the WebView sends typed API requests over Electrobun RPC. The m
 
 ## Local data
 
+- On first launch, create a local name/email/password profile. Later launches require that password to unlock Obol.
+- The password verifier is stored in `local_profile.json`; PocketBase's internal superuser credential is derived from the password and reconciled before the local service starts.
+- Upgrading a 0.1.0 profile preserves its PocketBase records and repairs the internal superuser login during first-time profile setup.
 - Desktop data lives in the current user's application-data directory under `copland.obol`; development uses the isolated identity `copland.obol.eb-dev`.
-- The app creates a local PocketBase profile and runs the bundled migrations on startup.
 - Desktop data is not imported from or synchronized with the hosted `db/pb_data` volume.
+- PocketBase files are not encrypted by the app login. Use macOS FileVault for at-rest protection.
 - The desktop build pins PocketBase 0.40.6 and verifies the downloaded binary checksum.
 
 ## Releases
 
-The current `desktop/app.json` version is `0.1.0`. Once the release workflows are on `main` and a `dev` branch exists, merging a pull request from `dev` into `main` creates `release-0.1.0`. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
+The current `desktop/app.json` version is `0.1.0a`. Merging a pull request from `dev` into `main` creates `release-0.1.0a`. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
 
 The manifest records release metadata; Obol does not currently update itself. Builds are ad-hoc signed, not Developer ID signed or notarized. The cask clears the quarantine flag during installation.
 
@@ -47,7 +50,7 @@ flowchart LR
   release --> cask["Update Casks/obol.rb"]
 ```
 
-After the first public release, install with Homebrew:
+Install the current public release with Homebrew:
 
 ```sh
 brew tap caiofasoares/obol https://github.com/CaioFaSoares/Obol

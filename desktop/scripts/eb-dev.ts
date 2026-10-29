@@ -75,6 +75,7 @@ async function main(): Promise<void> {
   const appEnv = {
     ...process.env,
     NUXT_PUBLIC_API_BASE: 'http://127.0.0.1:13080',
+    OBOL_DESKTOP_LOCAL: 'true',
     NUXT_HOST: '127.0.0.1',
     NUXT_PORT: String(DEV_PORT)
   };

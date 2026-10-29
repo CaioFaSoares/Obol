@@ -4,6 +4,7 @@ One line per decision, newest first. Accepted decisions are never edited in meri
 
 | ID | Date | Decision | Status |
 |---|---|---|---|
+| D007 | 2026-10-28 | Local profile unlock and non-destructive PocketBase superuser recovery | accepted |
 | D006 | 2026-10-28 | Typed controller-to-use-case dispatch; keep explicit Elysia routes and Awilix classes | accepted |
 | D005 | 2026-10-28 | Local Electrobun app: Nuxt SPA + in-process Elysia/RPC + pinned local PocketBase | accepted |
 | D004 | 2026-10-28 | Docs as plain markdown; SilverBullet dropped; Copland house style | accepted |
