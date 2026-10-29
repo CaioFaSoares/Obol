@@ -1,7 +1,10 @@
 # When a pull request is merged into `main`, creates the branch `release-<version>` at the merge
-# commit (the version is `desktop/app.json`'s) and starts `release.yml` on it. Two origins:
-# `dev` (the standing integration branch) and `pr/release-<version>` (a release branch made out
-# of band; its suffix must match `desktop/app.json`, or the job refuses to publish).
+# commit (the version is `desktop/app.json`'s) and starts `release.yml` on it. Three origins:
+# `dev` (the standing integration branch), `pr/release-<version>` (a release branch made out of
+# band; its suffix must match `desktop/app.json`, or the job refuses to publish), and
+# `rc/<version>` (a release candidate: the version must be `X.Y.Z-rc.N`; the job creates the
+# `rc-<version>` branch and starts `release-candidate.yml`, whose prerelease never touches the
+# stable release, the `latest` flag, the Homebrew cask or `/releases/latest/download`).
 #
 # A branch pushed with GITHUB_TOKEN does not start other workflows (GitHub's rule against
 # loops), so the `push` trigger of release.yml would not fire; this job dispatches it explicitly
@@ -23,11 +26,12 @@ permissions:
 
 jobs:
   branch:
-    name: create release-<version>
+    name: create release-<version> or rc-<version>
     if: >-
       github.event.pull_request.merged == true &&
       (github.event.pull_request.head.ref == 'dev' ||
-       startsWith(github.event.pull_request.head.ref, 'pr/release-'))
+       startsWith(github.event.pull_request.head.ref, 'pr/release-') ||
+       startsWith(github.event.pull_request.head.ref, 'rc/'))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -45,22 +49,52 @@ jobs:
             echo "::error file=desktop/app.json::version '$version' is not X.Y.Z or X.Y.Z<letters> (a hotfix, as in 0.1.0a)"
             exit 1
           fi
+          # A stable merge (dev or pr/release-<version>) must not carry a semver prerelease: that
+          # would publish `release-<version>-rc.N` as a stable, `--latest` release. Prerelease
+          # versions are candidate material and go exclusively through the rc/<version> origin.
+          if [[ "$version" == *-* ]] && [[ "$HEAD_REF" != rc/* ]]; then
+            echo "::error file=desktop/app.json::stable merge says '$version', but prerelease versions are candidate-only: cut it as an rc/<version> PR first"
+            exit 1
+          fi
           # A pr/release-<version> merge must carry the matching desktop/app.json: publishing a
           # branch that claims one version but internally says another would overwrite the
           # release assets the announced version's installed apps read.
           case "$HEAD_REF" in
+            dev)
+              branch="release-$version"
+              workflow=release.yml
+              ;;
             pr/release-*)
               expected="${HEAD_REF#pr/release-}"
               if [ "$expected" != "$version" ]; then
                 echo "::error file=desktop/app.json::$HEAD_REF says $expected but desktop/app.json says $version"
                 exit 1
               fi
+              branch="release-$version"
+              workflow=release.yml
+              ;;
+            rc/*)
+              # Candidate cut: rc/<version> with desktop/app.json exactly X.Y.Z-rc.N — always a
+              # prerelease and equal to the announced version, so the candidate cannot alias the
+              # stable release-<version> tag (which carries the plain X.Y.Z).
+              expected="${HEAD_REF#rc/}"
+              if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+                echo "::error file=desktop/app.json::candidate version '$version' is not X.Y.Z-rc.N (as in 0.3.0-rc.1); candidates must carry the -rc.N prerelease"
+                exit 1
+              fi
+              if [ "$expected" != "$version" ]; then
+                echo "::error file=desktop/app.json::$HEAD_REF says $expected but desktop/app.json says $version"
+                exit 1
+              fi
+              branch="rc-$version"
+              workflow=release-candidate.yml
               ;;
           esac
-          echo "branch=release-$version" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "workflow=$workflow" >> "$GITHUB_OUTPUT"
 
-      # An existing release branch means the version was not bumped: publishing again under the
+      # An existing release/rc branch means the version was not bumped: publishing again under the
       # same version would replace that release's files, and installed apps would not update.
       # That is a human decision, so the job stops instead.
       - name: create the branch
@@ -69,7 +103,17 @@ jobs:
         run: |
           # Match the full ref: the short pattern also matches `pr/release-<version>`.
           if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
-            echo "::error::$BRANCH already exists — bump version in desktop/app.json, or push $BRANCH by hand to republish"
+            case "$BRANCH" in
+              # Existing candidate: iteration is a new -rc.N (a new ref), so the tag of an
+              # existing candidate is never reused; republishing the same one is dispatching
+              # release-candidate.yml on that branch.
+              rc-*)
+                echo "::error::$BRANCH already exists — bump desktop/app.json to the next -rc.N and open a fresh rc/<version> PR, or dispatch release-candidate.yml on $BRANCH to republish that candidate"
+                ;;
+              *)
+                echo "::error::$BRANCH already exists — bump version in desktop/app.json, or push $BRANCH by hand to republish"
+                ;;
+            esac
             exit 1
           fi
           git push origin "HEAD:refs/heads/$BRANCH"
@@ -79,6 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ steps.version.outputs.branch }}
+          WORKFLOW: ${{ steps.version.outputs.workflow }}
         run: |
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
-          echo "release.yml dispatched on $BRANCH" >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run "$WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          echo "$WORKFLOW dispatched on $BRANCH" >> "$GITHUB_STEP_SUMMARY"

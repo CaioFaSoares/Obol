@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { formatCurrency, formatDate } from '../utils/formatters'
 import { api } from '../utils/api'
 import { useFinanceStore } from '../stores/finance'
@@ -218,6 +218,70 @@ const columns = [
   { key: 'amount', label: 'Valor' },
   { key: 'actions' }
 ]
+
+// 6. Narrow-viewport state: on very small phones the pagination window shrinks
+const isNarrowViewport = ref(false)
+let narrowViewportQuery: MediaQueryList | undefined
+function onViewportChange(event: MediaQueryListEvent) {
+  isNarrowViewport.value = event.matches
+}
+
+onMounted(() => {
+  narrowViewportQuery = window.matchMedia('(max-width: 380px)');
+  isNarrowViewport.value = narrowViewportQuery.matches;
+  narrowViewportQuery.addEventListener('change', onViewportChange);
+})
+
+onUnmounted(() => {
+  narrowViewportQuery?.removeEventListener('change', onViewportChange)
+})
+
+// ----------------------------------------------------
+// Mobile card presentation (mirrors the table cells; desktop table untouched)
+// ----------------------------------------------------
+const getDisplayDate = (row: TransactionListItem) =>
+  selectedStatus.value === 'realized' ? (row.realized_date || row.expected_date) : row.expected_date
+
+/** Only the color literals supported by UBadge (Nuxt UI theme + default badge config keys). */
+type TransactionBadgeColor =
+  | 'white' | 'black' | 'gray'
+  | 'red' | 'orange' | 'amber' | 'yellow' | 'lime' | 'green' | 'emerald'
+  | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple'
+  | 'fuchsia' | 'pink' | 'rose' | 'primary'
+
+interface TransactionStatusBadge {
+  label: string
+  color: TransactionBadgeColor
+}
+
+const getStatusBadge = (row: TransactionListItem): TransactionStatusBadge => {
+  if (row.status === 'realized') return { label: 'Realizado', color: 'emerald' }
+  if (row.is_scheduled) return { label: 'Agendado', color: 'amber' }
+  return { label: 'Pendente', color: 'yellow' }
+}
+
+const getTitleBadges = (row: TransactionListItem): TransactionStatusBadge[] => {
+  const invoiceBadge = getInvoiceBadge(row)
+  return ([
+    row.is_simulated ? { label: 'Simulado', color: 'purple' } : null,
+    row.is_scheduled ? { label: 'Agendado', color: 'amber' } : null,
+    row.is_silent ? { label: 'Silencioso', color: 'gray' } : null,
+    invoiceBadge ? { label: invoiceBadge, color: 'blue' } : null,
+    row.recurrence_id ? { label: 'Recorrente', color: 'cyan' } : null
+  ].filter((badge): badge is TransactionStatusBadge => badge !== null))
+}
+
+const getAmountClass = (row: TransactionListItem) => ({
+  'text-zinc-500': row.type === 'transfer',
+  'text-emerald-400': row.type === 'income',
+  'text-red-400': row.type === 'expense',
+  'italic opacity-80': row.is_simulated
+})
+
+const getAmountLabel = (row: TransactionListItem) =>
+  row.type === 'transfer'
+    ? formatCurrency(row.amount)
+    : (row.type === 'expense' ? '-' : '+') + formatCurrency(row.amount)
 
 // ----------------------------------------------------
 // Lifecycle badge helpers (silent / invoice / recurrence)
@@ -469,10 +533,10 @@ const getEntityName = (row: TransactionListItem) => {
 </script>
 
 <template>
-  <div class="p-6 max-w-7xl mx-auto space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-3xl font-bold tracking-tight text-white flex items-center gap-2">
-        <UIcon name="i-heroicons-document-text" class="w-8 h-8 text-zinc-400" />
+  <div class="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2 min-w-0">
+        <UIcon name="i-heroicons-document-text" class="w-6 h-6 sm:w-8 sm:h-8 text-zinc-400 flex-shrink-0" />
         Auditoria (Ledger)
       </h1>
       <UButton
@@ -547,21 +611,21 @@ const getEntityName = (row: TransactionListItem) => {
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
         <p class="text-xs uppercase tracking-wide text-zinc-500">Entradas</p>
-        <p class="text-lg font-semibold text-emerald-400 font-mono">{{ formatCurrency(summary.incomeTotal) }}</p>
+        <p class="text-base sm:text-lg font-semibold text-emerald-400 font-mono">{{ formatCurrency(summary.incomeTotal) }}</p>
       </UCard>
       <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
         <p class="text-xs uppercase tracking-wide text-zinc-500">Saídas</p>
-        <p class="text-lg font-semibold text-red-400 font-mono">{{ formatCurrency(summary.expenseTotal) }}</p>
+        <p class="text-base sm:text-lg font-semibold text-red-400 font-mono">{{ formatCurrency(summary.expenseTotal) }}</p>
       </UCard>
       <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
         <p class="text-xs uppercase tracking-wide text-zinc-500">Saldo</p>
-        <p class="text-lg font-semibold font-mono" :class="summary.netTotal >= 0 ? 'text-white' : 'text-red-400'">
+        <p class="text-base sm:text-lg font-semibold font-mono" :class="summary.netTotal >= 0 ? 'text-white' : 'text-red-400'">
           {{ formatCurrency(summary.netTotal) }}
         </p>
       </UCard>
       <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: 'px-4 py-3' } }">
         <p class="text-xs uppercase tracking-wide text-zinc-500">Registros (incl. transferências)</p>
-        <p class="text-lg font-semibold text-white font-mono">{{ summary.count }}</p>
+        <p class="text-base sm:text-lg font-semibold text-white font-mono">{{ summary.count }}</p>
       </UCard>
     </div>
 
@@ -575,11 +639,12 @@ const getEntityName = (row: TransactionListItem) => {
 
     <!-- Grid -->
     <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800', body: { padding: '' } }">
-      <UTable
-        :rows="transactions"
-        :columns="columns"
-        :loading="isLoading"
-      >
+      <div class="hidden md:block">
+        <UTable
+          :rows="transactions"
+          :columns="columns"
+          :loading="isLoading"
+        >
         <template #expected_date-data="{ row }">
           <span class="text-sm" :class="{ 'italic text-purple-400': row.is_simulated, 'text-zinc-400': !row.is_simulated }">
             {{ formatDate(selectedStatus === 'realized' ? (row.realized_date || row.expected_date) : row.expected_date) }}
@@ -632,8 +697,65 @@ const getEntityName = (row: TransactionListItem) => {
           </UDropdown>
         </template>
       </UTable>
+      </div>
 
-      <div class="flex justify-between items-center p-4 border-t border-zinc-800">
+      <!-- Mobile list: on narrow screens transactions render as cards -->
+      <div class="md:hidden p-3 space-y-2">
+        <div v-if="isLoading && transactions.length === 0" class="space-y-2" aria-hidden="true">
+          <div v-for="i in 3" :key="i" class="h-20 rounded-xl bg-zinc-800/60 animate-pulse" />
+        </div>
+        <p v-else-if="transactions.length === 0" class="py-8 text-center text-sm text-zinc-500">
+          No entries found.
+        </p>
+        <template v-else>
+          <div
+            v-for="row in transactions"
+            :key="row.id"
+            class="rounded-xl bg-zinc-800/40 ring-1 ring-zinc-800 p-4 space-y-2 active:bg-zinc-800/80"
+            @click="openEditModal(row)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start gap-1.5 flex-wrap">
+                  <UIcon v-if="row.is_scheduled" name="i-heroicons-calendar-days" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p class="font-medium min-w-0 break-words" :class="{ 'italic text-purple-400': row.is_simulated, 'text-white': !row.is_simulated }">
+                    {{ row.title }}
+                  </p>
+                </div>
+                <p class="text-xs text-zinc-500 mt-0.5 truncate">{{ getEntityName(row) }}</p>
+              </div>
+              <span
+                class="font-mono text-sm font-medium whitespace-nowrap flex-shrink-0"
+                :class="getAmountClass(row)"
+              >
+                {{ getAmountLabel(row) }}
+              </span>
+            </div>
+            <div class="flex items-end justify-between gap-3">
+              <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+                <UBadge :color="getStatusBadge(row).color" variant="subtle" size="xs">{{ getStatusBadge(row).label }}</UBadge>
+                <span class="text-xs" :class="{ 'italic text-purple-400': row.is_simulated, 'text-zinc-400': !row.is_simulated }">
+                  {{ formatDate(getDisplayDate(row)) }}
+                </span>
+                <UBadge
+                  v-for="badge in getTitleBadges(row)"
+                  :key="badge.label"
+                  :color="badge.color"
+                  variant="subtle"
+                  size="xs"
+                >{{ badge.label }}</UBadge>
+              </div>
+              <div class="flex-shrink-0" @click.stop>
+                <UDropdown :items="mapActionsMenu(row)">
+                  <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-horizontal-20-solid" />
+                </UDropdown>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="flex flex-wrap justify-between items-center gap-3 p-4 border-t border-zinc-800">
         <div class="text-sm text-zinc-500">
           Total de {{ totalItems }} registros
         </div>
@@ -641,7 +763,7 @@ const getEntityName = (row: TransactionListItem) => {
           v-model="page"
           :total="totalItems"
           :page-count="perPage"
-          :max="7"
+          :max="isNarrowViewport ? 5 : 7"
         />
       </div>
     </UCard>

@@ -118,25 +118,25 @@ const categoryOptions = computed(() => {
     <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
       <template #header>
         <div class="flex items-center justify-between">
-          <h3 class="text-base font-semibold leading-6 text-white">
+          <h3 class="min-w-0 text-base font-semibold leading-6 text-white">
             {{ recurrenceToEdit ? 'Editar Recorrência' : 'Nova Recorrência' }}
           </h3>
-          <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" @click="close" />
+          <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="shrink-0 -my-1" @click="close" />
         </div>
       </template>
 
-      <form @submit.prevent="submit" class="space-y-4">
+      <form @submit.prevent="submit" class="space-y-4 [&_input]:text-base [&_select]:text-base sm:[&_input]:text-sm sm:[&_select]:text-sm">
         <UFormGroup label="Nome">
           <UInput v-model="name" placeholder="Ex: Netflix, Bolsa CNPq..." />
         </UFormGroup>
 
         <UFormGroup label="Valor (R$)">
-          <UInput v-model="amount" type="text" placeholder="0.00" />
+          <UInput v-model="amount" type="text" inputmode="decimal" placeholder="0.00" />
         </UFormGroup>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid gap-4 sm:grid-cols-2">
           <UFormGroup label="Tipo">
-            <div class="flex gap-4 mt-1">
+            <div class="flex flex-wrap gap-4 mt-1">
               <URadio v-model="type" value="expense" label="Despesa" />
               <URadio v-model="type" value="income" label="Receita" />
             </div>
@@ -148,7 +148,7 @@ const categoryOptions = computed(() => {
         </div>
 
         <UFormGroup label="Origem/Destino">
-          <div class="flex gap-4 mt-1">
+          <div class="flex flex-wrap gap-4 mt-1">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-if="type === 'expense'" v-model="source" value="card" label="Cartão" />
           </div>
@@ -182,13 +182,14 @@ const categoryOptions = computed(() => {
           </UFormGroup>
         </div>
 
-        <div class="flex justify-end gap-3 pt-2">
-          <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
+        <div class="sticky bottom-0 bg-zinc-900 -mx-4 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:bg-transparent sm:mx-0 sm:px-0 sm:pb-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <UButton label="Cancelar" variant="ghost" color="gray" class="w-full sm:w-auto" @click="close" />
           <UButton
             type="submit"
             :label="recurrenceToEdit ? 'Salvar Alterações' : (type === 'income' ? 'Criar Receita Fixa' : 'Criar Despesa Fixa')"
             :color="type === 'income' ? 'green' : 'red'"
             :loading="isSubmitting"
+            class="w-full sm:w-auto"
           />
         </div>
       </form>

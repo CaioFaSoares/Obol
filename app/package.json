@@ -7,9 +7,16 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "ios:generate": "OBOL_DESKTOP_STATIC=true nuxt generate",
+    "ios:sync": "cap sync ios",
+    "ios:open": "cap open ios",
+    "ios:run": "npm run ios:generate && npm run ios:sync && cap run ios"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@elysiajs/eden": "^1.4.9",
     "@nuxt/ui": "^2.22.3",
     "@pinia/nuxt": "^0.11.3",
@@ -22,7 +29,10 @@
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@iconify-json/heroicons": "^1.2.3",
-    "@types/node": "^25.9.1"
+    "@types/node": "^25.9.1",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.13"
   }
 }

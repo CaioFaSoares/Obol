@@ -1,0 +1,208 @@
+# Self-hosted production deployment for the Obol central server:
+# Elysia BFF + PocketBase + hosted Nuxt web client.
+# Operator guide: docs/self-hosting.md
+#
+# Design guarantees
+#   - BFF and web are each published on the host loopback only, so TLS and
+#     hostname handling stay with the operator's reverse proxy.
+#   - PocketBase is not published and runs on an internet-isolated network;
+#     it never appears in front of any proxy or client.
+#   - No fallback credentials: compose refuses to start without explicit values
+#     in .env.self-hosted (see .env.self-hosted.example).
+#
+# Reverse-proxy route contract (docs/self-hosting.md): one TLS host serves the
+# Nuxt UI at /, forwards /api/* unrewritten to the BFF loopback port, and
+# forwards everything else to the web loopback port. The same-origin proxy
+# carries cookie flow (`__Host-obol_session`, Set-Cookie untouched) as well as
+# Bearer native clients hitting /api/*; the iOS client additionally needs
+# OBOL_CLIENT_ORIGINS=capacitor://localhost for CORS (D6).
+#
+# Run mode: docker compose -f docker-compose.self-hosted.yml --env-file .env.self-hosted <command>
+
+name: obol-self-hosted
+
+services:
+  # BFF (ElysiaJS on Bun): the single application API, reached through the
+  # reverse proxy at /api/* and by the web container over the Compose network.
+  obol-bff:
+    build:
+      context: ./server
+      # Inline copy of server/Dockerfile, so the dev compose and the Coolify
+      # deployment keep using that Dockerfile untouched while this deployment
+      # pins the base image digest. Keep this block in sync with server/Dockerfile.
+      dockerfile_inline: |
+        FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
+        WORKDIR /app
+        COPY package.json bun.lock ./
+        RUN bun install --frozen-lockfile
+        COPY . .
+        EXPOSE 8080
+        ENV PORT=8080
+        CMD ["bun", "run", "src/index.ts"]
+    image: obol-bff:self-hosted
+    container_name: obol-bff
+    restart: unless-stopped
+    # Fail fast when the operator environment file is absent. The secrets
+    # themselves are only consumed through the required variables below.
+    env_file:
+      - path: .env.self-hosted
+        required: true
+    environment:
+      # Only variables supported by the BFF (server/src/index.ts + the D009
+      # env block): PocketBase URL and superuser credentials, remote session
+      # identity (D009), and the PB_SMTP_* block consumed by
+      # server/src/infrastructure/plugins/pocketbase.ts. `:?` placeholders
+      # make compose fail during interpolation on a missing or empty value;
+      # there are no defaults for any secret.
+      POCKETBASE_URL: http://obol-pb:8090
+      PORT: 8080
+      # The operator file keys are OBOL_PB_ADMIN_*: a common dev/host shell may
+      # already export PB_ADMIN_EMAIL/PB_ADMIN_PASSWORD, and Compose
+      # interpolation prefers shell variables over --env-file values. The
+      # OBOL_ prefix makes a collision practically impossible; the BFF process
+      # still receives its expected server-internal PB_ADMIN_* names below.
+      PB_ADMIN_EMAIL: "${OBOL_PB_ADMIN_EMAIL:?OBOL_PB_ADMIN_EMAIL is missing - copy .env.self-hosted.example to .env.self-hosted and set it}"
+      PB_ADMIN_PASSWORD: "${OBOL_PB_ADMIN_PASSWORD:?OBOL_PB_ADMIN_PASSWORD is missing - copy .env.self-hosted.example to .env.self-hosted and set it}"
+      # Remote identity (D009): session signing secret (>= 32 random bytes,
+      # openssl rand -hex 32) and the public https URL of this deployment.
+      # Both are mandatory in remote mode; missing values fail compose parsing.
+      OBOL_SESSION_SECRET: "${OBOL_SESSION_SECRET:?OBOL_SESSION_SECRET is missing or empty - generate one with: openssl rand -hex 32}"
+      OBOL_PUBLIC_URL: "${OBOL_PUBLIC_URL:?OBOL_PUBLIC_URL is missing or empty - set it to the public https URL of this deployment, e.g. https://HOST.example}"
+      # CORS allowlist (D6): exact origins (scheme + host + port), comma
+      # separated. The hosted web client is same-origin through the reverse
+      # proxy and needs no entry. The current Capacitor iOS client renders the
+      # API surface in WKWebView with plain fetch (no native HTTP plugin), so
+      # its requests carry the Origin `capacitor://localhost` and fail closed
+      # without a CORS allowlist entry, even though they authenticate with
+      # Bearer headers: set `capacitor://localhost` when an iOS client is used.
+      # Requests without an Origin header (curl, API tools, a desktop client
+      # that does not send Origin) bypass the CORS check entirely. Entries
+      # must be exact, never a wildcard.
+      OBOL_CLIENT_ORIGINS: "${OBOL_CLIENT_ORIGINS:-}"
+      # Optional static first-run setup token (D4). When left empty the BFF
+      # mints a token at every setup-mode boot and prints it to its logs.
+      OBOL_SETUP_TOKEN: "${OBOL_SETUP_TOKEN:-}"
+      # PocketBase SMTP configuration (D5), applied by the BFF through the
+      # authenticated PocketBase settings API at boot, never through PB
+      # container env. Empty values leave any stored SMTP settings unchanged
+      # and password reset unavailable. See .env.self-hosted.example.
+      PB_SMTP_HOST: "${PB_SMTP_HOST:-}"
+      PB_SMTP_PORT: "${PB_SMTP_PORT:-}"
+      PB_SMTP_USERNAME: "${PB_SMTP_USERNAME:-}"
+      PB_SMTP_PASSWORD: "${PB_SMTP_PASSWORD:-}"
+      PB_SMTP_TLS: "${PB_SMTP_TLS:-}"
+      PB_SMTP_AUTH_METHOD: "${PB_SMTP_AUTH_METHOD:-}"
+      PB_SMTP_LOCAL_NAME: "${PB_SMTP_LOCAL_NAME:-}"
+    ports:
+      # Loopback-only publish: a reverse proxy on the same host terminates TLS
+      # and forwards here. Overridable via BFF_PORT in .env.self-hosted.
+      - "127.0.0.1:${BFF_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:8080/').then((r) => process.exit(r.ok ? 0 : 1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      obol-pb:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+      - backend
+
+  # Hosted web client (Nuxt 3 SSR): serves the Obol UI that the password-reset
+  # mail links back to (/?resetToken=... -> RemoteAuthGate) and that browser
+  # users sign in to with the httpOnly session cookie. The image is built by
+  # app/Dockerfile.self-hosted, which bakes NUXT_PUBLIC_API_BASE=
+  # http://obol-bff:8080 into the client bundle and routeRules so the Nitro
+  # runtime knows the internal BFF address. No runtime environment at all:
+  # nothing sensitive to pass through, and no PocketBase secret is embedded.
+  obol-web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.self-hosted
+    image: obol-web:self-hosted
+    container_name: obol-web
+    restart: unless-stopped
+    depends_on:
+      obol-bff:
+        condition: service_healthy
+    ports:
+      # Loopback-only publish: the reverse proxy forwards every non-/api path
+      # here. Overridable via WEB_PORT in .env.self-hosted (default 3000).
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --no-verbose
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:3000/
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
+
+  # Database (PocketBase): private, no host port, durable data volume.
+  obol-pb:
+    image: ghcr.io/muchobien/pocketbase:0.40.6@sha256:9a0be68a80ca1348ba8d15f217b3f983be4c094b3c571a09b3ebdeb357259338
+    container_name: obol-pb
+    restart: unless-stopped
+    # Deliberately no PB_ADMIN_* environment: the image entrypoint's implicit
+    # superuser upsert stays disabled. The superuser is provisioned explicitly
+    # during initialization (docs/self-hosting.md), so a deployment can never
+    # run with built-in or default credentials.
+    command:
+      - serve
+      - --http=0.0.0.0:8090
+      - --dir=/pb_data
+      - --migrationsDir=/pb_migrations
+      - --publicDir=/pb_public
+      - --hooksDir=/pb_hooks
+    volumes:
+      - obol_pb_data:/pb_data
+      # JSVM migrations are read at start; serve only reads them, so the mount
+      # is read-only. New migration files are authored on the host db/pb_migrations checkout.
+      - ./db/pb_migrations:/pb_migrations:ro
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --no-verbose
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:8090/api/health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+
+networks:
+  # Regular bridge for everything published on the host loopback (BFF and
+  # web). The web container needs it to resolve obol-bff; PocketBase is never
+  # attached here.
+  frontend:
+    driver: bridge
+  # Internet-isolated bridge for the database path. Do not attach this network
+  # to anything published; internal networks cannot have published ports.
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  obol_pb_data:

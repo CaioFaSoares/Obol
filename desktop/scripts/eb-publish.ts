@@ -532,7 +532,7 @@ async function runBuild(argv: readonly string[]): Promise<void> {
       : ['platform', 'arch', 'version', 'base-url', 'notes-file', 'build-root', 'app', 'out'],
   );
   const version = normalizeVersion(flags.version ?? baseVersion());
-  if (version === null) throw new Error('--version must be X.Y.Z or X.Y.Z<letters>');
+  if (version === null) throw new Error('--version must be X.Y.Z, X.Y.Z<letters>, or X.Y.Z-rc.N');
   if (platform === 'windows' && flags.arch !== 'x64') {
     throw new Error('--platform windows requires --arch x64 (the Windows release target)');
   }

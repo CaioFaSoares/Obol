@@ -171,7 +171,7 @@ async function startLocalBackend(password: string): Promise<void> {
       retries: 5,
       retryDelayMs: 500
     });
-    const server = createServer(pb);
+    const server = createServer(pb, null);
     server.listen({ hostname: '127.0.0.1', port: 13080 });
     if (!server.server) throw new Error('Could not bind Obol BFF to 127.0.0.1:13080');
     apiServer = server;

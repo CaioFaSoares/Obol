@@ -59,9 +59,9 @@ function getCategoryName(rec: any) {
 <template>
   <div class="space-y-4">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <p class="text-sm text-zinc-400">Contratos que o motor de Cron processa automaticamente toda madrugada.</p>
-      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Nova Recorrência" @click="open()" />
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-zinc-400 min-w-0">Contratos que o motor de Cron processa automaticamente toda madrugada.</p>
+      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Nova Recorrência" class="w-full sm:w-auto justify-center" @click="open()" />
     </div>
 
     <!-- Lista vazia -->
@@ -81,12 +81,12 @@ function getCategoryName(rec: any) {
         <li
           v-for="rec in incomes"
           :key="rec.id"
-          class="flex items-center justify-between py-3"
+          class="flex items-center justify-between gap-3 py-3"
         >
-          <div class="flex items-center gap-3">
-            <UBadge color="green" variant="subtle" label="Receita" />
-            <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
-              <p class="text-white font-medium flex items-center gap-2">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <UBadge color="green" variant="subtle" label="Receita" class="hidden sm:inline-flex shrink-0" />
+            <div class="cursor-pointer hover:underline min-w-0" @click="openDetails(rec)">
+              <p class="text-white font-medium flex items-center gap-x-2 flex-wrap">
                 {{ rec.name }}
                 <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
               </p>
@@ -97,7 +97,7 @@ function getCategoryName(rec: any) {
               </p>
             </div>
           </div>
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4 shrink-0">
             <span class="font-mono font-semibold text-emerald-400">
               {{ formatCurrency(rec.amount) }}
             </span>
@@ -116,12 +116,12 @@ function getCategoryName(rec: any) {
         <li
           v-for="rec in expenses"
           :key="rec.id"
-          class="flex items-center justify-between py-3"
+          class="flex items-center justify-between gap-3 py-3"
         >
-          <div class="flex items-center gap-3">
-            <UBadge color="red" variant="subtle" label="Despesa" />
-            <div class="cursor-pointer hover:underline" @click="openDetails(rec)">
-              <p class="text-white font-medium flex items-center gap-2">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <UBadge color="red" variant="subtle" label="Despesa" class="hidden sm:inline-flex shrink-0" />
+            <div class="cursor-pointer hover:underline min-w-0" @click="openDetails(rec)">
+              <p class="text-white font-medium flex items-center gap-x-2 flex-wrap">
                 {{ rec.name }}
                 <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
               </p>
@@ -133,7 +133,7 @@ function getCategoryName(rec: any) {
               </p>
             </div>
           </div>
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4 shrink-0">
             <span class="font-mono font-semibold text-red-400">
               {{ formatCurrency(rec.amount) }}
             </span>

@@ -33,7 +33,8 @@ const chartOption = computed(() => {
 
   return {
     tooltip: {
-      trigger: 'axis'
+      trigger: 'axis',
+      confine: true
     },
     grid: {
       left: '1%',

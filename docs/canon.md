@@ -18,7 +18,7 @@ Three layers with one responsibility each (D001), server layered by clean archit
 
 Module map and runtime topology: [arquitetura.md](arquitetura.md).
 
-Runtime modes: hosted web uses the Nuxt same-origin proxy to the Elysia BFF; local desktop uses Electrobun, a managed local PocketBase child, and Eden-to-Elysia IPC (D005). No hosted server or Docker is required for the desktop app.
+Runtime modes: hosted web uses the Nuxt same-origin proxy and HttpOnly cookie; local desktop uses Electrobun, a managed PocketBase child, and in-process Elysia RPC; optional central server mode serves desktop and native iOS from the same typed BFF API. Desktop users choose local or remote explicitly; there is no automatic data sync or migration. iOS uses a Capacitor shell around the Nuxt/Vue UI and stores bearer credentials in the Keychain. See [D008](decisions/D008-central-server-clients.md), [D009](decisions/D009-remote-identity.md), and [E006](epics/E006-central-server-mobile.md).
 
 ## §3 Data model
 
@@ -80,13 +80,17 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 ## §10 Operations
 
 - Hosted dev: `nix develop` → `docker compose up -d --build` → app :13000, server :13080, PocketBase :13090 (admin `/_/`).
-- Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies; `cd desktop && bun run eb:dev`. The local setup/unlock gate uses `copland.obol.eb-dev`; packaged identity/data use `copland.obol`.
+- Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies. `cd desktop && bun run eb:dev` starts the isolated local identity `copland.obol.eb-dev`; the packaged identity/data use `copland.obol`. In the verified environment, the dev main process starts but Nuxt returns `Vite Node IPC socket path not configured`; the static release build and `eb:verify` pass.
 - Desktop data: `Utils.paths.appData/copland.obol/pb_data`; no automatic import from hosted `db/pb_data`, which remains unchanged.
 - Local login: one profile per application-data directory; `local_profile.json` stores a salted PBKDF2 verifier. Each unlock derives the internal PB superuser credential and runs `superuser upsert` before the service starts. The login does not encrypt PB files at rest.
-- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release PRs to `main` validate macOS arm64/x86_64 and Windows x64 without publishing; merging `dev` or `pr/release-<version>` creates `release-<version>`, publishes platform installers plus Electrobun updater metadata/full bundles, retains a macOS manifest for the Homebrew cask, then updates the cask.
-- Env: hosted uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`. Desktop creates its local profile on first launch.
-- Migrations: `db/pb_migrations/*.js`, executed by PocketBase on boot.
+- Deploy: `docker-compose.coolify.yml` retains the existing Coolify topology. Production self-hosting uses `docker-compose.self-hosted.yml`; follow [the operator runbook](self-hosting.md) for TLS, secrets, backups, restore, and upgrades.
+- Stable release: merging `dev` or `pr/release-<version>` to `main` creates `release-<version>` and publishes platform installers plus Electrobun updater assets; only stable releases update `latest` and the Homebrew cask.
+- Release candidates: for the first 0.3.0 candidate, set `desktop/app.json` to `0.3.0-rc.1` on branch `rc/0.3.0-rc.1` and merge its PR to `main`; the workflow creates `rc-0.3.0-rc.1` and publishes a prerelease with candidate-only updater URLs. Increment `rc.N` for every candidate; never reuse a tag. After acceptance, set the stable version to `0.3.0` on the stable release PR. Candidates never update stable `latest` or the cask; install each candidate manually.
+- Env: hosted development uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD`, `POCKETBASE_URL`, and `PORT` from `.env`. Self-hosting uses `.env.self-hosted` with required `OBOL_SESSION_SECRET`, `OBOL_PUBLIC_URL`, and `OBOL_PB_ADMIN_*`; configure `OBOL_CLIENT_ORIGINS` for remote WebViews.
+- Migrations: `db/pb_migrations/*.js` run at PocketBase startup. Central identity and session metadata are applied by migrations 0010–0017; `obol_sessions.createdAt` anchors the 30-day hard-expiry cap.
 
 ## §11 Roadmap
 
-Implemented epics: E001 — ledger hardening + local Electrobun runtime; E002 — typed use-case dispatch; E003 — daily dashboard/calendar; E004 — Windows x64 release pipeline. Release 0.2.0 is published. E005 repairs the 0.2.0 migration path and adds the in-app updater for 0.2.0a. Because 0.2.0 has no updater, users must install 0.2.0a manually once; later stable releases can update in-app. Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
+- Implemented epics: E001 — ledger hardening + local Electrobun runtime; E002 — typed use-case dispatch; E003 — daily dashboard/calendar; E004 — Windows x64 release pipeline; E005 — in-app updater; E006 — optional central server, remote desktop mode, and Capacitor iOS client (0.3.0).
+
+- Completed for 0.3.0: [E006](epics/E006-central-server-mobile.md) delivers the optional self-hosted single-owner server, remote desktop/iOS access, and preserves standalone local desktop mode. The RC pipeline lets operators test `rc-*` prereleases before the stable `release-*` cut. Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).

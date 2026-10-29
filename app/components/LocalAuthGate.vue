@@ -19,6 +19,7 @@ const emit = defineEmits<{
   setup: [request: LocalAuthSetupRequest]
   unlock: [request: LocalAuthUnlockRequest]
   retry: []
+  connect: []
 }>()
 
 const isSetup = computed(() => props.mode === 'setup')
@@ -123,6 +124,23 @@ function submit(): void {
         <p v-if="isSetup" class="text-xs leading-relaxed text-zinc-500">
           Existing 0.1.0 ledger data is preserved. Creating this account repairs PocketBase access without deleting transactions.
         </p>
+
+        <div class="space-y-1 border-t border-zinc-800 pt-4 text-center">
+          <p class="text-xs text-zinc-400">Self-hosting your ledger?</p>
+          <UButton
+            block
+            variant="soft"
+            color="gray"
+            size="sm"
+            :disabled="mode === 'checking' && busy"
+            @click="emit('connect')"
+          >
+            Connect to a central server
+          </UButton>
+          <p class="text-xs text-zinc-500">
+            Remote mode asks for a separate server sign-in. This Mac's local profile is left untouched.
+          </p>
+        </div>
       </div>
     </UCard>
   </main>

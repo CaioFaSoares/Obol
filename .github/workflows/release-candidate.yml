@@ -1,0 +1,306 @@
+# Candidate (rc-*) releases: the same macOS arm64/x86_64 and Windows x64 build as `release.yml`,
+# published as a GitHub *prerelease* on a uniquely named `rc-<version>` tag. Candidates never
+# touch anything stable: no `--latest` flag, no Homebrew cask update, and the Electrobun updater
+# metadata they publish is shipped with candidate-only channel URLs — so `release.yml` continues
+# to own the stable release, the `latest` flag and the cask.
+#
+# Trigger policy (the one path to a candidate):
+#   merging a PR into `main` from `rc/<version>` (version = `desktop/app.json`, exactly
+#   X.Y.Z-rc.N) → `release-branch.yml` creates the `rc-<version>` branch at the merge commit and
+#   dispatches this workflow on it. A hand-pushed `rc-*` branch publishes nothing.
+#
+# `workflow_dispatch` is the designed re-publish path only: dispatch this workflow **on an
+# existing `rc-<version>` branch** to re-upload that one candidate's assets. The `version` step
+# refuses every other ref, so a dispatch from `main` or a `release-*` branch fails hard — it can
+# never publish a stable release. Republishing replaces that candidate's assets in place;
+# iterating a candidate is a version bump to `-rc.<N+1>` plus a fresh `rc/<version>` PR, not a
+# tag reuse. Different candidates never share a ref, so nothing is ever overwritten silently.
+#
+# Channel isolation: candidate builds record
+#   https://github.com/<repo>/releases/download/rc-<version>/
+# as base URL (via `OBOL_RELEASE_BASE_URL` and `--base-url`) instead of stable's
+# `/releases/latest/download`. A candidate's in-app updater therefore only ever resolves files
+# from this one candidate release, never from the stable one — and `releases/latest/download`
+# keeps resolving to the latest *stable* release for already-installed stable apps, untouched.
+# Because that URL is frozen at build time, a candidate install does not auto-promote to the
+# next `rc.N` (or to the stable cut): candidates are installed manually once, the same way 0.2.0
+# users installed 0.2.0a once before the updater existed. Electrobun's own
+# `stable-macos-<arch>-update.json`/`stable-win-x64-update.json` metadata *file names* are kept:
+# they are Electrobun-owned (the updater resolves `update.json` and the tar by file name), while
+# their embedded `release.baseUrl` is candidate-only, which is what isolates the channels.
+
+name: release candidate
+
+# No `push` trigger: only the dispatched run publishes, and only after `release-branch.yml`
+# validated the `rc/<version>` convention. Manual dispatch is the sanctioned re-publish path
+# (see the header).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-candidate-${{ github.ref_name }}
+  cancel-in-progress: false
+
+# Publish needs write; build and every ref-check-before-that only need read.
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.3
+
+jobs:
+  prepare:
+    name: check candidate version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: read version
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          version=$(jq -r '.version' desktop/app.json)
+          # A candidate is an exact prerelease: X.Y.Z-rc.N. No letters, no other suffix, so the
+          # candidate version is unambiguously below the eventual stable X.Y.Z and equal
+          # candidates cannot alias an existing stable tag (release-<version> is always X.Y.Z).
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::error file=desktop/app.json::version '$version' is not X.Y.Z-rc.N (as in 0.3.0-rc.1); candidates must carry the -rc.N prerelease"
+            exit 1
+          fi
+          # Exact ref match: publish only from the rc-<version> branch that release-branch.yml
+          # created for this version. A dispatched run from any other ref (main, dev, a
+          # release-* branch, another rc-<version>) fails here, before any build or publish.
+          if [ "$BRANCH" != "rc-$version" ]; then
+            echo "::error::candidates publish from the rc-$version branch only; this run is on $BRANCH"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The tag carries no extra prefix: candidates are always `rc-<version>`, so the
+          # candidate tag can never collide with a stable `release-<version>` tag.
+          echo "tag=rc-$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Same legs as release.yml: every leg runs to the end so one failure does not hide another.
+      fail-fast: false
+      matrix:
+        include:
+          - { target: macos-arm64,  os: macos-15,       arch: arm64,  runtime_arch: arm64 }
+          - { target: macos-x86_64, os: macos-15-intel, arch: x86_64, runtime_arch: x64 }
+          - { target: windows-x64,  os: windows-2022,   arch: x64,    runtime_arch: x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The notes step looks back for the `Release <version>:` commit (see below).
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+
+      - run: bun install --frozen-lockfile
+        working-directory: server
+
+      - run: npm ci
+        working-directory: app
+
+      # Same build as a stable release, except the channel base: the generated Electrobun config
+      # records this candidate tag's download directory instead of `/releases/latest/download`,
+      # so a candidate install can only ever read candidate metadata.
+      - name: build the app
+        env:
+          OBOL_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}
+        run: bun run eb:build
+        working-directory: desktop
+
+      - name: verify the desktop bundle
+        run: bun run eb:verify
+        working-directory: desktop
+
+      - name: verify the shipped signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --strict --deep "build/stable-macos-${{ matrix.runtime_arch }}/Obol.app"
+        working-directory: desktop
+
+      # Same rule as release.yml: the body of the `Release <version>:` commit, falling back to the
+      # head commit message.
+      - name: release notes
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          pattern="^Release ${VERSION//./\\.}:"
+          notes=$(git log -1 --no-merges --extended-regexp --grep="$pattern" --format=%B)
+          [ -n "$notes" ] || notes="$MESSAGE"
+          [ -n "$notes" ] || notes=$(git log -1 --format=%B)
+          notes=$(printf '%s\n' "$notes" | sed '/^Merge pull request #/,/^$/d')
+          printf '%s\n' "${notes:-Obol $VERSION}" > "$RUNNER_TEMP/release-notes.md"
+
+      # Same manifest halves as release.yml (`mac.<arch>` + the zip), but the manifest's
+      # top-level `url`/`sha256` and `release.baseUrl` name this candidate tag's assets.
+      - name: publish
+        if: runner.os == 'macOS'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          bun scripts/eb-publish.ts build \
+            --arch "$ARCH" \
+            --version "$VERSION" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --out dist/publish
+          ls -la dist/publish
+        working-directory: desktop
+
+      - name: publish the Windows setup
+        if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          bun scripts/eb-publish.ts build \
+            --platform windows \
+            --arch x64 \
+            --version "$VERSION" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$TAG" \
+            --out dist/publish
+          ls -la dist/publish
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: publish-${{ matrix.target }}
+          path: desktop/dist/publish/
+          if-no-files-found: error
+          retention-days: 3
+
+  candidate:
+    name: publish GitHub prerelease
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    # Belt and braces for `workflow_dispatch`: the publish job additionally refuses any ref that
+    # is not an rc-* candidate branch, so a stray dispatch cannot create a stable release.
+    if: startsWith(github.ref_name, 'rc-')
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: publish-*
+          path: parts
+
+      - name: merge manifests and collect artifacts
+        run: |
+          mkdir -p out
+          shopt -s nullglob
+          manifests=(parts/*/manifest.json)
+          if [ ${#manifests[@]} -eq 0 ]; then
+            echo "::error::no macOS manifest halves were published"
+            exit 1
+          fi
+          versions=$(jq -s '[.[].version] | unique | length' "${manifests[@]}")
+          [ "$versions" = 1 ] || { echo "::error::manifests disagree on version"; jq -s '[.[].version]' "${manifests[@]}"; exit 1; }
+          jq -s 'reduce .[] as $m ({}; . * $m) | .url = .mac.arm64.url | .sha256 = .mac.arm64.sha256' \
+            "${manifests[@]}" > out/manifest.json
+          jq -e '.mac.arm64.url and .mac.arm64.sha256 and .mac.x86_64.url and .mac.x86_64.sha256' out/manifest.json > /dev/null \
+            || { echo "::error::manifest.json is missing a macOS architecture"; exit 1; }
+          find parts -type f ! -name manifest.json -exec cp -n {} out/ \;
+          # Same check as release.yml: three Electrobun update.json files (macos arm64/x64, win
+          # x64), each with a bare `.artifact.file` whose tar exists beside it. The file names are
+          # Electrobun's stable-* names (see the header); their embedded URLs are candidate-only.
+          shopt -s nullglob
+          updates=(out/stable-*-update.json)
+          [ ${#updates[@]} -eq 3 ] \
+            || { echo "::error::expected 3 Electrobun update.json files (macos arm64/x64, win x64), got ${#updates[@]}: ${updates[*]}"; exit 1; }
+          expected_json=(stable-macos-arm64-update.json stable-macos-x64-update.json stable-win-x64-update.json)
+          for i in "${!expected_json[@]}"; do
+            json="out/${expected_json[$i]}"
+            [ -f "$json" ] || { echo "::error::missing required Electrobun metadata file $json"; exit 1; }
+            artifact=$(jq -er '.artifact.file' "$json") \
+              || { echo "::error::$json is missing .artifact.file"; exit 1; }
+            [ -n "$artifact" ] \
+              || { echo "::error::$json has an empty .artifact.file"; exit 1; }
+            [[ "$artifact" =~ ^[^/\\]+$ ]] \
+              || { echo "::error::$json .artifact.file must be a bare filename, got '$artifact'"; exit 1; }
+            # Candidate channel isolation is machine-checked: release.baseUrl must address this
+            # candidate tag, never /releases/latest/download (stable's shared URL).
+            base=$(jq -er '.release.baseUrl' "$json") \
+              || { echo "::error::$json is missing .release.baseUrl"; exit 1; }
+            [[ "$base" == "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/"* ]] \
+              || { echo "::error::$json .release.baseUrl is not the candidate channel: '$base'"; exit 1; }
+            tar="out/$artifact"
+            [ -f "$tar" ] || { echo "::error::$tar is missing — the update channel would be broken"; exit 1; }
+          done
+          shopt -u nullglob
+          ls -la out
+          {
+            echo "### Obol $VERSION (release candidate)"
+            echo
+            echo '```json'
+            jq 'del(.notes)' out/manifest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: create or update the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Ref-safety guard: never repoint an existing candidate tag. A fresh candidate lands on
+          # a tag that does not exist yet; a designed republish (dispatch on the same branch)
+          # re-uploads over an existing tag that already points at this exact commit. If the tag
+          # exists but points elsewhere, stop — a silent re-target would move other people's
+          # download URLs. The lookup goes through the API, not the local clone (tags are not
+          # guaranteed to be fetched).
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" 2> /dev/null || true)
+          if [ -n "$ref" ]; then
+            tag_sha=$(jq -r '.object.sha' <<< "$ref")
+            # Annotated tags wrap the commit one level deeper.
+            if [ "$(jq -r '.object.type' <<< "$ref")" = "tag" ]; then
+              tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')
+            fi
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              next=$(( ${VERSION##*-rc.} + 1 ))
+              echo "::error::tag $TAG already exists at $tag_sha, not this commit ($GITHUB_SHA) — bump desktop/app.json to -rc.$next and open a new rc/<version> PR"
+              exit 1
+            fi
+          fi
+          notes="$RUNNER_TEMP/notes.md"
+          jq -r '.notes // empty' out/manifest.json > "$notes"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::warning::prerelease $TAG already exists: assets replaced in place (designed republish). Bump to the next -rc.N for a new candidate."
+            gh release upload "$TAG" out/* --clobber
+            # No `--latest`: a candidate must never become the latest stable release. `--prerelease`
+            # keeps (or restores) the prerelease flag if the release was edited by hand.
+            gh release edit "$TAG" --notes-file "$notes" --prerelease
+          else
+            gh release create "$TAG" out/* \
+              --target "${{ github.sha }}" \
+              --title "Obol $VERSION" \
+              --notes-file "$notes" \
+              --prerelease
+          fi

@@ -21,6 +21,7 @@ db/pb_data
 .env
 .env.*
 !.env.example
+!.env.self-hosted.example
 .agents/
 # Local artifacts
 db_dump*.json

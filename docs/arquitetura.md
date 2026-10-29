@@ -1,18 +1,17 @@
 # Architecture
 
-> Current behavior verified against source on 2026-10-28. Product rules are in [`canon.md`](canon.md); accepted decisions are in [`decisions/log.md`](decisions/log.md).
+> Current behavior verified against source on 2026-10-29. Product rules are in [`canon.md`](canon.md); accepted decisions are in [`decisions/log.md`](decisions/log.md).
 
-## Two runtime modes
+## Runtime modes
 
-| | Hosted web | Local desktop |
-|---|---|---|
-| Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA |
-| UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | `LocalAuthGate` unlocks via Electrobun RPC; after unlock, Eden requests use `window.obol.apiFetch` → Elysia `app.handle(Request)` in the same Bun main process |
-| BFF | Elysia on Bun, listens `0.0.0.0:8080` inside Compose | Same Elysia app starts after local profile unlock; loopback `127.0.0.1:13080` activates the scheduler. Desktop development uses Nuxt SPA/HMR; packaged WebView API requests use RPC, not that listener. |
-| Data | PocketBase Compose service, SQLite volume `db/pb_data` | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-user `pb_data` plus `local_profile.json` with a salted PBKDF2 verifier |
-| Run command | `docker compose up -d --build` | `cd app && npm ci`; `cd server && bun install`; `cd desktop && bun install && bun run eb:dev` |
+| | Hosted web | Local desktop | Central server clients |
+|---|---|---|---|
+| Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA | Existing Nuxt/Vue UI in Electrobun remote mode or the Capacitor iOS shell |
+| UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | `LocalAuthGate` unlocks through Electrobun RPC; Eden requests use `window.obol.apiFetch` → in-process Elysia `app.handle(Request)` | Typed Eden client → configured HTTPS server; remote desktop and iOS use Bearer sessions, hosted web uses its same-origin HttpOnly cookie |
+| BFF | Elysia on Bun behind the hosted proxy | Same Elysia app around local PocketBase; no remote auth secret, no public listener | Elysia BFF in the production Compose stack; D009 auth protects `/api/**` |
+| Data | PocketBase Compose service | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-profile `pb_data` plus `local_profile.json` | Central PocketBase volume, private to the BFF; one owner per deployment, shared data for every valid session |
 
-The desktop opens on a local setup/unlock screen before starting PocketBase or Elysia. First setup runs PocketBase `superuser upsert` for the internal local account; upgrading a 0.1.0 profile keeps its records and repairs stale credentials without resetting `pb_data`. The login is an app gate, not encryption at rest. Desktop has no remote service, Docker dependency, direct WebView-to-PocketBase access, or network-facing BFF endpoint. See D005 and D007.
+The central server is an optional shared runtime, not a service operated by the Obol project. Remote desktop mode is selected explicitly and never imports, syncs, or overwrites the local profile. iOS packages the same Nuxt/Vue UI with Capacitor 8 and stores bearer credentials in the iOS Keychain. The hosted web uses an HttpOnly cookie; remote desktop/iOS use Bearer tokens and exact CORS origins (`views://mainview` and `capacitor://localhost`). See [D008](decisions/D008-central-server-clients.md), [D009](decisions/D009-remote-identity.md), [D014](decisions/D014-electrobun-cors-origin.md), and the [self-hosting runbook](self-hosting.md).
 
 ## Server layering (`server/src`)
 
@@ -27,7 +26,7 @@ The desktop opens on a local setup/unlock screen before starting PocketBase or E
 | `infrastructure/scheduler/` | Daily cron plugin, injected with the Awilix container | Directly resolves use cases; bypasses HTTP dispatch |
 | `infrastructure/di/container.ts` | `createContainer(pb)`, Awilix `InjectionMode.CLASSIC` | Repositories singleton; use cases scoped |
 
-`server/src/index.ts` exports `createServer(pb)` without side effects and exports its `App` type for Eden Treaty. `startHostedServer()` authenticates PocketBase and listens on the configured `PORT` only when `src/index.ts` is the Bun entrypoint. Electrobun builds the same server factory around its local PocketBase client.
+`server/src/index.ts` exports `createServer(pb, remoteAuthOptions)` without side effects and exports its `App` type for Eden Treaty. Omitting the auth argument resolves `OBOL_SESSION_SECRET` for hosted deployments; passing `null` disables remote auth explicitly. Electrobun passes `null` so a developer shell secret cannot alter its local RPC mode. `startHostedServer()` authenticates PocketBase, configures remote auth, and listens only when `src/index.ts` is the Bun entrypoint.
 
 ## Frontend layering (`app/`)
 
@@ -37,7 +36,7 @@ The desktop opens on a local setup/unlock screen before starting PocketBase or E
 | `components/` | Domain tabs, modals, `ForecastChart`, daily `ForecastCalendar`, `DesktopUpdaterBanner` |
 | `stores/finance.ts` | Pinia cache of accounts/cards/categories/projects |
 | `composables/` | Global refresh and modal state |
-| `utils/api.ts` | Eden client typed from `server/src/index.ts`; browser uses same-origin proxy, Electrobun uses RPC fetch bridge |
+| `utils/api.ts` | Eden client typed from `server/src/index.ts`; hosted web uses the same-origin proxy, Electrobun uses local RPC or remote Bearer transport, and Capacitor iOS uses remote Bearer transport |
 | `app.vue` | Global `UNotifications` host (Nuxt UI v2) |
 
 The web app sends structured filters (`search`, status/type, simulation/scheduled, entity IDs, date range) to the transaction list and summary endpoints; it never constructs PocketBase filter expressions. The HTTP boundary rejects unknown query keys, and the repository applies the exact same server-side filter set to summary totals. See E001 and `canon.md §9`.
@@ -48,10 +47,10 @@ The web app sends structured filters (`search`, status/type, simulation/schedule
 - `db/pb_data/` - hosted Compose SQLite data (gitignored).
 - Desktop PB data is not stored in the repository; the local runtime uses `Utils.paths.appData/copland.obol` (or the isolated `copland.obol.eb-dev` identifier in development).
 
-## Runtime and packaging topology
-
-- Hosted dev: `docker-compose.yml` maps Nuxt :13000, Elysia :13080, PocketBase :13090 on `obol_net`.
-- Hosted deploy: `docker-compose.coolify.yml` exposes services for Coolify's reverse proxy.
-- Desktop: `desktop/app.json` is the app identity/version source; `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle; `desktop/scripts/ensure-pocketbase.ts` downloads pinned, SHA-256-verified PocketBase binaries for macOS arm64/x86_64 and Windows x64. The main process integrates Electrobun `Updater` for release-channel checks, background downloads, and safe restarts.
-- Release: `.github/workflows/release-branch.yml` creates `release-<version>` after a merged release PR from `dev` or `pr/release-*`; `release.yml` validates all three native builds on the PR, publishes Electrobun updater metadata/full bundles plus platform installers after merge, and generates `Casks/obol.rb` from the macOS-only manifest.
+- Hosted development: `docker-compose.yml` maps Nuxt :13000, Elysia :13080, and PocketBase :13090 on `obol_net`.
+- Hosted deploy: `docker-compose.coolify.yml` keeps the existing Coolify reverse-proxy topology.
+- Central self-hosting: `docker-compose.self-hosted.yml` builds the BFF and Nuxt web client, stores PocketBase data in a named volume, and publishes only loopback BFF/web ports. PocketBase has no host port. TLS/reverse-proxy, setup, upgrades, and backup/restore are in [self-hosting.md](self-hosting.md).
+- Desktop: `desktop/app.json` is the app identity/version source. `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle. `desktop/scripts/ensure-pocketbase.ts` downloads pinned, SHA-256-verified PocketBase binaries for macOS arm64/x86_64 and Windows x64. The main process integrates Electrobun `Updater` for release-channel checks, background downloads, and safe restarts.
+- Stable release: `.github/workflows/release-branch.yml` creates `release-<version>` after a merged release PR from `dev` or `pr/release-*`; `release.yml` validates native builds, publishes installers plus Electrobun updater metadata/full bundles, and updates the Homebrew cask from the macOS manifest.
+- Release candidates: a merged `rc/<version>` PR with `desktop/app.json` set to `X.Y.Z-rc.N` creates `rc-<version>` and dispatches `release-candidate.yml`. Candidate releases are prereleases with updater URLs isolated to that tag; they do not touch stable `latest`, `/releases/latest/download`, or the cask.
 - Nix/direnv: `flake.nix` supplies Node, Bun, Docker Compose, and unzip; `.envrc` activates the flake.

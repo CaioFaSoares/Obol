@@ -135,9 +135,10 @@ const selectDay = (cell: CalCell) => {
 }
 
 const balanceToneClass = (cell: CalCell) => {
-  if (!cell.hasBalance) return 'text-zinc-600 hover:bg-zinc-800/50'
-  if (cell.balance === 0) return 'text-zinc-300 hover:bg-zinc-800'
-  if (cell.balance < 0) return 'text-red-400 hover:bg-red-500/10'
+  const balance = cell.balance
+  if (balance === undefined) return 'text-zinc-600 hover:bg-zinc-800/50'
+  if (balance === 0) return 'text-zinc-300 hover:bg-zinc-800'
+  if (balance < 0) return 'text-red-400 hover:bg-red-500/10'
   return 'text-emerald-300 hover:bg-emerald-500/10'
 }
 
@@ -232,7 +233,7 @@ const onCellKeydown = (event: KeyboardEvent, cell: CalCell) => {
               :id="`fc-cell-${cell.date}`"
               type="button"
               disabled
-              class="w-full h-full min-h-[3rem] sm:min-h-[4.25rem] flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-sm text-zinc-600 cursor-not-allowed select-none"
+              class="w-full h-full min-h-[3rem] sm:min-h-[4.25rem] flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-sm text-zinc-600 cursor-not-allowed select-none overflow-hidden"
               :title="dateSpoken(cell.date) + ' sem projeção'"
               :aria-disabled="true"
             >
@@ -247,7 +248,7 @@ const onCellKeydown = (event: KeyboardEvent, cell: CalCell) => {
             <button
               :id="`fc-cell-${cell.date}`"
               type="button"
-              class="w-full h-full min-h-[3rem] sm:min-h-[4.25rem] flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              class="w-full h-full min-h-[3rem] sm:min-h-[4.25rem] flex flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 overflow-hidden min-w-0"
               :class="[balanceToneClass(cell), isSelected(cell) ? 'bg-primary-500/15 ring-2 ring-primary-500' : '', cell.isToday ? 'ring-1 ring-amber-400' : '']"
               :aria-pressed="isSelected(cell) ? 'true' : undefined"
               :aria-label="dateSpoken(cell.date) + ' saldo previsto ' + formatCurrency(cell.balance || 0)"
@@ -255,7 +256,7 @@ const onCellKeydown = (event: KeyboardEvent, cell: CalCell) => {
               @keydown="onCellKeydown($event, cell)"
             >
               <span :class="cell.isToday ? 'font-bold' : ''">{{ cell.day }}</span>
-              <span class="text-[9px] sm:text-[11px] font-medium opacity-90 leading-none whitespace-nowrap" :class="cell.balance < 0 ? 'text-red-400' : 'text-emerald-400'">
+              <span class="text-[9px] sm:text-[11px] font-medium opacity-90 leading-none whitespace-nowrap max-[359px]:hidden" :class="cell.balance !== undefined && cell.balance < 0 ? 'text-red-400' : 'text-emerald-400'">
                 {{ compactBalance(cell.balance || 0) }}
               </span>
             </button>

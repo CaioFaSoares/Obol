@@ -131,8 +131,20 @@ const submit = async () => {
 </script>
 
 <template>
-  <UModal v-model="isOpen" prevent-close>
-    <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
+  <UModal
+    v-model="isOpen"
+    prevent-close
+    :ui="{
+      inner: 'fixed inset-0 overflow-y-auto overscroll-contain',
+      // Cap the panel to the viewport so the card body scrolls internally instead of the page.
+      base: 'relative text-left flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100vh-4rem)]'
+    }"
+  >
+    <UCard class="flex flex-col min-h-0" :ui="{
+      ring: '',
+      divide: 'divide-y divide-gray-100 dark:divide-gray-800',
+      body: { base: 'min-h-0 flex-1 overflow-y-auto overscroll-contain' }
+    }">
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">
@@ -144,7 +156,15 @@ const submit = async () => {
 
       <form @submit.prevent="submit" class="space-y-4">
         <UFormGroup label="Valor">
-          <UInput v-model="amount" type="text" placeholder="0.00" icon="i-heroicons-currency-dollar">
+          <UInput
+            v-model="amount"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="0.00"
+            icon="i-heroicons-currency-dollar"
+            input-class="text-base sm:text-sm"
+          >
             <template #leading>
               <span class="text-gray-500 dark:text-gray-400 sm:text-sm">R$</span>
             </template>
@@ -152,11 +172,11 @@ const submit = async () => {
         </UFormGroup>
         
         <UFormGroup label="Descrição">
-          <UInput v-model="description" placeholder="Ex: Mercado, Uber..." />
+          <UInput v-model="description" placeholder="Ex: Mercado, Uber..." autocomplete="off" input-class="text-base sm:text-sm" />
         </UFormGroup>
 
         <UFormGroup label="Tipo de Lançamento">
-          <div class="flex gap-4 mb-2">
+          <div class="flex flex-wrap gap-4 mb-2">
             <URadio v-model="type" value="expense" label="Despesa" />
             <URadio v-model="type" value="income" label="Receita" />
             <URadio v-model="type" value="transfer" label="Transferência" :disabled="isScheduled" />
@@ -164,7 +184,7 @@ const submit = async () => {
         </UFormGroup>
 
         <UFormGroup v-if="type !== 'transfer' && !isSimulated && !isScheduled" label="Forma de Pagamento">
-          <div class="flex gap-4">
+          <div class="flex flex-wrap gap-4">
             <URadio v-model="source" value="account" label="Conta" />
             <URadio v-model="source" value="card" label="Cartão" />
           </div>
@@ -206,12 +226,12 @@ const submit = async () => {
               Aparece como obrigação fixa no caixa. Exige confirmação manual para dar baixa.
             </p>
             <UFormGroup v-if="isScheduled" label="Data de Vencimento" class="mt-3">
-              <UInput v-model="scheduledDate" type="date" />
+              <UInput v-model="scheduledDate" type="date" input-class="text-base sm:text-sm" />
             </UFormGroup>
           </div>
         </div>
 
-        <div class="flex justify-end gap-3 mt-6">
+        <div class="flex flex-wrap justify-end gap-3 mt-6">
           <UButton label="Cancelar" variant="ghost" color="gray" @click="close" />
           <UButton 
             type="submit" 

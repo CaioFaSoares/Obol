@@ -69,9 +69,9 @@ function receivedPercent(received: number, total: number) {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <p class="text-sm text-zinc-400">Acompanhamento dos seus recebíveis por projeto/cliente.</p>
-      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Projeto" @click="projectModal?.open()" />
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-zinc-400 min-w-0">Acompanhamento dos seus recebíveis por projeto/cliente.</p>
+      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Projeto" class="w-full sm:w-auto justify-center" @click="projectModal?.open()" />
     </div>
 
     <div v-if="!activeProjects?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
@@ -85,12 +85,12 @@ function receivedPercent(received: number, total: number) {
         :key="project.id"
         class="bg-zinc-800/50 rounded-xl p-4 space-y-3"
       >
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-white font-semibold">{{ project.name }}</p>
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div class="min-w-0">
+            <p class="text-white font-semibold break-words">{{ project.name }}</p>
             <UBadge color="blue" variant="subtle" label="Em andamento" size="xs" class="mt-1" />
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <UButton
               v-if="project.received >= project.total_value"
               icon="i-heroicons-check-circle"
@@ -120,7 +120,7 @@ function receivedPercent(received: number, total: number) {
               :style="{ width: `${receivedPercent(project.received, project.total_value)}%` }"
             />
           </div>
-          <div class="flex justify-between text-xs text-zinc-400">
+          <div class="flex justify-between gap-3 text-xs text-zinc-400">
             <span>Recebido: <span class="text-emerald-400 font-mono">{{ formatCurrency(project.received) }}</span></span>
             <span>Total: <span class="text-white font-mono">{{ formatCurrency(project.total_value) }}</span></span>
           </div>
@@ -137,12 +137,12 @@ function receivedPercent(received: number, total: number) {
           :key="project.id"
           class="bg-zinc-900 rounded-xl p-4 space-y-3 opacity-80"
         >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-white font-medium">{{ project.name }}</p>
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div class="min-w-0">
+              <p class="text-white font-medium break-words">{{ project.name }}</p>
               <UBadge color="gray" variant="subtle" label="Concluído" size="xs" class="mt-1" />
             </div>
-            <div class="text-right">
+            <div class="text-right shrink-0">
               <p class="text-xs text-zinc-500">Valor Arrecadado</p>
               <p class="text-lg font-mono text-emerald-400">{{ formatCurrency(project.received) }}</p>
             </div>
@@ -151,8 +151,8 @@ function receivedPercent(received: number, total: number) {
           <div v-if="project.accounts_breakdown?.length" class="bg-zinc-800/50 rounded-lg p-3 text-sm">
             <p class="text-xs text-zinc-500 mb-2">Destino dos fundos:</p>
             <ul class="space-y-1">
-              <li v-for="br in project.accounts_breakdown" :key="br.account_name" class="flex justify-between">
-                <span class="text-zinc-300">{{ br.account_name }}</span>
+              <li v-for="br in project.accounts_breakdown" :key="br.account_name" class="flex justify-between gap-3">
+                <span class="text-zinc-300 min-w-0 break-words">{{ br.account_name }}</span>
                 <span class="font-mono text-emerald-400/80">{{ formatCurrency(br.amount) }}</span>
               </li>
             </ul>
@@ -180,7 +180,7 @@ function receivedPercent(received: number, total: number) {
           <UFormGroup label="Descrição (opcional)">
             <UInput v-model="paymentDesc" placeholder="Ex: 1ª parcela, entrega final..." />
           </UFormGroup>
-          <div class="flex justify-end gap-3 pt-2">
+          <div class="flex flex-wrap justify-end gap-3 pt-2">
             <UButton label="Cancelar" variant="ghost" color="gray" @click="closePayment" />
             <UButton type="submit" label="Confirmar Recebimento" color="emerald" :loading="isSubmitting" />
           </div>
