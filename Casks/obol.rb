@@ -2,9 +2,9 @@
 cask "obol" do
   arch arm: "arm64", intel: "x86_64"
 
-  version "0.1.0a"
-  sha256 arm:   "f6ae9df3d12e4a9989a25450dafc8a89ac994deb9ca1ffd33693b237d501a1e9",
-         intel: "c7306daf5f4a493c98f97c07af2eb84876b7a29c979b5618587f976a5bf152b1"
+  version "0.2.0"
+  sha256 arm:   "1d2ce31adf93adfde262c9531a95890d8dcb2214fb64c2e99ddef2eafbdbcf34",
+         intel: "ca2d35462bd48a7748e7bde087318f368ee4262268f93e2da43e776c3e30afa0"
 
   url "https://github.com/CaioFaSoares/Obol/releases/download/release-#{version}/obol-#{version}-macos-#{arch}.zip"
   name "Obol"
