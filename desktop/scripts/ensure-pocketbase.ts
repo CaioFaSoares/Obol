@@ -25,12 +25,30 @@ function run(command: string[]): void {
 }
 
 function platformKey(): string {
-  if (process.platform !== 'darwin') {
-    throw new Error('Obol Electrobun v1 bundles PocketBase for macOS only');
+  if (process.arch === 'arm64') {
+    if (process.platform !== 'darwin') {
+      throw new Error(`Unsupported PocketBase platform: ${process.platform} ${process.arch}`);
+    }
+    return 'darwin_arm64';
   }
-  if (process.arch === 'arm64') return 'darwin_arm64';
-  if (process.arch === 'x64') return 'darwin_amd64';
-  throw new Error(`Unsupported macOS architecture: ${process.arch}`);
+  if (process.arch === 'x64') {
+    if (process.platform === 'darwin') return 'darwin_amd64';
+    if (process.platform === 'win32') return 'windows_amd64';
+    throw new Error(`Unsupported PocketBase platform: ${process.platform} ${process.arch}`);
+  }
+  throw new Error(`Unsupported PocketBase architecture: ${process.arch}`);
+}
+
+/**
+ * Extracts the PocketBase archive. Windows ships bsdtar, which unzips
+ * directly; macOS keeps the selective `unzip` invocation.
+ */
+function extractArchive(archivePath: string): void {
+  if (process.platform === 'win32') {
+    run(['tar', '-xf', archivePath, '-C', OUTPUT_DIR]);
+    return;
+  }
+  run(['unzip', '-o', archivePath, 'pocketbase', 'LICENSE.md', '-d', OUTPUT_DIR]);
 }
 
 export async function ensurePocketBase(): Promise<string> {
@@ -40,7 +58,7 @@ export async function ensurePocketBase(): Promise<string> {
 
   await mkdir(OUTPUT_DIR, { recursive: true });
   const archivePath = join(OUTPUT_DIR, asset.file);
-  const executablePath = join(OUTPUT_DIR, 'pocketbase');
+  const executablePath = join(OUTPUT_DIR, process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase');
   let archiveBytes: Uint8Array;
   try {
     archiveBytes = await readFile(archivePath);
@@ -58,9 +76,9 @@ export async function ensurePocketBase(): Promise<string> {
     throw new Error(`PocketBase archive checksum mismatch for ${asset.file}`);
   }
 
-  run(['unzip', '-o', archivePath, 'pocketbase', 'LICENSE.md', '-d', OUTPUT_DIR]);
+  extractArchive(archivePath);
   await stat(join(OUTPUT_DIR, 'LICENSE.md'));
-  await chmod(executablePath, 0o755);
+  if (process.platform !== 'win32') await chmod(executablePath, 0o755);
 
   const version = Bun.spawnSync([executablePath, '--version'], {
     cwd: OUTPUT_DIR,

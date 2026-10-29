@@ -6,7 +6,7 @@ The desktop app runs locally: an Electrobun window hosts the Nuxt interface, whi
 
 ## Features
 
-- Daily balance projections for 15, 30, 60, or 90 days.
+- A daily balance calendar previews projected cash for each day alongside the forecast trajectory.
 - A transaction ledger with structured search and filters, matching summary totals, lifecycle details, sorting, and CSV export.
 - Accounts, credit cards, invoices, budgets, projects, and recurring transactions.
 - Credit-card budgets use purchase dates; cash-flow projections account for invoice due dates and partial payments.
@@ -33,21 +33,21 @@ In desktop mode, the WebView sends typed API requests over Electrobun RPC. The m
 - Upgrading a 0.1.0 profile preserves its PocketBase records and repairs the internal superuser login during first-time profile setup.
 - Desktop data lives in the current user's application-data directory under `copland.obol`; development uses the isolated identity `copland.obol.eb-dev`.
 - Desktop data is not imported from or synchronized with the hosted `db/pb_data` volume.
-- PocketBase files are not encrypted by the app login. Use macOS FileVault for at-rest protection.
-- The desktop build pins PocketBase 0.40.6 and verifies the downloaded binary checksum.
+- PocketBase files are not encrypted by the app login. Use macOS FileVault or Windows BitLocker for at-rest protection.
+- Desktop builds pin PocketBase 0.40.6 and verify downloaded binary checksums.
 
 ## Releases
 
-The current `desktop/app.json` version is `0.1.0a`. Merging a pull request from `dev` into `main` creates `release-0.1.0a`. The release workflow builds macOS arm64 and x86_64 apps, publishes the archives and checksum manifest to GitHub Releases, then generates the Homebrew cask.
+The desktop version is set to `0.2.0`. Merging a pull request from `dev` into `main` creates `release-0.2.0`. The release workflow builds macOS arm64/x86_64 and Windows x64, publishes macOS archives with a checksum manifest and a Windows setup ZIP with a SHA-256 sidecar, then generates the Homebrew cask from the macOS manifest.
 
-The manifest records release metadata; Obol does not currently update itself. Builds are ad-hoc signed, not Developer ID signed or notarized. The cask clears the quarantine flag during installation.
+The manifest records release metadata; Obol does not currently update itself. macOS builds are ad-hoc signed, not Developer ID signed or notarized. Windows installers are unsigned and may trigger SmartScreen. The cask clears the macOS quarantine flag during installation.
 
 ```mermaid
 flowchart LR
   merge["Merge dev → main"] --> branch["Create release-<version>"]
-  branch --> build["Build macOS arm64 + x86_64"]
-  build --> release["GitHub release / archives / manifest"]
-  release --> cask["Update Casks/obol.rb"]
+  branch --> build["Build macOS + Windows x64"]
+  build --> release["GitHub release / platform archives"]
+  release --> cask["Update Casks/obol.rb from macOS manifest"]
 ```
 
 Install the current public release with Homebrew:
@@ -64,7 +64,7 @@ brew install --cask obol
 | [`docs/canon.md`](docs/canon.md) | Product rules, data model, operations, and current status. |
 | [`docs/arquitetura.md`](docs/arquitetura.md) | Runtime modes, module boundaries, and API flow. |
 | [`docs/decisions/`](docs/decisions/log.md) | Accepted architecture decisions. |
-| [`docs/epics/`](docs/epics/) | E001 ledger/desktop and E002 use-case dispatch. |
+| [`docs/epics/`](docs/epics/) | E001 ledger/desktop, E002 use-case dispatch, E003 daily dashboard, and E004 Windows release pipeline. |
 | [`docs/handovers/`](docs/handovers/) | Current-state handoff for design work. |
 | [`AGENTS.md`](AGENTS.md) / [`CONTEXT.md`](CONTEXT.md) | Repository rules and project vocabulary. |
 
