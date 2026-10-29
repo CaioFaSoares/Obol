@@ -6,8 +6,15 @@ const desktopSpa = desktopStaticBuild || desktopLocalDev
 export default defineNuxtConfig({
   // Local Electrobun also disables SSR so the login gate runs before desktop API access.
   ssr: !desktopSpa,
+  // Keep Nuxt's static build metadata path short enough for Electrobun's macOS self-extractor.
+  ...(desktopStaticBuild ? { buildId: 'obol' } : {}),
   app: {
     baseURL: desktopStaticBuild ? './' : '/'
+  },
+  router: {
+    options: {
+      hashMode: desktopStaticBuild
+    }
   },
   compatibilityDate: '2024-04-03',
   devtools: { enabled: true },

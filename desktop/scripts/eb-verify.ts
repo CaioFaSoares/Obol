@@ -19,6 +19,27 @@ async function requireDirectory(path: string): Promise<void> {
   }
 }
 
+// Electrobun's macOS self-extractor rejects GNU tar long-link and symbolic-link entries.
+const MAX_TAR_PATH_BYTES = 100;
+
+async function assertTarPathLengths(root: string, archivePrefix: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const archivePath = `${archivePrefix}/${entry.name}`;
+    if (Buffer.byteLength(archivePath, 'utf8') > MAX_TAR_PATH_BYTES) {
+      throw new Error(
+        `Electrobun self-extractor cannot handle tar paths longer than ${MAX_TAR_PATH_BYTES} bytes: ${archivePath}`
+      );
+    }
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Electrobun self-extractor cannot handle symbolic links: ${archivePath}`);
+    }
+    if (entry.isDirectory()) {
+      await assertTarPathLengths(join(root, entry.name), archivePath);
+    }
+  }
+}
+
 if (process.platform !== 'darwin') throw new Error('Obol desktop verification requires macOS');
 const runtimeArch = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : null;
 if (!runtimeArch) throw new Error(`Unsupported macOS architecture: ${process.arch}`);
@@ -30,6 +51,14 @@ await requireFile(join(bundle, 'Contents', 'MacOS', 'launcher'));
 await requireFile(join(ROOT, 'build', 'pocketbase', 'pocketbase'));
 await requireDirectory(join(ROOT, 'build', 'pb_migrations'));
 await requireFile(join(ROOT, 'dist', 'index.html'));
+await assertTarPathLengths(
+  join(ROOT, 'dist'),
+  'Obol.app/Contents/Resources/app/views/mainview'
+);
+await assertTarPathLengths(
+  join(ROOT, 'build', 'pb_migrations'),
+  'Obol.app/Contents/Resources/app/pb_migrations'
+);
 
 const plist = await readFile(join(bundle, 'Contents', 'Info.plist'), 'utf8');
 if (!plist.includes('<string>copland.obol</string>') || !plist.includes('<string>Obol</string>')) {

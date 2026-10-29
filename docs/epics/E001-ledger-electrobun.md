@@ -42,7 +42,7 @@ Port Nod's system (full inventory: Nod `docs/electrobun.md`, `docs/distribuicao.
 Implemented architecture (Nod's local-main-process model, with the existing Elysia app retained):
 
 ```
-┌─ Electrobun window (`views://mainview`) ──────────────────────┐
+┌─ Electrobun window (`views://mainview`) ────────────────────────────┐
 │  Nuxt static SPA (`app.baseURL = './'`)                        │
 │  Eden Treaty custom fetcher → `window.obol.apiFetch` over RPC  │
 └───────────────────────────┬───────────────────────────────────┘

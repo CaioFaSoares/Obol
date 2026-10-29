@@ -44,7 +44,7 @@ export async function generateConfig(mode: 'dev' | 'build'): Promise<void> {
       mainProcess: 'bun',
       bun: { entrypoint: 'electrobun/bun/index.ts' },
       views: {
-        bridge: {
+        mainview: {
           entrypoint: 'electrobun/view/bridge.ts',
           format: 'iife',
           minify: false
@@ -54,7 +54,7 @@ export async function generateConfig(mode: 'dev' | 'build'): Promise<void> {
         dist: 'views/mainview',
         'build/pocketbase/pocketbase': 'resources/pocketbase',
         'build/pocketbase/LICENSE.md': 'resources/licenses/pocketbase-LICENSE.md',
-        'build/pb_migrations': 'resources/pb_migrations'
+        'build/pb_migrations': 'pb_migrations'
       },
       mac: {
         bundleCEF: false,
