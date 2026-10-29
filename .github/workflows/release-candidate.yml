@@ -1,8 +1,9 @@
-# Candidate (rc-*) releases: the same macOS arm64/x86_64 and Windows x64 build as `release.yml`,
-# published as a GitHub *prerelease* on a uniquely named `rc-<version>` tag. Candidates never
-# touch anything stable: no `--latest` flag, no Homebrew cask update, and the Electrobun updater
-# metadata they publish is shipped with candidate-only channel URLs — so `release.yml` continues
-# to own the stable release, the `latest` flag and the cask.
+# Candidate (`rc-*`) releases use the same macOS arm64/x86_64 and Windows x64 build as `release.yml`,
+# published as a GitHub prerelease on a unique `rc-<version>` tag. Candidates never use `--latest`
+# or update the Homebrew cask.
+# The candidate URL is embedded in the built app's Electrobun config. Electrobun's `stable-*-update.json`
+# metadata filenames/schema remain unchanged; the candidate job validates those files and the
+# separate manifest URLs without assuming that `update.json` contains a `release.baseUrl` field.
 #
 # Trigger policy (the one path to a candidate):
 #   merging a PR into `main` from `rc/<version>` (version = `desktop/app.json`, exactly
@@ -16,18 +17,15 @@
 # iterating a candidate is a version bump to `-rc.<N+1>` plus a fresh `rc/<version>` PR, not a
 # tag reuse. Different candidates never share a ref, so nothing is ever overwritten silently.
 #
-# Channel isolation: candidate builds record
+# Channel isolation: each candidate app embeds
 #   https://github.com/<repo>/releases/download/rc-<version>/
-# as base URL (via `OBOL_RELEASE_BASE_URL` and `--base-url`) instead of stable's
-# `/releases/latest/download`. A candidate's in-app updater therefore only ever resolves files
-# from this one candidate release, never from the stable one — and `releases/latest/download`
-# keeps resolving to the latest *stable* release for already-installed stable apps, untouched.
-# Because that URL is frozen at build time, a candidate install does not auto-promote to the
-# next `rc.N` (or to the stable cut): candidates are installed manually once, the same way 0.2.0
-# users installed 0.2.0a once before the updater existed. Electrobun's own
-# `stable-macos-<arch>-update.json`/`stable-win-x64-update.json` metadata *file names* are kept:
-# they are Electrobun-owned (the updater resolves `update.json` and the tar by file name), while
-# their embedded `release.baseUrl` is candidate-only, which is what isolates the channels.
+# as `release.baseUrl` through `OBOL_RELEASE_BASE_URL`; the build step verifies that exact config
+# value. `eb-publish.ts --base-url` writes candidate-only download URLs into the macOS manifest and
+# Windows setup asset name. At runtime, a candidate's updater loads Electrobun's standard
+# `stable-*-update.json` filename and matching tar from this candidate-only base, never from
+# `/releases/latest/download`. Stable installs continue to resolve their stable release unchanged.
+# The metadata filenames stay Electrobun-owned; candidates are installed manually because each
+# build's base URL is frozen, so it does not auto-promote to a later RC or the stable cut.
 
 name: release candidate
 
@@ -129,6 +127,16 @@ jobs:
         run: bun run eb:build
         working-directory: desktop
 
+      - name: verify candidate updater base
+        env:
+          EXPECTED_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}/
+        run: |
+          actual=$(bun -e 'import config from "./electrobun.config.ts"; process.stdout.write(config.release.baseUrl)')
+          if [ "$actual" != "$EXPECTED_BASE_URL" ]; then
+            echo "::error::candidate app base URL '$actual' does not match '$EXPECTED_BASE_URL'"
+            exit 1
+          fi
+        working-directory: desktop
       - name: verify the desktop bundle
         run: bun run eb:verify
         working-directory: desktop
@@ -230,9 +238,19 @@ jobs:
           jq -e '.mac.arm64.url and .mac.arm64.sha256 and .mac.x86_64.url and .mac.x86_64.sha256' out/manifest.json > /dev/null \
             || { echo "::error::manifest.json is missing a macOS architecture"; exit 1; }
           find parts -type f ! -name manifest.json -exec cp -n {} out/ \;
-          # Same check as release.yml: three Electrobun update.json files (macos arm64/x64, win
-          # x64), each with a bare `.artifact.file` whose tar exists beside it. The file names are
-          # Electrobun's stable-* names (see the header); their embedded URLs are candidate-only.
+          # Electrobun's update JSON keeps its stable-* filenames and version/artifact fields. The
+          # candidate base URL lives in the app's generated config (verified in each build job), not
+          # in `update.json`. Verify the separate download manifest points only to this RC tag.
+          candidate_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/"
+          jq -e --arg version "$VERSION" --arg base "$candidate_base" '
+            .version == $version and
+            (.url | startswith($base)) and
+            (.mac.arm64.url | startswith($base)) and
+            (.mac.x86_64.url | startswith($base))
+          ' out/manifest.json > /dev/null \
+            || { echo "::error::manifest.json does not contain candidate-only URLs for $TAG"; exit 1; }
+          # Same pairing as release.yml: three metadata files (macOS arm64/x64, Windows x64), each
+          # has a versioned artifact filename whose tar exists beside it in the prerelease assets.
           shopt -s nullglob
           updates=(out/stable-*-update.json)
           [ ${#updates[@]} -eq 3 ] \
@@ -241,18 +259,16 @@ jobs:
           for i in "${!expected_json[@]}"; do
             json="out/${expected_json[$i]}"
             [ -f "$json" ] || { echo "::error::missing required Electrobun metadata file $json"; exit 1; }
+            version=$(jq -er '.version' "$json") \
+              || { echo "::error::$json is missing .version"; exit 1; }
+            [ "$version" = "$VERSION" ] \
+              || { echo "::error::$json version '$version' does not match $VERSION"; exit 1; }
             artifact=$(jq -er '.artifact.file' "$json") \
               || { echo "::error::$json is missing .artifact.file"; exit 1; }
             [ -n "$artifact" ] \
               || { echo "::error::$json has an empty .artifact.file"; exit 1; }
             [[ "$artifact" =~ ^[^/\\]+$ ]] \
               || { echo "::error::$json .artifact.file must be a bare filename, got '$artifact'"; exit 1; }
-            # Candidate channel isolation is machine-checked: release.baseUrl must address this
-            # candidate tag, never /releases/latest/download (stable's shared URL).
-            base=$(jq -er '.release.baseUrl' "$json") \
-              || { echo "::error::$json is missing .release.baseUrl"; exit 1; }
-            [[ "$base" == "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/"* ]] \
-              || { echo "::error::$json .release.baseUrl is not the candidate channel: '$base'"; exit 1; }
             tar="out/$artifact"
             [ -f "$tar" ] || { echo "::error::$tar is missing — the update channel would be broken"; exit 1; }
           done

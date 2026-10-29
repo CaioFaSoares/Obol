@@ -6,8 +6,8 @@
 // of `desktop/artifacts/` (files unchanged, under their Electrobun names):
 //   macOS:   stable-macos-<arch>-update.json + stable-macos-<arch>-<App>.app.tar.zst
 //   Windows: stable-win-x64-update.json      + stable-win-x64-<App>.tar.zst
-// `update.json` carries `release.baseUrl`, so the packaged app's in-app updater resolves those
-// addresses against this repository's latest release. A missing file fails the leg clearly.
+// `update.json` carries the version and artifact filename. The download base URL is embedded in
+// the built app's generated Electrobun config, not in this JSON. A missing file fails the leg.
 //
 // The release workflow runs this once per macOS runner (after `bun run eb:build` and the
 // `codesign --verify` gate) and merges the two halves. The manifest records each archive's exact
@@ -106,11 +106,10 @@ function electrobunSetupZip(): string {
 }
 
 /**
- * Electrobun's desktop updater artifacts live in `desktop/artifacts/`. Each stable build emits
- * `stable-<rest>-update.json` (pointing at `release.baseUrl`) and the matching full tar the
- * updater applies. The names are Electrobun-owned — the updater resolves `update.json` and the
- * tar by file name, so they are copied into the publish output unrenamed. `<App>` is the app
- * name from `app.json` (Electrobun derives both installer names from it).
+ * Electrobun emits `stable-<rest>-update.json` metadata and the matching full tar under
+ * `desktop/artifacts/`. The app's generated config embeds `release.baseUrl`; the JSON keeps
+ * Electrobun's version/artifact schema and the pair is copied unchanged so the updater can fetch
+ * both from that base. `<App>` is the app name from `app.json`.
  */
 function updaterArtifactNames(platform: 'macos' | 'windows', arch: UpdateArch): readonly [string, string] {
   const ebArch = ELECTROBUN_ARCH[arch];
