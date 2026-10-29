@@ -22,7 +22,7 @@ The desktop runtime reads migrations from `Contents/Resources/app/resources/pb_m
 
 ## Release flow and bootstrap
 
-The new release PR uses head branch `pr/release-0.2.0a` and base `main`, starting from the already published 0.2.0 release. PR validation builds all native targets but cannot publish. Merging creates `release-0.2.0a` and dispatches the existing release workflow.
+The new release PR uses head branch `pr/release-0.2.0a` and base `main`, starting from the already published 0.2.0 release. PR validation builds all native targets but cannot publish. Merging creates `release-0.2.0a` and dispatches the existing release workflow. The branch collision guard must query the exact `refs/heads/release-0.2.0a`; a short `git ls-remote` pattern also matches the PR head `pr/release-0.2.0a`.
 
 The published 0.2.0 app contains no updater and cannot update itself. Users must install 0.2.0a manually once. Later stable versions can update through the app.
 

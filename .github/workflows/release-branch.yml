@@ -67,7 +67,8 @@ jobs:
         env:
           BRANCH: ${{ steps.version.outputs.branch }}
         run: |
-          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+          # Match the full ref: the short pattern also matches `pr/release-<version>`.
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" > /dev/null; then
             echo "::error::$BRANCH already exists — bump version in desktop/app.json, or push $BRANCH by hand to republish"
             exit 1
           fi
