@@ -11,6 +11,7 @@ The desktop app runs locally: an Electrobun window hosts the Nuxt interface, whi
 - Accounts, credit cards, invoices, budgets, projects, and recurring transactions.
 - Credit-card budgets use purchase dates; cash-flow projections account for invoice due dates and partial payments.
 - A persistent local desktop profile, separated from hosted PocketBase data.
+- Packaged desktop builds check for stable updates and download available bundles in the background.
 
 ## How it works
 
@@ -37,17 +38,18 @@ In desktop mode, the WebView sends typed API requests over Electrobun RPC. The m
 - Desktop builds pin PocketBase 0.40.6 and verify downloaded binary checksums.
 
 ## Releases
+Obol 0.2.0 is published without an in-app updater. The 0.2.0a release PR `pr/release-0.2.0a` repairs the PocketBase migrations path that blocked the 0.2.0 macOS app and adds automatic update checks and background downloads, followed by a user-controlled restart to install.
 
-The desktop version is set to `0.2.0`. Merging a pull request from `dev` into `main` creates `release-0.2.0`. The release workflow builds macOS arm64/x86_64 and Windows x64, publishes macOS archives with a checksum manifest and a Windows setup ZIP with a SHA-256 sidecar, then generates the Homebrew cask from the macOS manifest.
+Because 0.2.0 cannot update itself, users must install 0.2.0a manually once. Later stable releases can update in-app. Merging the 0.2.0a PR into `main` creates `release-0.2.0a` and publishes Electrobun update metadata/full bundles alongside the platform installers.
 
-The manifest records release metadata; Obol does not currently update itself. macOS builds are ad-hoc signed, not Developer ID signed or notarized. Windows installers are unsigned and may trigger SmartScreen. The cask clears the macOS quarantine flag during installation.
+macOS builds are ad-hoc signed, not Developer ID signed or notarized. Windows installers are unsigned and may prompt SmartScreen.
 
 ```mermaid
 flowchart LR
-  merge["Merge dev → main"] --> branch["Create release-<version>"]
+  merge["Merge pr/release-0.2.0a → main"] --> branch["Create release-0.2.0a"]
   branch --> build["Build macOS + Windows x64"]
-  build --> release["GitHub release / platform archives"]
-  release --> cask["Update Casks/obol.rb from macOS manifest"]
+  build --> assets["Publish stable updater metadata and bundles"]
+  assets --> cask["Update Casks/obol.rb from macOS manifest"]
 ```
 
 Install the current public release with Homebrew:
@@ -64,7 +66,7 @@ brew install --cask obol
 | [`docs/canon.md`](docs/canon.md) | Product rules, data model, operations, and current status. |
 | [`docs/arquitetura.md`](docs/arquitetura.md) | Runtime modes, module boundaries, and API flow. |
 | [`docs/decisions/`](docs/decisions/log.md) | Accepted architecture decisions. |
-| [`docs/epics/`](docs/epics/) | E001 ledger/desktop, E002 use-case dispatch, E003 daily dashboard, and E004 Windows release pipeline. |
+| [`docs/epics/`](docs/epics/) | E001 ledger/desktop, E002 use-case dispatch, E003 dashboard, E004 Windows packages, and E005 in-app updater. |
 | [`docs/handovers/`](docs/handovers/) | Current-state handoff for design work. |
 | [`AGENTS.md`](AGENTS.md) / [`CONTEXT.md`](CONTEXT.md) | Repository rules and project vocabulary. |
 

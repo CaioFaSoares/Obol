@@ -33,6 +33,18 @@ export interface LocalAuthUnlockRequest {
   password: string;
 }
 
+/** Snapshot of the desktop auto-update pipeline, published from bun to the view. */
+export interface DesktopUpdaterState {
+  status: string;
+  message: string;
+  currentVersion: string;
+  availableVersion: string;
+  updateAvailable: boolean;
+  updateReady: boolean;
+  progress: number | null;
+  error: string | null;
+}
+
 /** The desktop view can unlock one local profile and then call the existing Obol API. */
 export type ObolBridgeSchema = {
   bun: {
@@ -41,11 +53,16 @@ export type ObolBridgeSchema = {
       'auth.status': { params: {}; response: LocalAuthStatus };
       'auth.setup': { params: LocalAuthSetupRequest; response: LocalAccountSummary };
       'auth.unlock': { params: LocalAuthUnlockRequest; response: LocalAccountSummary };
+      'updater.status': { params: {}; response: DesktopUpdaterState };
+      'updater.check': { params: {}; response: DesktopUpdaterState };
+      'updater.install': { params: {}; response: void };
     };
     messages: {};
   };
   webview: {
     requests: {};
-    messages: {};
+    messages: {
+      'updater.state': DesktopUpdaterState;
+    };
   };
-};
+}

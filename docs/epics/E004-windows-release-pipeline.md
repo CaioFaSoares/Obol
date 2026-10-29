@@ -1,6 +1,6 @@
 # E004 - Windows x64 release pipeline (0.2.0)
 
-**Status**: implementation in progress · **Completed**: —
+**Status**: published in 0.2.0 · Windows runtime smoke pending · **Completed**: —
 **Related**: `desktop/scripts/ensure-pocketbase.ts`, `desktop/scripts/eb-build.ts`, `desktop/scripts/eb-verify.ts`, `desktop/scripts/eb-publish.ts`, `.github/workflows/release.yml`, `desktop/context.md`, `docs/arquitetura.md`
 
 ## Goal
@@ -18,7 +18,7 @@ Add a native Windows x64 package to the existing release flow without changing m
 
 ## Release flow
 
-A pull request targeting `main` runs the native macOS and Windows build matrix as validation only. It has read-only contents permission and cannot create a release, tag, or Cask commit. The existing release process remains unchanged: merging a `dev` → `main` PR creates `release-<version>`, then dispatches the publishing workflow. The merge is the publication boundary.
+A pull request targeting `main` runs the native macOS and Windows build matrix as validation only. It has read-only contents permission and cannot create a release, tag, or Cask commit. Merging a `dev` PR or an explicit `pr/release-<version>` PR creates `release-<version>`, then dispatches the publishing workflow. The merge is the publication boundary.
 
 ## Acceptance
 
@@ -27,7 +27,7 @@ A pull request targeting `main` runs the native macOS and Windows build matrix a
 - [x] In PR #10, `eb:verify` validated the Windows setup archive and installer payload. The macOS identity, payload, path-length, and codesign checks also passed.
 - [x] The Windows publish step completed in PR #10 and uploaded the setup ZIP plus SHA-256 sidecar; the publisher emits no Windows `manifest.json`.
 - [x] PR #10 passed all three native platform legs; release/cask jobs were skipped for the pull request. See [Actions run 40803704581](https://github.com/CaioFaSoares/Obol/actions/runs/40803704581).
-- [ ] After merge, the release workflow publishes the Windows asset while the merged macOS manifest remains the sole Homebrew cask input.
+- [x] Merging PR #10 published the Windows setup ZIP and SHA-256 sidecar; the Homebrew cask was generated from the macOS manifest.
 - [ ] Windows installer launch, first-run setup/unlock, local PocketBase persistence, and clean application shutdown pass on Windows x64.
 
 ## Risks and boundaries
