@@ -8,6 +8,10 @@
     "darwin_amd64": {
       "file": "pocketbase_0.40.6_darwin_amd64.zip",
       "sha256": "970464cfdb8faf0ad57e0b6b806fd85e81f99cb78000a1c9f78cdcb1b36d4b7a"
+    },
+    "windows_amd64": {
+      "file": "pocketbase_0.40.6_windows_amd64.zip",
+      "sha256": "33a2a1d255cadded77346fc7f5de37dca21ba4bad0d9cae0235a50b3b703d6d9"
     }
   }
 }

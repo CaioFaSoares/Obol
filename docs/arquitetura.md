@@ -34,7 +34,7 @@ The desktop opens on a local setup/unlock screen before starting PocketBase or E
 | Path | Role |
 |---|---|
 | `pages/` | Dashboard, ledger, cards, management, admin |
-| `components/` | Domain tabs, modals, `ForecastChart` |
+| `components/` | Domain tabs, modals, `ForecastChart`, daily `ForecastCalendar` |
 | `stores/finance.ts` | Pinia cache of accounts/cards/categories/projects |
 | `composables/` | Global refresh and modal state |
 | `utils/api.ts` | Eden client typed from `server/src/index.ts`; browser uses same-origin proxy, Electrobun uses RPC fetch bridge |
@@ -52,6 +52,6 @@ The web app sends structured filters (`search`, status/type, simulation/schedule
 
 - Hosted dev: `docker-compose.yml` maps Nuxt :13000, Elysia :13080, PocketBase :13090 on `obol_net`.
 - Hosted deploy: `docker-compose.coolify.yml` exposes services for Coolify's reverse proxy.
-- Desktop: `desktop/app.json` is the app identity/version source; `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle; `desktop/scripts/ensure-pocketbase.ts` downloads only the pinned, SHA-256-verified macOS binary.
-- Release: `.github/workflows/release-branch.yml` creates `release-<version>` after `dev`→`main`; `release.yml` builds macOS arm64/x86_64, publishes zips/manifests, and generates `Casks/obol.rb` from the real merged release manifest. No placeholder Cask checksum is committed.
+- Desktop: `desktop/app.json` is the app identity/version source; `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle; `desktop/scripts/ensure-pocketbase.ts` downloads pinned, SHA-256-verified PocketBase binaries for macOS arm64/x86_64 and Windows x64.
+- Release: `.github/workflows/release-branch.yml` creates `release-<version>` after `dev`→`main`; `release.yml` validates macOS arm64/x86_64 and Windows x64 on release PRs, then publishes macOS archives/manifests and a Windows setup ZIP. The Homebrew cask consumes only the merged macOS manifest.
 - Nix/direnv: `flake.nix` supplies Node, Bun, Docker Compose, and unzip; `.envrc` activates the flake.

@@ -1,6 +1,6 @@
-# Builds Obol for macOS arm64 and x86_64, publishes app zips plus a checksum manifest, and
-# generates the Homebrew cask from the merged manifest. The manifest is release metadata; Obol
-# does not currently implement an in-app updater. Linux/Windows legs are outside E001.
+# Builds Obol for macOS arm64/x86_64 (app zips plus a checksum manifest) and Windows x64 (a
+# setup ZIP with a sha256 sidecar, no manifest), and generates the Homebrew cask from the
+# merged macOS manifest. Pull requests to `main` run the build matrix as validation only.
 #
 # Code signing is ad hoc (no Developer ID or notarization secret is declared). Direct downloads can
 # trigger Gatekeeper; the cask clears the quarantine attribute in its postflight step.
@@ -10,6 +10,10 @@ name: release
 on:
   push:
     branches: ['release-*']
+  # Validation only: pull requests to `main` run the matrix as a real check,
+  # but never publish (see the `release` and `cask` job conditions).
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   BUN_VERSION: 1.4.3
@@ -65,6 +69,7 @@ jobs:
         include:
           - { target: macos-arm64,  os: macos-15,       arch: arm64,  runtime_arch: arm64 }
           - { target: macos-x86_64, os: macos-15-intel, arch: x86_64, runtime_arch: x64 }
+          - { target: windows-x64,  os: windows-2022,   arch: x64,    runtime_arch: x64 }
     defaults:
       run:
         shell: bash
@@ -90,9 +95,10 @@ jobs:
       - run: npm ci
         working-directory: app
 
-      # One command per host: the app bundle, the ad-hoc signature, the bundled PocketBase binary
+      # One command per host: the app bundle, the bundled PocketBase binary
       # and the generated Electrobun config (`desktop/package.json` scripts, maintained with the
-      # desktop build system).
+      # desktop build system). The app bundle is ad-hoc signed on macOS only; Windows packages are
+      # left unsigned.
       # OBOL_RELEASE_BASE_URL: the update channel base the generated config records, so the
       # packaged app reads its `manifest.json` from this repository's latest release.
       - name: build the app
@@ -101,11 +107,12 @@ jobs:
         run: bun run eb:build
         working-directory: desktop
 
-      - name: verify the macOS bundle
+      - name: verify the desktop bundle
         run: bun run eb:verify
         working-directory: desktop
 
       - name: verify the shipped signature
+        if: runner.os == 'macOS'
         run: codesign --verify --strict --deep "build/stable-macos-${{ matrix.runtime_arch }}/Obol.app"
         working-directory: desktop
 
@@ -125,10 +132,11 @@ jobs:
           [ -n "$notes" ] || notes=$(git log -1 --format=%B)
           # GitHub's merge header (and the blank line after it) is not news for anyone.
           notes=$(printf '%s\n' "$notes" | sed '/^Merge pull request #/,/^$/d')
-          printf '%s\n' "${notes:-Obol $VERSION}" > "${{ runner.temp }}/release-notes.md"
+          printf '%s\n' "${notes:-Obol $VERSION}" > "$RUNNER_TEMP/release-notes.md"
 
       # One macOS half (`mac.<arch>` entry + the zip). The release job merges the two halves.
       - name: publish
+        if: runner.os == 'macOS'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           ARCH: ${{ matrix.arch }}
@@ -137,7 +145,23 @@ jobs:
             --arch "$ARCH" \
             --version "$VERSION" \
             --base-url "https://github.com/${{ github.repository }}/releases/latest/download" \
-            --notes-file "${{ runner.temp }}/release-notes.md" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --out dist/publish
+          ls -la dist/publish
+        working-directory: desktop
+
+      # The Windows leg publishes no manifest half: the setup archive goes straight into the
+      # release assets and the mac manifest stays the only Homebrew cask input.
+      - name: publish the Windows setup
+        if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          bun scripts/eb-publish.ts build \
+            --platform windows \
+            --arch x64 \
+            --version "$VERSION" \
+            --base-url "https://github.com/${{ github.repository }}/releases/latest/download" \
             --out dist/publish
           ls -la dist/publish
         working-directory: desktop
@@ -151,8 +175,11 @@ jobs:
 
   release:
     name: publish GitHub release
+    if: github.event_name != 'pull_request'
     needs: [prepare, build]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
@@ -220,8 +247,11 @@ jobs:
   # alone (`desktop/scripts/brew-cask.ts`). A push by GITHUB_TOKEN starts no workflow.
   cask:
     name: update the Homebrew cask
+    if: github.event_name != 'pull_request'
     needs: [prepare, release]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}

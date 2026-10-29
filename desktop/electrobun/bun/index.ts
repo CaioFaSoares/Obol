@@ -29,8 +29,8 @@ if (isDev && identifier === appConfig.id) {
 const dataRoot = join(Utils.paths.appData, identifier);
 const pbDataDir = join(dataRoot, 'pb_data');
 const resourcesDir = join(RESOURCES_FOLDER, 'app', 'resources');
-const pocketBaseBinary = join(resourcesDir, 'pocketbase');
-const migrationsDir = join(RESOURCES_FOLDER, 'app', 'pb_migrations');
+const pocketBaseBinary = join(resourcesDir, process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase');
+const migrationsDir = join(resourcesDir, 'pb_migrations');
 const pocketBaseUrl = 'http://127.0.0.1:13090';
 const pocketBaseEmail = 'obol@localhost.invalid';
 const localProfilePath = join(dataRoot, 'local_profile.json');

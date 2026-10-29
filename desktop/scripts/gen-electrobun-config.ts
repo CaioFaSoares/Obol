@@ -33,6 +33,7 @@ export async function generateConfig(mode: 'dev' | 'build'): Promise<void> {
     throw new Error(`OBOL_APP_ID must not be ${RELEASE_IDENTIFIER} in a dev run`);
   }
 
+  const pocketBaseBundle = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
   const config = {
     app: {
       name: manifest.title,
@@ -52,7 +53,7 @@ export async function generateConfig(mode: 'dev' | 'build'): Promise<void> {
       },
       copy: {
         dist: 'views/mainview',
-        'build/pocketbase/pocketbase': 'resources/pocketbase',
+        [`build/pocketbase/${pocketBaseBundle}`]: `resources/${pocketBaseBundle}`,
         'build/pocketbase/LICENSE.md': 'resources/licenses/pocketbase-LICENSE.md',
         'build/pb_migrations': 'pb_migrations'
       },

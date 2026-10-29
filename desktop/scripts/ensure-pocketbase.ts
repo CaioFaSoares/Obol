@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -25,12 +26,40 @@ function run(command: string[]): void {
 }
 
 function platformKey(): string {
-  if (process.platform !== 'darwin') {
-    throw new Error('Obol Electrobun v1 bundles PocketBase for macOS only');
+  if (process.arch === 'arm64') {
+    if (process.platform !== 'darwin') {
+      throw new Error(`Unsupported PocketBase platform: ${process.platform} ${process.arch}`);
+    }
+    return 'darwin_arm64';
   }
-  if (process.arch === 'arm64') return 'darwin_arm64';
-  if (process.arch === 'x64') return 'darwin_amd64';
-  throw new Error(`Unsupported macOS architecture: ${process.arch}`);
+  if (process.arch === 'x64') {
+    if (process.platform === 'darwin') return 'darwin_amd64';
+    if (process.platform === 'win32') return 'windows_amd64';
+    throw new Error(`Unsupported PocketBase platform: ${process.platform} ${process.arch}`);
+  }
+  throw new Error(`Unsupported PocketBase architecture: ${process.arch}`);
+}
+
+/**
+ * Windows ships bsdtar in System32; resolve it explicitly so Git Bash's GNU tar (which
+ * misreads `D:\...` as a remote host) is never picked up from PATH. macOS keeps the
+ * selective `unzip` invocation.
+ */
+function nativeWindowsTar(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const tar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(tar)) {
+    throw new Error(`Windows native tar not found at ${tar} (System32 tar.exe is required for Windows paths)`);
+  }
+  return tar;
+}
+
+function extractArchive(archivePath: string): void {
+  if (process.platform === 'win32') {
+    run([nativeWindowsTar(), '-xf', archivePath, '-C', OUTPUT_DIR]);
+    return;
+  }
+  run(['unzip', '-o', archivePath, 'pocketbase', 'LICENSE.md', '-d', OUTPUT_DIR]);
 }
 
 export async function ensurePocketBase(): Promise<string> {
@@ -40,7 +69,7 @@ export async function ensurePocketBase(): Promise<string> {
 
   await mkdir(OUTPUT_DIR, { recursive: true });
   const archivePath = join(OUTPUT_DIR, asset.file);
-  const executablePath = join(OUTPUT_DIR, 'pocketbase');
+  const executablePath = join(OUTPUT_DIR, process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase');
   let archiveBytes: Uint8Array;
   try {
     archiveBytes = await readFile(archivePath);
@@ -58,9 +87,9 @@ export async function ensurePocketBase(): Promise<string> {
     throw new Error(`PocketBase archive checksum mismatch for ${asset.file}`);
   }
 
-  run(['unzip', '-o', archivePath, 'pocketbase', 'LICENSE.md', '-d', OUTPUT_DIR]);
+  extractArchive(archivePath);
   await stat(join(OUTPUT_DIR, 'LICENSE.md'));
-  await chmod(executablePath, 0o755);
+  if (process.platform !== 'win32') await chmod(executablePath, 0o755);
 
   const version = Bun.spawnSync([executablePath, '--version'], {
     cwd: OUTPUT_DIR,

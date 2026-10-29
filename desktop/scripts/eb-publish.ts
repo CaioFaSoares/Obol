@@ -7,16 +7,21 @@
 // `codesign --verify` gate) and merges the two halves. The manifest records each archive's exact
 // sha256 and version for the cask and release page; it is not an updater contract in the app today.
 //
-// macOS only (docs/epics/E001-ledger-electrobun.md, sprint 3): Linux and Windows artifacts are
-// not part of the release pipeline yet.
+// Platforms: the macOS flow is unchanged; `--platform windows --arch x64` runs on the native
+// Windows x64 runner, re-emits Electrobun's `artifacts/win-x64-<App>-Setup.zip` under the
+// release-asset name (`obol-<v>-windows-x64-setup.zip`) plus a `.sha256` sidecar, and publishes
+// no manifest: the Windows setup asset is uploaded as-is beside the macOS assets.
 //
 // One command, run from `desktop/`:
 //   bun scripts/eb-publish.ts build --arch <arm64|x86_64> --version <v> --base-url <url> \
 //     [--notes-file <path>] [--build-root build] [--app Obol.app] [--out dist/publish]
+// or, on Windows:
+//   bun scripts/eb-publish.ts build --platform windows --arch x64 --version <v> --base-url <url> \
+//     [--out dist/publish]
 //
 // Without `--version` the version comes from the `version` key of `desktop/app.json` (falling
 // back to the repository-root `app.json`), the same source the release workflows gate on.
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 /** The architectures the release pipeline publishes. Electrobun spells `x86_64` as `x64` in
@@ -57,6 +62,14 @@ export function isArch(value: string): value is UpdateArch {
   return (UPDATE_ARCHES as readonly string[]).includes(value);
 }
 
+/** `--platform` selects the artifact family; macOS keeps the manifest flow, Windows does not. */
+export type Platform = 'macos' | 'windows';
+const PLATFORMS: readonly Platform[] = ['macos', 'windows'] as const;
+
+export function isPlatform(value: string): value is Platform {
+  return (PLATFORMS as readonly string[]).includes(value);
+}
+
 /** `x64` is the runtime's spelling; the manifest and the archives use `x86_64`. */
 export function normalizeArch(value: string): UpdateArch | null {
   if (value === 'x64') return 'x86_64';
@@ -71,6 +84,84 @@ export function normalizeVersion(value: string): string | null {
 
 export function artifactName(version: string, arch: UpdateArch): string {
   return `${ARTIFACT_PREFIX}-${version}-macos-${arch}.zip`;
+}
+
+/**
+ * Shared contract with the release workflow: the Windows setup asset rides beside the macOS
+ * assets without a manifest (`eb-publish.ts build --platform windows --arch x64`).
+ */
+export function windowsSetupName(version: string): string {
+  return `${ARTIFACT_PREFIX}-${version}-windows-x64-setup.zip`;
+}
+
+/** Electrobun's stable Windows output for the x64 runner: `artifacts/win-x64-<App>-Setup.zip`. */
+function electrobunSetupZip(): string {
+  return resolve(join(import.meta.dir, '..', 'artifacts', `win-x64-${appName()}-Setup.zip`));
+}
+
+/**
+ * Electrobun names the Windows installer after the app `name` of `app.json` (ASCII spaces
+ * removed); the same file the version default comes from.
+ */
+function appName(): string {
+  const here = join(process.cwd(), 'app.json');
+  const repoRoot = join(dirname(import.meta.dir), '..', 'app.json');
+  for (const path of [here, repoRoot].filter(existsSync)) {
+    try {
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+      const name = typeof raw.name === 'string' && raw.name !== '' ? raw.name.replace(/ /g, '') : null;
+      if (name !== null) return name;
+    } catch {
+      // fall through to the next candidate
+    }
+  }
+  return 'Obol';
+}
+
+interface WindowsZipListing {
+  names: readonly string[];
+  setupExecutableName: string | null;
+}
+
+function nativeWindowsTar(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const tar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(tar)) {
+    throw new Error(`Windows native tar not found at ${tar} (System32 tar.exe is required for Windows paths)`);
+  }
+  return tar;
+}
+
+/**
+ * Windows' own tar.exe (shipped in System32) lists zip members; the archive path travels as a
+ * spawn argv element, never through a shell, so nothing in it can be reinterpreted as a command.
+ */
+function listWindowsZip(setupZip: string, errorPrefix: string): WindowsZipListing {
+  const tar = nativeWindowsTar();
+  const listing = Bun.spawnSync([tar, '-tf', setupZip], { stdout: 'pipe', stderr: 'pipe' });
+  const lines = listing.stdout.toString().split(/\r?\n/).map((name) => name.trim()).filter((name) => name !== '');
+  if (listing.exitCode !== 0 || lines.length === 0) {
+    throw new Error(`${errorPrefix}: the archive is unreadable: ${listing.stderr.toString().trim()}`);
+  }
+  const names = lines.filter((name) => !name.endsWith('/'));
+  const app = appName().toLowerCase();
+  const setupExecutableName =
+    names.find((entry) => entry.toLowerCase().endsWith('.exe') && entry.toLowerCase().includes(app)) ?? null;
+  return { names, setupExecutableName };
+}
+
+/**
+ * Refuses an archive without the visible setup executable or without its adjacent hidden
+ * installer payload: a truncated Electrobun output would publish a release whose installer
+ * opens with a missing payload.
+ */
+function checkSetupZip(listing: WindowsZipListing): void {
+  if (listing.setupExecutableName === null) {
+    throw new Error(`the archive has no ${appName()} *.exe setup executable`);
+  }
+  if (listing.names.length - 1 < 1) {
+    throw new Error(`the archive has no installer payload beside ${listing.setupExecutableName}`);
+  }
 }
 
 /** `https://…/download` + `obol-….zip` → the address the manifest carries. */
@@ -383,25 +474,42 @@ function baseVersion(): string {
 function usage(): string {
   return [
     'usage:',
-    '  bun scripts/eb-publish.ts build --arch <arm64|x86_64> --version <v> --base-url <url>',
-    '    [--notes-file <path>] [--build-root build] [--app Obol.app] [--out dist/publish]',
+    '  bun scripts/eb-publish.ts build --version <v> --base-url <url>',
+    '',
+    '    mac (default): --arch <arm64|x86_64> [--notes-file <path>] [--build-root build]',
+    '      [--app Obol.app] [--out dist/publish]',
+    '    windows: --platform windows --arch x64 [--out dist/publish]',
   ].join('\n');
 }
 
 async function runBuild(argv: readonly string[]): Promise<void> {
   const { flags, rest } = parseArgs(argv);
   if (rest.length > 0) throw new Error(`unexpected argument: ${rest[0]}`);
-  checkFlags(flags, ['arch', 'version', 'base-url', 'notes-file', 'build-root', 'app', 'out']);
-  const archFlag = normalizeArch(flags.arch ?? (process.arch === 'x64' ? 'x86_64' : process.arch));
-  if (archFlag === null) throw new Error(`--arch must be one of ${UPDATE_ARCHES.join(', ')} or x64`);
+  const platform = flags.platform ?? 'macos';
+  if (!isPlatform(platform)) throw new Error(`--platform must be one of ${PLATFORMS.join(', ')}`);
+  // A typo in a release job must fail here, not quietly publish a default: macos-only options are
+  // refused on the Windows leg and vice versa.
+  checkFlags(
+    flags,
+    platform === 'windows'
+      ? ['platform', 'arch', 'version', 'base-url', 'out']
+      : ['platform', 'arch', 'version', 'base-url', 'notes-file', 'build-root', 'app', 'out'],
+  );
   const version = normalizeVersion(flags.version ?? baseVersion());
   if (version === null) throw new Error('--version must be X.Y.Z or X.Y.Z<letters>');
+  if (platform === 'windows' && flags.arch !== 'x64') {
+    throw new Error('--platform windows requires --arch x64 (the Windows release target)');
+  }
   const baseUrl = flags['base-url'];
   if (baseUrl === undefined) throw new Error('--base-url is required (the release download directory)');
 
   const out = resolve(flags.out ?? 'dist/publish');
   mkdirSync(out, { recursive: true });
 
+  if (platform === 'windows') return runWindowsBuild({ version, baseUrl, out });
+
+  const archFlag = normalizeArch(flags.arch ?? (process.arch === 'x64' ? 'x86_64' : process.arch));
+  if (archFlag === null) throw new Error(`--arch must be one of ${UPDATE_ARCHES.join(', ')} or x64`);
   const buildRoot = resolve(flags['build-root'] ?? 'build');
   const appPath = flags.app ?? findBuiltApp(buildRoot, archFlag);
   if (appPath === null) {
@@ -430,6 +538,38 @@ async function runBuild(argv: readonly string[]): Promise<void> {
   console.log(`artifact: ${target}`);
   console.log(`sha256:   ${sha256}`);
   console.log(`manifest: ${manifestPath}`);
+}
+
+/**
+ * The Windows leg, run on the native Windows x64 runner only: Electrobun's
+ * `artifacts/win-x64-<App>-Setup.zip` is re-emitted under the release-asset name plus a
+ * `<artifact>.sha256` sidecar. No manifest is written; `--base-url` is still part of the
+ * contract and is validated here even though no manifest carries the address.
+ */
+async function runWindowsBuild(input: { version: string; baseUrl: string; out: string }): Promise<void> {
+  if (process.platform !== 'win32') {
+    throw new Error('the Windows publish must run on the native Windows x64 runner');
+  }
+  const setupZipSource = electrobunSetupZip();
+  if (!existsSync(setupZipSource)) {
+    throw new Error(
+      `Electrobun built no Windows setup zip at ${setupZipSource}; run the Windows Electrobun build first`,
+    );
+  }
+  const downloadAddress = downloadUrl(input.baseUrl, windowsSetupName(input.version));
+
+  const target = join(input.out, windowsSetupName(input.version));
+  copyFileSync(setupZipSource, target);
+  checkSetupZip(listWindowsZip(target, `the re-emitted setup zip ${target}`));
+
+  const sha256 = await sha256File(target);
+  const sidecarPath = `${target}.sha256`;
+  writeFileSync(sidecarPath, `${sha256}  ${windowsSetupName(input.version)}\n`);
+
+  console.log(`artifact: ${target}`);
+  console.log(`sha256:   ${sha256}`);
+  console.log(`sidecar:  ${sidecarPath}`);
+  console.log(`url:      ${downloadAddress}`);
 }
 
 async function main(): Promise<void> {

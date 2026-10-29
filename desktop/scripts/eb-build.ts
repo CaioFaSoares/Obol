@@ -27,7 +27,8 @@ async function buildNuxtView(): Promise<void> {
     OBOL_DESKTOP_STATIC: 'true',
     NUXT_PUBLIC_API_BASE: 'http://127.0.0.1:13080'
   };
-  run(['npm', 'run', 'generate'], APP_ROOT, 'Nuxt static generation', env);
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  run([npmCommand, 'run', 'generate'], APP_ROOT, 'Nuxt static generation', env);
 
   const generatedView = join(APP_ROOT, '.output', 'public');
   const destination = join(ROOT, 'dist');
@@ -37,6 +38,12 @@ async function buildNuxtView(): Promise<void> {
 }
 
 function electrobunCommand(): string[] {
+  if (process.platform === 'win32') {
+    const localCmd = join(ROOT, 'node_modules', '.bin', 'electrobun.cmd');
+    if (existsSync(localCmd)) return [localCmd];
+    const bunx = Bun.which('bun') ?? process.execPath;
+    return [bunx, 'x', 'electrobun'];
+  }
   const local = join(ROOT, 'node_modules', '.bin', 'electrobun');
   return existsSync(local)
     ? [local]
@@ -44,8 +51,8 @@ function electrobunCommand(): string[] {
 }
 
 async function main(): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('Obol Electrobun v1 builds are supported on macOS hosts only');
+  if (process.platform !== 'darwin' && process.platform !== 'win32') {
+    throw new Error('Obol Electrobun builds are supported on macOS and Windows hosts only');
   }
   await ensurePocketBase();
   await prepareMigrations();
@@ -55,7 +62,10 @@ async function main(): Promise<void> {
   run([bun, 'scripts/gen-electrobun-config.ts', 'build'], ROOT, 'Electrobun config generation');
   run([...electrobunCommand(), 'build', '--env=stable'], ROOT, 'Electrobun bundle build');
   run([bun, 'run', 'typecheck'], ROOT, 'desktop TypeScript check');
-  run([bun, 'scripts/eb-sign.ts'], ROOT, 'ad-hoc app signing');
+  // Ad-hoc codesigning only applies to macOS bundles.
+  if (process.platform === 'darwin') {
+    run([bun, 'scripts/eb-sign.ts'], ROOT, 'ad-hoc app signing');
+  }
 }
 
 if (import.meta.main) await main();

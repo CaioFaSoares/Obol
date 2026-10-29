@@ -6,12 +6,12 @@ const { open } = useFastEntry()
   <div class="min-h-screen relative bg-zinc-950">
     <!-- Top Navigation Bar -->
     <nav class="sticky top-0 z-40 bg-zinc-900/80 backdrop-blur border-b border-zinc-800">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-        <div class="flex items-center gap-1">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2 sm:py-0 sm:h-14 flex flex-wrap items-center justify-between">
+        <div class="flex flex-wrap items-center gap-1">
           <span class="text-white font-bold text-lg mr-4">Obol</span>
           <NuxtLink
             to="/"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm sm:px-3 font-medium transition-colors"
             active-class="bg-zinc-700 text-white"
             inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
           >
@@ -21,7 +21,7 @@ const { open } = useFastEntry()
 
           <NuxtLink
             to="/management"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm sm:px-3 font-medium transition-colors"
             active-class="bg-zinc-700 text-white"
             inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
           >
@@ -31,7 +31,7 @@ const { open } = useFastEntry()
 
           <NuxtLink
             to="/cards"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm sm:px-3 font-medium transition-colors"
             active-class="bg-zinc-700 text-white"
             inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
           >
@@ -41,7 +41,7 @@ const { open } = useFastEntry()
 
           <NuxtLink
             to="/ledger"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm sm:px-3 font-medium transition-colors"
             active-class="bg-zinc-700 text-white"
             inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
           >
@@ -51,7 +51,7 @@ const { open } = useFastEntry()
 
           <NuxtLink
             to="/admin"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm sm:px-3 font-medium transition-colors"
             active-class="bg-zinc-700 text-white"
             inactive-class="text-zinc-400 hover:text-white hover:bg-zinc-800"
           >

@@ -74,7 +74,7 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 ## §9 Frontend data flow
 
 - `stores/finance.ts` caches `accounts`/`cards`/`categories`/`projects` (`loadBaseData(force)`); `useRefresh` broadcasts a global refresh counter; every mutation triggers `triggerRefresh()` + refetch.
-- Pages: dashboard (forecast chart, 15/30/60/90-day range, simulation toggle, Realizados/Pendentes/Simulados tabs), `ledger` (paginated table, structured search/status/type/simulation/scheduled/date/entity filters, sort, filtered totals, lifecycle badges, CSV export), `cards` (invoice timeline + payment), `management` (Contas & Cartões / Recorrências / Orçamentos / Projetos), `admin`.
+- Pages: dashboard (daily balance summary, 15/30/60/90-day forecast and simulation controls, daily balance calendar with shared chart/day details, trajectory chart, realized/pending/simulated transaction tabs with edit/realize actions, quick entry, and shortcuts to ledger/cards/management), `ledger` (paginated table, structured search/status/type/simulation/scheduled/date/entity filters, sort, filtered totals, lifecycle badges, CSV export), `cards` (invoice timeline + payment), `management` (Contas & Cartões / Recorrências / Orçamentos / Projetos), `admin`.
 - Ledger summary returns filtered `incomeTotal`, `expenseTotal`, `netTotal`, and `count`; transfer rows contribute to count but not money totals. Account filters match both `account_id` and `destination_account_id`; realized-date filtering uses `realized_date`, otherwise date ranges use `expected_date`.
 
 ## §10 Operations
@@ -83,10 +83,10 @@ Parent-child: `recurrences` is the *rule*, `transactions` are the *facts* it gen
 - Desktop: `nix develop`; install `app/`, `server/`, and `desktop/` dependencies; `cd desktop && bun run eb:dev`. The local setup/unlock gate uses `copland.obol.eb-dev`; packaged identity/data use `copland.obol`.
 - Desktop data: `Utils.paths.appData/copland.obol/pb_data`; no automatic import from hosted `db/pb_data`, which remains unchanged.
 - Local login: one profile per application-data directory; `local_profile.json` stores a salted PBKDF2 verifier. Each unlock derives the internal PB superuser credential and runs `superuser upsert` before the service starts. The login does not encrypt PB files at rest.
-- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release workflows are in `.github/workflows/`; `dev`→`main` produces `release-<version>`, GitHub assets/manifest, and the Homebrew cask.
+- Deploy: `docker-compose.coolify.yml` (expose-only, Coolify reverse proxy). Release workflows in `.github/workflows/` validate macOS arm64/x86_64 and Windows x64 on the `dev`→`main` PR; merging creates `release-<version>`, publishes platform archives, retains a macOS manifest for the Homebrew cask, and then generates the cask.
 - Env: hosted uses `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` (`.env` from `.env.example`), `POCKETBASE_URL`, `PORT`. Desktop creates its local profile on first launch.
 - Migrations: `db/pb_migrations/*.js`, executed by PocketBase on boot.
 
 ## §11 Roadmap
 
-Implemented epics: E001 — ledger hardening + local Electrobun runtime; E002 — typed use-case dispatch. The first public release, 0.1.0, is published. Version 0.1.0a adds first-run local login and PocketBase credential recovery; release notes are in [`releases/0.1.0a.md`](releases/0.1.0a.md). Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
+Implemented epics: E001 — ledger hardening + local Electrobun runtime; E002 — typed use-case dispatch. The first public release, 0.1.0, is published. Version 0.1.0a adds first-run local login and PocketBase credential recovery; release notes are in [`releases/0.1.0a.md`](releases/0.1.0a.md). E003 (daily dashboard/calendar) and E004 (Windows x64 release pipeline) target 0.2.0. Historical roadmap: [history/2026-05-map.md](history/2026-05-map.md).
