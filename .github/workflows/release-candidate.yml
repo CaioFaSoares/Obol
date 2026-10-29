@@ -289,16 +289,13 @@ jobs:
           # Ref-safety guard: never repoint an existing candidate tag. A fresh candidate lands on
           # a tag that does not exist yet; a designed republish (dispatch on the same branch)
           # re-uploads over an existing tag that already points at this exact commit. If the tag
-          # exists but points elsewhere, stop — a silent re-target would move other people's
-          # download URLs. The lookup goes through the API, not the local clone (tags are not
-          # guaranteed to be fetched).
-          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" 2> /dev/null || true)
-          if [ -n "$ref" ]; then
-            tag_sha=$(jq -r '.object.sha' <<< "$ref")
-            # Annotated tags wrap the commit one level deeper.
-            if [ "$(jq -r '.object.type' <<< "$ref")" = "tag" ]; then
-              tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')
-            fi
+          # exists but points elsewhere, stop rather than moving consumers' download URLs.
+          # Query only refs/tags: the `rc-<version>` branch is intentionally a different ref.
+          tag_refs=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          if [ -n "$tag_refs" ]; then
+            tag_sha=$(awk -v direct="refs/tags/$TAG" -v peeled="refs/tags/$TAG^{}" \
+              '$2 == direct { direct_sha = $1 } $2 == peeled { peeled_sha = $1 } END { print peeled_sha ? peeled_sha : direct_sha }' \
+              <<< "$tag_refs")
             if [ "$tag_sha" != "$GITHUB_SHA" ]; then
               next=$(( ${VERSION##*-rc.} + 1 ))
               echo "::error::tag $TAG already exists at $tag_sha, not this commit ($GITHUB_SHA) — bump desktop/app.json to -rc.$next and open a new rc/<version> PR"
