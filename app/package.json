@@ -11,7 +11,8 @@
     "ios:generate": "OBOL_DESKTOP_STATIC=true nuxt generate",
     "ios:sync": "cap sync ios",
     "ios:open": "cap open ios",
-    "ios:run": "npm run ios:generate && npm run ios:sync && cap run ios"
+    "ios:run": "npm run ios:generate && npm run ios:sync && cap run ios",
+    "ios:testflight": "bash scripts/ios-testflight.sh"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "8.0.1",

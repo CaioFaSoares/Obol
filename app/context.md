@@ -10,6 +10,8 @@ The UI layer of the Triad (`canon.md §2`). Talks only to the BFF via the typed 
 | `composables/useRefresh.ts` | Global refresh counter (`triggerRefresh()`); every mutation calls it |
 | `composables/useFastEntry.ts`, `useTransactionEdit.ts`, `useRecurrenceModal.ts` | Modal orchestration |
 | `utils/api.ts` | Typed Eden client bound to `server/src/index` `App`; hosted web uses Nuxt same-origin proxy, Electrobun uses `window.obol` RPC fetcher |
+| `ios/` | Capacitor 8 Xcode project; `npm run ios:generate`/`ios:sync` build and copy the static SPA |
+| `scripts/ios-testflight.sh` | Release archive, App Store IPA export, and TestFlight upload; also invoked by `.github/workflows/ios-testflight.yml` |
 | `nuxt.config.ts` | Hosted SSR by default; `OBOL_DESKTOP_STATIC=true` generates the relative-asset desktop SPA |
 | `utils/formatters.ts` | `formatCurrency`, `formatDate` |
 
