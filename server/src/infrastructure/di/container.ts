@@ -9,6 +9,7 @@ import { PocketbaseInvoiceRepository } from '../repositories/PocketbaseInvoiceRe
 import { PocketbaseRecurrenceRepository } from '../repositories/PocketbaseRecurrenceRepository';
 import { PocketbaseCategoryRepository } from '../repositories/PocketbaseCategoryRepository';
 import { PocketbaseProjectRepository } from '../repositories/PocketbaseProjectRepository';
+import { PocketbaseDatabaseMaintenanceRepository } from '../repositories/PocketbaseDatabaseMaintenanceRepository';
 
 // Import Use Cases
 import { SyncInvoiceUseCase } from '../../application/use-cases/invoices/SyncInvoiceUseCase';
@@ -43,6 +44,7 @@ import { CompleteProjectUseCase } from '../../application/use-cases/projects/Com
 import { ReconcileInvoicesUseCase } from '../../application/use-cases/reconciliation/ReconcileInvoicesUseCase';
 import { ListAccountsUseCase } from '../../application/use-cases/accounts/ListAccountsUseCase';
 import { CreateAccountUseCase } from '../../application/use-cases/accounts/CreateAccountUseCase';
+import { ResetFinancialDataUseCase } from '../../application/use-cases/maintenance/ResetFinancialDataUseCase';
 
 export function createContainer(pbClient: PocketBase) {
   const container = createAwilixContainer({
@@ -61,6 +63,7 @@ export function createContainer(pbClient: PocketBase) {
     recurrenceRepository: asClass(PocketbaseRecurrenceRepository).singleton(),
     categoryRepository: asClass(PocketbaseCategoryRepository).singleton(),
     projectRepository: asClass(PocketbaseProjectRepository).singleton(),
+    maintenanceRepository: asClass(PocketbaseDatabaseMaintenanceRepository).singleton(),
 
     // Use Cases
     syncInvoiceUseCase: asClass(SyncInvoiceUseCase).scoped(),
@@ -95,6 +98,7 @@ export function createContainer(pbClient: PocketBase) {
     reconcileInvoicesUseCase: asClass(ReconcileInvoicesUseCase).scoped(),
     listAccountsUseCase: asClass(ListAccountsUseCase).scoped(),
     createAccountUseCase: asClass(CreateAccountUseCase).scoped(),
+    resetFinancialDataUseCase: asClass(ResetFinancialDataUseCase).scoped(),
   });
   return container;
 }

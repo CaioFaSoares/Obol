@@ -12,6 +12,7 @@ import { categoryController } from './infrastructure/controllers/CategoryControl
 import { projectController } from './infrastructure/controllers/ProjectController';
 import { accountController } from './infrastructure/controllers/AccountController';
 import { jobController } from './infrastructure/controllers/JobController';
+import { adminController } from './infrastructure/controllers/AdminController';
 import {
   SETUP_TOKEN_TTL_MS,
   createSetupToken,
@@ -67,6 +68,7 @@ export function createServer(pb: PocketBase, remoteAuth?: RemoteAuthOptions | nu
     .use(projectController(container))
     .use(accountController(container))
     .use(jobController(container))
+    .use(adminController(container))
     // D009 requirement 4: the superuser email disclosure is removed in the
     // same change, in every mode (D8).
     .get('/', () => ({
