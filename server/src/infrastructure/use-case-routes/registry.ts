@@ -40,6 +40,7 @@ import { CompleteProjectUseCase } from '../../application/use-cases/projects/Com
 import { ReconcileInvoicesUseCase } from '../../application/use-cases/reconciliation/ReconcileInvoicesUseCase';
 import { ListAccountsUseCase } from '../../application/use-cases/accounts/ListAccountsUseCase';
 import { CreateAccountUseCase } from '../../application/use-cases/accounts/CreateAccountUseCase';
+import { ResetFinancialDataUseCase } from '../../application/use-cases/maintenance/ResetFinancialDataUseCase';
 
 export interface UseCaseRegistry {
   syncInvoiceUseCase: SyncInvoiceUseCase;
@@ -82,6 +83,8 @@ export interface UseCaseRegistry {
 
   listAccountsUseCase: ListAccountsUseCase;
   createAccountUseCase: CreateAccountUseCase;
+
+  resetFinancialDataUseCase: ResetFinancialDataUseCase;
 }
 
 export type UseCaseToken = keyof UseCaseRegistry;

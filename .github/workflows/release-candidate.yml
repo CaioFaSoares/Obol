@@ -18,14 +18,15 @@
 # tag reuse. Different candidates never share a ref, so nothing is ever overwritten silently.
 #
 # Channel isolation: each candidate app embeds
-#   https://github.com/<repo>/releases/download/rc-<version>/
+#   https://github.com/<repo>/releases/download/rc-channel/
 # as `release.baseUrl` through `OBOL_RELEASE_BASE_URL`; the build step verifies that exact config
-# value. `eb-publish.ts --base-url` writes candidate-only download URLs into the macOS manifest and
-# Windows setup asset name. At runtime, a candidate's updater loads Electrobun's standard
-# `stable-*-update.json` filename and matching tar from this candidate-only base, never from
-# `/releases/latest/download`. Stable installs continue to resolve their stable release unchanged.
-# The metadata filenames stay Electrobun-owned; candidates are installed manually because each
-# build's base URL is frozen, so it does not auto-promote to a later RC or the stable cut.
+# value. Every candidate run also refreshes the fixed `rc-channel` prerelease with the newest
+# `stable-*-update.json` + tar pair, so an installed RC can update itself to the next RC without a
+# manual install. The per-candidate `rc-<version>` release remains the manual download/republish
+# target and keeps its own candidate-only manifest URLs. Stable installs continue to resolve
+# `/releases/latest/download` and are never served by `rc-channel`.
+# The metadata filenames stay Electrobun-owned. Moving from the RC channel to the stable channel
+# still requires installing the stable release manually.
 
 name: release candidate
 
@@ -119,17 +120,17 @@ jobs:
         working-directory: app
 
       # Same build as a stable release, except the channel base: the generated Electrobun config
-      # records this candidate tag's download directory instead of `/releases/latest/download`,
-      # so a candidate install can only ever read candidate metadata.
+      # records the moving rc-channel directory instead of `/releases/latest/download`, so an
+      # installed RC checks only the newest candidate metadata and never the stable channel.
       - name: build the app
         env:
-          OBOL_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}
+          OBOL_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/rc-channel
         run: bun run eb:build
         working-directory: desktop
 
       - name: verify candidate updater base
         env:
-          EXPECTED_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}/
+          EXPECTED_BASE_URL: https://github.com/${{ github.repository }}/releases/download/rc-channel/
         run: |
           actual=$(bun -e 'import config from "./electrobun.config.ts"; process.stdout.write(config.release.baseUrl)')
           if [ "$actual" != "$EXPECTED_BASE_URL" ]; then
@@ -314,6 +315,37 @@ jobs:
             gh release create "$TAG" out/* \
               --target "${{ github.sha }}" \
               --title "Obol $VERSION" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
+
+      # The fixed `rc-channel` prerelease is what installed RC apps read. It is updated in place on
+      # every candidate so `rc.1` discovers `rc.2`, `rc.2` discovers `rc.3`, and so on. Only the
+      # updater pair is published here; the per-candidate release keeps the installers and manifest.
+      - name: update the shared RC channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CHANNEL_TAG=rc-channel
+          if [ "$CHANNEL_TAG" = "$TAG" ]; then
+            echo "::error::candidate tag must not equal the shared channel tag $CHANNEL_TAG"
+            exit 1
+          fi
+          notes="$RUNNER_TEMP/channel-notes.md"
+          {
+            echo "Moving updater channel for Obol release candidates."
+            echo
+            echo "Latest candidate: **Obol $VERSION**"
+            echo
+            echo "Install a candidate manually once, then this channel keeps it on the newest RC."
+          } > "$notes"
+          if gh release view "$CHANNEL_TAG" > /dev/null 2>&1; then
+            gh release upload "$CHANNEL_TAG" out/stable-*-update.json out/stable-*-*.tar.zst --clobber
+            gh release edit "$CHANNEL_TAG" --title "Obol RC channel" --notes-file "$notes" --prerelease
+          else
+            gh release create "$CHANNEL_TAG" out/stable-*-update.json out/stable-*-*.tar.zst \
+              --target "${{ github.sha }}" \
+              --title "Obol RC channel" \
               --notes-file "$notes" \
               --prerelease
           fi

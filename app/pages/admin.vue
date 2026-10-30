@@ -4,6 +4,56 @@ import { ref } from 'vue'
 const toast = useToast()
 const isRunning = ref(false)
 
+const isResetOpen = ref(false)
+const isResetting = ref(false)
+const confirmText = ref('')
+
+const canConfirm = computed(() => confirmText.value.trim().toUpperCase() === 'LIMPAR')
+
+const openReset = () => {
+  confirmText.value = ''
+  isResetOpen.value = true
+}
+
+const resetError = ref('')
+
+const submitReset = async () => {
+  if (!canConfirm.value || isResetting.value) return
+  isResetting.value = true
+  resetError.value = ''
+  try {
+    const res = await api.api.admin.reset.post({ confirm: 'LIMPAR' })
+    if (res.error) {
+      const value: any = (res.error as any).value
+      const status = (res.error as any).status
+      throw new Error(
+        value?.details || value?.error || value?.message || `Falha ao limpar a base de dados (${status}).`
+      )
+    }
+    const total = (res.data as any)?.total ?? 0
+    isResetOpen.value = false
+    confirmText.value = ''
+    useRefresh().triggerRefresh()
+    await useFinanceStore().loadBaseData(true)
+    toast.add({
+      title: 'Base de dados limpa',
+      description: `${total} registro(s) removido(s) permanentemente.`,
+      color: 'green'
+    })
+  } catch (err: any) {
+    console.error(err)
+    const message = err.message || 'Falha ao limpar a base de dados.'
+    resetError.value = message
+    toast.add({
+      title: 'Erro ao limpar base de dados',
+      description: message,
+      color: 'red'
+    })
+  } finally {
+    isResetting.value = false
+  }
+}
+
 const triggerCron = async () => {
   isRunning.value = true
   try {
@@ -76,6 +126,92 @@ const triggerCron = async () => {
           </div>
         </div>
       </UCard>
+
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-heroicons-trash" class="w-5 h-5 text-red-400" />
+            <h3 class="font-semibold text-lg text-white">Limpar Base de Dados</h3>
+          </div>
+        </template>
+
+        <p class="text-sm text-zinc-400 mb-4">
+          Esta ação <span class="text-red-400 font-medium">não pode ser desfeita</span>. Todos os registros financeiros serão excluídos permanentemente: transações, faturas, recorrências, cartões, contas, categorias e projetos.
+        </p>
+        <p class="text-sm text-zinc-500 mb-6">
+          A sua conta de proprietário e as sessões ativas são preservadas.
+        </p>
+
+        <UButton
+          class="w-full sm:w-auto"
+          color="red"
+          variant="soft"
+          icon="i-heroicons-exclamation-triangle"
+          @click="openReset"
+        >
+          Limpar Base de Dados
+        </UButton>
+      </UCard>
     </div>
+
+    <UModal v-model="isResetOpen">
+      <UCard :ui="{ background: 'bg-zinc-900', ring: 'ring-1 ring-zinc-800' }">
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-heroicons-exclamation-triangle" class="w-5 h-5 text-red-400" />
+            <h3 class="font-semibold text-lg text-white">Confirmar Exclusão</h3>
+          </div>
+        </template>
+
+        <UAlert
+          v-if="resetError"
+          icon="i-heroicons-exclamation-triangle"
+          color="red"
+          variant="soft"
+          title="Erro ao limpar a base de dados"
+          :description="resetError"
+          class="mb-4"
+        />
+
+        <p class="text-sm text-zinc-400 mb-4">
+          Todos os registros financeiros (transações, faturas, recorrências, cartões, contas, categorias e projetos) serão excluídos permanentemente. Sua conta e suas sessões ativas serão preservadas.
+        </p>
+        <p class="text-sm text-zinc-500 mb-2">
+          Digite <span class="text-white font-semibold">LIMPAR</span> para confirmar:
+        </p>
+        <UFormGroup label="Confirmação">
+          <UInput
+            v-model="confirmText"
+            placeholder="LIMPAR"
+            autocomplete="off"
+            class="w-full"
+          />
+        </UFormGroup>
+
+        <template #footer>
+          <div class="flex flex-col sm:flex-row justify-end gap-3">
+            <UButton
+              class="w-full sm:w-auto"
+              color="gray"
+              variant="ghost"
+              :disabled="isResetting"
+              @click="isResetOpen = false"
+            >
+              Cancelar
+            </UButton>
+            <UButton
+              class="w-full sm:w-auto"
+              color="red"
+              icon="i-heroicons-trash"
+              :disabled="!canConfirm"
+              :loading="isResetting"
+              @click="submitReset"
+            >
+              Limpar Agora
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
