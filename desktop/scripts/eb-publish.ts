@@ -348,12 +348,19 @@ const ARCHIVE_SAFE_LISTING = 'Contents/Info.plist';
 /**
  * `ditto -c -k --keepParent` — the zip format a macOS bundle is published with and that an
  * updater extracts with `ditto -x -k` before it looks for the single `.app` it swaps.
+ *
+ * The Electrobun app bundle already carries its resources as a `.tar.zst` payload. Deflate
+ * level 0 keeps this outer zip a container instead of compressing that payload a second time;
+ * the update artifact and the app payload each stay compressed exactly once.
  */
 function createArchive(app: string, target: string): void {
-  const result = Bun.spawnSync(['/usr/bin/ditto', '-c', '-k', '--keepParent', app, target], {
-    stdout: 'ignore',
-    stderr: 'pipe',
-  });
+  const result = Bun.spawnSync(
+    ['/usr/bin/ditto', '-c', '-k', '--keepParent', '--zlibCompressionLevel', '0', app, target],
+    {
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+  );
   if (result.exitCode !== 0) {
     throw new Error(`ditto could not create the archive: ${result.stderr.toString().trim()}`);
   }
