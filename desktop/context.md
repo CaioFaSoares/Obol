@@ -9,7 +9,7 @@ Implements D005 / E001; E004 adds Windows x64 packaging and E005 adds the built-
 | `electrobun/view/bridge.ts` | Document-start preload; exposes local auth RPC, update status/actions, and (after unlock) `window.obol.apiFetch` |
 | `electrobun/shared-rpc.ts` | Type-only contract shared by Bun main and WebView, including local setup/unlock and updater status |
 | `scripts/ensure-pocketbase.ts` | Downloads pinned PocketBase v0.40.6 for macOS arm64/x86_64 and Windows x64; verifies official SHA-256 values before extraction |
-| `scripts/eb-publish.ts`, `brew-cask.ts` | macOS Cask manifest, Windows setup archive, and Electrobun updater artifact publication |
+| `scripts/eb-publish.ts`, `brew-cask.ts` | macOS Cask manifest, Windows setup archive, and Electrobun updater artifact publication. The macOS zip is store-only because the app payload is already zstd-compressed; the updater tar.zst is compressed once. |
 | `.hutch/`, `build/`, `dist/`, `resources/`, generated `electrobun.config.ts` | Local/generated files; ignored by git |
 
 Rules:
