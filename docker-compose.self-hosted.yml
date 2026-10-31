@@ -3,8 +3,9 @@
 # Operator guide: docs/self-hosting.md
 #
 # Design guarantees
-#   - BFF and web are each published on the host loopback only, so TLS and
-#     hostname handling stay with the operator's reverse proxy.
+#   - BFF and web are each published on every host interface (LAN-reachable);
+#     TLS and hostname handling stay with the operator's reverse proxy, and
+#     neither port should face the public internet directly.
 #   - PocketBase is not published and runs on an internet-isolated network;
 #     it never appears in front of any proxy or client.
 #   - No fallback credentials: compose refuses to start without explicit values
@@ -94,9 +95,12 @@ services:
       PB_SMTP_AUTH_METHOD: "${PB_SMTP_AUTH_METHOD:-}"
       PB_SMTP_LOCAL_NAME: "${PB_SMTP_LOCAL_NAME:-}"
     ports:
-      # Loopback-only publish: a reverse proxy on the same host terminates TLS
-      # and forwards here. Overridable via BFF_PORT in .env.self-hosted.
-      - "127.0.0.1:${BFF_PORT:-8080}:8080"
+      # Published on every host interface: native clients (iOS app, desktop
+      # remote mode) and LAN tools talk to the BFF directly at
+      # http://HOST_IP:${BFF_PORT:-8080}. Overridable via BFF_PORT in
+      # .env.self-hosted. Keep this port off the public internet; TLS and the
+      # public hostname stay with the operator's reverse proxy.
+      - "${BFF_PORT:-8080}:8080"
     healthcheck:
       test:
         - CMD
@@ -134,9 +138,13 @@ services:
       obol-bff:
         condition: service_healthy
     ports:
-      # Loopback-only publish: the reverse proxy forwards every non-/api path
-      # here. Overridable via WEB_PORT in .env.self-hosted (default 3000).
-      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      # Published on every host interface so LAN browsers open
+      # http://HOST_IP:${WEB_PORT:-3000}. Overridable via WEB_PORT in
+      # .env.self-hosted (default 3000). Note: the session cookie is
+      # `__Host-` + Secure, so a plain-http LAN origin can load the UI but
+      # cannot keep a login; use the TLS proxy (or the bearer native clients)
+      # for real sign-in.
+      - "${WEB_PORT:-3000}:3000"
     healthcheck:
       test:
         - CMD
