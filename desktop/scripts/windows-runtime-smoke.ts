@@ -1177,14 +1177,21 @@ async function main(): Promise<void> {
     // Every remaining process selected by the isolated install path belongs to
     // this run: a helper that outlived a relaunch is no longer a descendant of
     // the current launcher, and leaving it behind blocks the settle check.
-    const owned = Array.from(
-      new Set([
-        ...descendantProcessIds(app.rootPid, processes),
-        ...processesUnder(appDir, processes)
-      ])
-    ).filter(pid => !centralPids.has(pid));
+    // The executable path is kept with the PID because Windows reuses PIDs: a
+    // recycled PID is a different process and never a survivor.
+    const descendants = new Set(descendantProcessIds(app.rootPid, processes));
+    const owned = new Map<number, string | null>();
+    for (const entry of processes) {
+      if (centralPids.has(entry.processId)) continue;
+      if (
+        descendants.has(entry.processId) ||
+        processesUnder(appDir, [entry]).length > 0
+      ) {
+        owned.set(entry.processId, entry.executablePath);
+      }
+    }
     await killOwnedProcess(app.rootPid, join(appDir, 'bin', 'launcher.exe'));
-    for (const pid of owned) {
+    for (const pid of owned.keys()) {
       if (await pidExists(pid)) await killProcessTree(pid);
     }
     // A supervised helper can respawn between the snapshot and the settle
@@ -1199,10 +1206,18 @@ async function main(): Promise<void> {
       }
       await Bun.sleep(2_000);
     }
+    const sameProcess = (entry: ProcessEntry): boolean => {
+      const expected = owned.get(entry.processId);
+      if (expected === undefined) return false;
+      // A process whose path was unreadable cannot be verified, so it is not
+      // claimed as a survivor; the install-path clause still covers it.
+      if (expected === null) return false;
+      return entry.executablePath === null || entry.executablePath.toLowerCase() === expected.toLowerCase();
+    };
     const settled = async (): Promise<boolean> => {
       const current = await listProcesses();
       return (
-        current.every(entry => !owned.includes(entry.processId)) &&
+        !current.some(sameProcess) &&
         processesUnder(appDir, current).every(pid => !centralPids.has(pid))
       );
     };
@@ -1214,7 +1229,7 @@ async function main(): Promise<void> {
       const survivors = (await listProcesses())
         .filter(
           entry =>
-            owned.includes(entry.processId) ||
+            sameProcess(entry) ||
             (processesUnder(appDir, [entry]).length > 0 && !centralPids.has(entry.processId))
         )
         .map(entry => {
@@ -1506,11 +1521,13 @@ async function main(): Promise<void> {
       }
     };
 
-    await attempt('app process tree', stopApp);
+    // The central pair runs from the same install path, so it stops first and
+    // the app settle check then owns every remaining process under it.
     await attempt('central BFF', () => stopService(centralBff));
     centralBff = null;
     await attempt('central PocketBase', () => stopService(centralPb));
     centralPb = null;
+    await attempt('app process tree', stopApp);
     await attempt('leftover app processes', async () => {
       for (const pid of processesUnder(appDir, await listProcesses())) {
         await killProcessTree(pid);
