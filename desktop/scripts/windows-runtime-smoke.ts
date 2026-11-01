@@ -1187,6 +1187,18 @@ async function main(): Promise<void> {
     for (const pid of owned) {
       if (await pidExists(pid)) await killProcessTree(pid);
     }
+    // A supervised helper can respawn between the snapshot and the settle
+    // check, so the kill set is refreshed a bounded number of times.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const remaining = processesUnder(appDir, await listProcesses()).filter(
+        pid => !centralPids.has(pid)
+      );
+      if (remaining.length === 0) break;
+      for (const pid of remaining) {
+        await killProcessTree(pid);
+      }
+      await Bun.sleep(2_000);
+    }
     await waitForNoProcess(
       async () => {
         const current = await listProcesses();

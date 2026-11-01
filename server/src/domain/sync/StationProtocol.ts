@@ -216,7 +216,18 @@ export function stationSnapshotRow(
   const row: Record<string, unknown> = {};
   for (const field of STATION_SNAPSHOT_FIELDS[entityType]) {
     if (!(field in stored)) continue;
-    row[field] = stored[field];
+    const value = stored[field];
+    // PocketBase stores an unset date as the empty string. A snapshot row
+    // never carries a blank audit timestamp: absent and null are the same
+    // thing to every consumer, and an empty string is not an instant.
+    if (
+      (field === 'created' || field === 'updated') &&
+      typeof value === 'string' &&
+      value.trim().length === 0
+    ) {
+      continue;
+    }
+    row[field] = value;
   }
   // The picked values are the stored JSON scalars/arrays of a finance row.
   const snapshotRow = row as unknown as SyncJsonObject;
