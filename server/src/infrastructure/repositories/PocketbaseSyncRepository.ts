@@ -1358,12 +1358,19 @@ export class PocketbaseSyncRepository {
       return null;
     }
     const context = `obol_station_versions ${syncRevisionKey(verifiedType, verifiedId)}`;
+    // PocketBase stores the empty string for a blank select and `0` for a
+    // blank number, so a row that never accepted a server revision reads back
+    // as `0`. It means "no accepted revision", never revision zero.
+    const storedRevision = row.serverRevision;
+    const serverRevision =
+      storedRevision === 0 ||
+      storedRevision === '' ||
+      storedRevision === null ||
+      storedRevision === undefined
+        ? null
+        : requireInteger(storedRevision, `${context} serverRevision`, 1);
     return {
-      serverRevision: optionalInteger(
-        row.serverRevision,
-        `${context} serverRevision`,
-        1,
-      ),
+      serverRevision,
       serverDeleted: row.serverDeleted === true,
       baseRecord: decodeOptionalJsonRecord(row.baseRecord, `${context} baseRecord`),
       localRevision: requireInteger(

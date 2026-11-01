@@ -2812,8 +2812,12 @@ export class PocketbaseStationReplicaRepository {
         entityId,
         localRevision:
           typeof row['localRevision'] === 'number' ? row['localRevision'] : 0,
+        // PocketBase stores a blank number as `0`; that is "never accepted a
+        // server revision", not revision zero.
         serverRevision:
-          typeof row['serverRevision'] === 'number' ? row['serverRevision'] : null,
+          typeof row['serverRevision'] === 'number' && row['serverRevision'] >= 1
+            ? row['serverRevision']
+            : null,
         serverDeleted: row['serverDeleted'] === true,
         baseRecord: jsonObjectOf(
           row['baseRecord'],
