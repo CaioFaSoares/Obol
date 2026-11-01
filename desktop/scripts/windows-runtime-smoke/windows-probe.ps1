@@ -47,8 +47,18 @@ switch ($Action) {
 
   'windows' {
     if (-not ('ObolSmoke.WindowProbe' -as [type])) {
+      # The whole enumeration lives in C#: passing a PowerShell script block as
+      # the EnumWindows callback and handing it a `[ref]` out parameter throws
+      # "Argument types do not match" on a stock runner, so PowerShell only
+      # prints the snapshot this type returns.
       Add-Type -TypeDefinition @'
 namespace ObolSmoke {
+  public sealed class WindowInfo {
+    public int processId;
+    public string title;
+    public bool visible;
+  }
+
   public static class WindowProbe {
     public delegate bool EnumWindowsProc(System.IntPtr handle, System.IntPtr state);
 
@@ -66,30 +76,41 @@ namespace ObolSmoke {
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(System.IntPtr handle, out uint processId);
+
+    public static WindowInfo[] Snapshot() {
+      System.Collections.Generic.List<WindowInfo> windows =
+        new System.Collections.Generic.List<WindowInfo>();
+      EnumWindows(delegate(System.IntPtr handle, System.IntPtr state) {
+        int length = GetWindowTextLength(handle);
+        if (length <= 0) {
+          return true;
+        }
+        System.Text.StringBuilder builder = new System.Text.StringBuilder(length + 1);
+        GetWindowText(handle, builder, builder.Capacity);
+        uint processId;
+        GetWindowThreadProcessId(handle, out processId);
+        WindowInfo info = new WindowInfo();
+        info.processId = unchecked((int)processId);
+        info.title = builder.ToString();
+        info.visible = IsWindowVisible(handle);
+        windows.Add(info);
+        return true;
+      }, System.IntPtr.Zero);
+      return windows.ToArray();
+    }
   }
 }
 '@
     }
 
-    $windows = New-Object System.Collections.Generic.List[object]
-    $callback = [ObolSmoke.WindowProbe+EnumWindowsProc]{
-      param([System.IntPtr]$handle, [System.IntPtr]$state)
-      $length = [ObolSmoke.WindowProbe]::GetWindowTextLength($handle)
-      if ($length -gt 0) {
-        $builder = New-Object System.Text.StringBuilder ($length + 1)
-        [void][ObolSmoke.WindowProbe]::GetWindowText($handle, $builder, $builder.Capacity)
-        [uint32]$processId = 0
-        [void][ObolSmoke.WindowProbe]::GetWindowThreadProcessId($handle, [ref]$processId)
-        $windows.Add([pscustomobject]@{
-            processId = [int]$processId
-            title     = $builder.ToString()
-            visible   = [bool][ObolSmoke.WindowProbe]::IsWindowVisible($handle)
-          })
-      }
-      return $true
-    }
-    [void][ObolSmoke.WindowProbe]::EnumWindows($callback, [System.IntPtr]::Zero)
-    Write-Json ([pscustomobject]@{ items = @($windows) })
+    $items = @([ObolSmoke.WindowProbe]::Snapshot() | ForEach-Object {
+        [pscustomobject]@{
+          processId = $_.processId
+          title     = $_.title
+          visible   = $_.visible
+        }
+      })
+    Write-Json ([pscustomobject]@{ items = $items })
   }
 
   'screenshot' {
