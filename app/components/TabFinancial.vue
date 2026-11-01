@@ -6,6 +6,7 @@ const financeStore = useFinanceStore()
 
 const accounts = computed(() => financeStore.accounts)
 const cards = computed(() => financeStore.cards)
+const hasRows = computed(() => accounts.value.length > 0 || cards.value.length > 0)
 
 const accountModal = ref()
 const cardModal = ref()
@@ -17,11 +18,41 @@ async function refreshAccounts() {
 async function refreshCards() {
   await financeStore.loadBaseData(true)
 }
+
+function retryBaseData() {
+  financeStore.loadBaseData(true)
+}
 </script>
 
 <template>
   <div class="space-y-8">
     <p class="text-sm text-zinc-400 -mb-4">Gestão do seu patrimônio e linhas de crédito.</p>
+
+    <div v-if="financeStore.isLoading && hasRows" class="flex items-center gap-2 text-xs text-zinc-400">
+      <UIcon name="i-heroicons-arrow-path" class="w-4 h-4 animate-spin text-primary shrink-0" aria-hidden="true" />
+      <span role="status">Refreshing accounts and cards</span>
+    </div>
+
+    <UAlert
+      v-if="financeStore.loadError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="soft"
+      title="Financial data could not be fully loaded"
+      :description="financeStore.loadError"
+    >
+      <template #actions>
+        <UButton
+          label="Retry"
+          icon="i-heroicons-arrow-path"
+          color="red"
+          size="sm"
+          :loading="financeStore.isLoading"
+          :disabled="financeStore.isLoading"
+          @click="retryBaseData"
+        />
+      </template>
+    </UAlert>
 
     <!-- Seção Contas -->
     <section class="space-y-4">
@@ -32,11 +63,19 @@ async function refreshCards() {
         <UButton class="shrink-0" icon="i-heroicons-plus" size="sm" color="primary" label="Nova Conta" @click="accountModal?.open()" />
       </div>
 
-      <div v-if="!accounts?.length" class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500">
+      <div v-if="financeStore.isLoading && !accounts.length" class="space-y-3" aria-busy="true">
+        <USkeleton class="h-24 w-full rounded-xl bg-zinc-800" />
+        <USkeleton class="h-24 w-full rounded-xl bg-zinc-800" />
+      </div>
+
+      <div
+        v-else-if="!accounts.length && !financeStore.loadError"
+        class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500"
+      >
         Nenhuma conta cadastrada.
       </div>
 
-      <ul v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <ul v-else-if="accounts.length" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <li
           v-for="acc in accounts"
           :key="acc.id"
@@ -47,7 +86,7 @@ async function refreshCards() {
               <p class="text-white font-medium break-words">{{ acc.name }}</p>
               <p class="text-xs text-zinc-400 capitalize">{{ acc.type === 'checking' ? 'Conta Corrente' : acc.type === 'savings' ? 'Poupança' : 'Investimento' }}</p>
             </div>
-            <span class="font-mono" :class="acc.initial_balance >= 0 ? 'text-emerald-400' : 'text-red-400'">
+            <span class="font-mono shrink-0 text-right tabular-nums" :class="acc.initial_balance >= 0 ? 'text-emerald-400' : 'text-red-400'">
               {{ formatCurrency(acc.initial_balance) }}
             </span>
           </div>
@@ -64,11 +103,19 @@ async function refreshCards() {
         <UButton class="shrink-0" icon="i-heroicons-plus" size="sm" color="primary" label="Novo Cartão" @click="cardModal?.open()" />
       </div>
 
-      <div v-if="!cards?.length" class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500">
+      <div v-if="financeStore.isLoading && !cards.length" class="space-y-3" aria-busy="true">
+        <USkeleton class="h-28 w-full rounded-xl bg-zinc-800" />
+        <USkeleton class="h-28 w-full rounded-xl bg-zinc-800" />
+      </div>
+
+      <div
+        v-else-if="!cards.length && !financeStore.loadError"
+        class="bg-zinc-800/30 rounded-xl p-8 text-center text-zinc-500"
+      >
         Nenhum cartão cadastrado.
       </div>
 
-      <ul v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <ul v-else-if="cards.length" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <li
           v-for="card in cards"
           :key="card.id"
@@ -77,11 +124,19 @@ async function refreshCards() {
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 w-full min-w-0">
               <p class="text-white font-medium truncate">{{ card.name }}</p>
-              <UButton icon="i-heroicons-pencil-square" size="xs" color="gray" variant="ghost" class="flex-shrink-0" @click="cardModal?.open(card)" />
+              <UButton
+                icon="i-heroicons-pencil-square"
+                size="xs"
+                color="gray"
+                variant="ghost"
+                class="flex-shrink-0"
+                :aria-label="`Edit card ${card.name}`"
+                @click="cardModal?.open(card)"
+              />
             </div>
           </div>
           
-          <div class="font-mono text-zinc-300 text-sm">
+          <div class="font-mono text-zinc-300 text-sm break-words tabular-nums">
             Limite: {{ formatCurrency(card.limit) }}
           </div>
 

@@ -45,8 +45,39 @@ import { ReconcileInvoicesUseCase } from '../../application/use-cases/reconcilia
 import { ListAccountsUseCase } from '../../application/use-cases/accounts/ListAccountsUseCase';
 import { CreateAccountUseCase } from '../../application/use-cases/accounts/CreateAccountUseCase';
 import { ResetFinancialDataUseCase } from '../../application/use-cases/maintenance/ResetFinancialDataUseCase';
+import type { SyncClock } from '../../domain/sync/MutationContext';
+import { systemSyncClock } from '../../domain/sync/MutationContext';
+import type { FinancialMutationRuntime } from '../sync/FinancialMutationRuntime';
+import type { StationMutationRecorder } from '../sync/StationMutationRecorder';
 
-export function createContainer(pbClient: PocketBase) {
+/**
+ * Typed runtime context the container registers when a mutation runtime
+ * backs this composition. Registered as plain values with their exact types
+ * (and a typed server clock), so controllers/scheduler resolve
+ * `runtime`/`clock` without any cast and without an import cycle: the
+ * container imports runtime TYPES only while `FinancialMutationRuntime`
+ * itself constructs this container.
+ */
+export interface ContainerMutationRuntimeContext {
+  readonly runtime: FinancialMutationRuntime;
+  readonly clock: SyncClock;
+  /** Local intent recorder; omitted for pure read/mutation compositions. */
+  readonly recorder?: StationMutationRecorder;
+}
+
+/**
+ * Builds the BFF's Awilix container.
+ *
+ * The one-argument form keeps the pure use-case resolution of earlier
+ * releases (system clock defaults, no runtime registrations); the
+ * two-argument form is what the mutation runtime owns for every served
+ * mode, registering the typed clock, the runtime itself and the local
+ * station recorder as values.
+ */
+export function createContainer(
+  pbClient: PocketBase,
+  runtimeContext?: ContainerMutationRuntimeContext,
+) {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC
   });
@@ -54,6 +85,12 @@ export function createContainer(pbClient: PocketBase) {
   container.register({
     // Infrastructure / Global Clients
     pb: asValue(pbClient),
+    // Every date-sensitive use case injects the one default system clock;
+    // mutation scopes override it with the operation clock.
+    clock: asValue(systemSyncClock),
+    maintenanceRole: asValue(
+      runtimeContext === undefined ? 'central' : runtimeContext.runtime.options.role,
+    ),
 
     // Repositories
     transactionRepository: asClass(PocketbaseTransactionRepository).singleton(),
@@ -63,6 +100,10 @@ export function createContainer(pbClient: PocketBase) {
     recurrenceRepository: asClass(PocketbaseRecurrenceRepository).singleton(),
     categoryRepository: asClass(PocketbaseCategoryRepository).singleton(),
     projectRepository: asClass(PocketbaseProjectRepository).singleton(),
+    // For every served mutation the runtime re-registers this scoped against
+    // the raw client in `FinancialMutationRuntime.scopeFor` — a scope
+    // resolution here would otherwise inject the buffered unit-of-work view
+    // (`pb` is overridden per scope), breaking `createBatch()`.
     maintenanceRepository: asClass(PocketbaseDatabaseMaintenanceRepository).singleton(),
 
     // Use Cases
@@ -100,5 +141,19 @@ export function createContainer(pbClient: PocketBase) {
     createAccountUseCase: asClass(CreateAccountUseCase).scoped(),
     resetFinancialDataUseCase: asClass(ResetFinancialDataUseCase).scoped(),
   });
+
+  if (runtimeContext !== undefined) {
+    // Typed value registrations: the mutation dispatcher (controllers,
+    // scheduler, jobs, admin reset) resolves the runtime through the same
+    // container as every use case. Scopes override `clock` per UoW operation
+    // inside `FinancialMutationRuntime.scopeFor`.
+    container.register({
+      syncRuntime: asValue(runtimeContext.runtime),
+      clock: asValue(runtimeContext.clock),
+    });
+    if (runtimeContext.recorder !== undefined) {
+      container.register({ stationRecorder: asValue(runtimeContext.recorder) });
+    }
+  }
   return container;
 }

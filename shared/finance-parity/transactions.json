@@ -1,0 +1,1187 @@
+{
+  "protocol": 1,
+  "file": "transactions",
+  "title": "Transaction lifecycle, money precision, and compound-write atomicity",
+  "cases": [
+    {
+      "id": "txn-realize-ordinary",
+      "purpose": "Realizing a pending expense moves cash once and clears the scheduled flag.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent",
+            "amount": "25.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "is_scheduled": true,
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "75.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent",
+              "amount": "25.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-05T00:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-realize-silent",
+      "purpose": "Silent realize stamps the row realized without moving any balance.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent",
+            "amount": "25.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "is_scheduled": true,
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": false
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "100.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent",
+              "amount": "25.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-05T00:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "is_silent": true,
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-realize-already-realized",
+      "purpose": "A second realize is a typed error and changes nothing.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "75.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent",
+            "amount": "25.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "realized_date": "2026-03-06T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "already_realized",
+          "entity": "Transaction",
+          "entity_id": "txn000000000001"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "75.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent",
+              "amount": "25.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-05T00:00:00.000Z",
+              "realized_date": "2026-03-06T00:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-realize-simulated",
+      "purpose": "A simulated row cannot be realized before conversion and never debits cash.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "What if",
+            "amount": "40.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "is_simulated": true,
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_state",
+          "entity": "Transaction",
+          "entity_id": "txn000000000001"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "100.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "What if",
+              "amount": "40.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-05T00:00:00.000Z",
+              "is_simulated": true,
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      },
+      "known_blocker": "realized_simulation_debits_cash"
+    },
+    {
+      "id": "txn-create-realized-simulation",
+      "purpose": "A realized simulated expense is stored but leaves cash at 850.00.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "850.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "What if",
+            "amount": "40.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000001",
+            "is_simulated": true
+          },
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "account_id": "acc000000000001",
+                "is_simulated": true
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "850.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "What if",
+              "amount": "40.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "is_simulated": true,
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      },
+      "known_blocker": "realized_simulation_debits_cash"
+    },
+    {
+      "id": "txn-convert-simulation",
+      "purpose": "Converting a pending simulation to a real row does not move cash; the later realize does.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "850.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "What if",
+            "amount": "40.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "is_simulated": true,
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.set_simulated",
+          "id": "txn000000000001",
+          "is_simulated": false
+        },
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "810.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "What if",
+              "amount": "40.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-10T00:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-money-half-cent",
+      "purpose": "Exact decimal halves round toward positive infinity: -1.005 to -1.00 and 1.005 to 1.01.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "account.create",
+          "record": {
+            "name": "Negative rounding",
+            "type": "checking",
+            "initial_balance": "-1.005"
+          },
+          "capture": {
+            "accn": {
+              "collection": "accounts",
+              "where": {
+                "name": "Negative rounding"
+              }
+            }
+          }
+        },
+        {
+          "kind": "account.create",
+          "record": {
+            "name": "Positive rounding",
+            "type": "checking",
+            "initial_balance": "1.005"
+          },
+          "capture": {
+            "accp": {
+              "collection": "accounts",
+              "where": {
+                "name": "Positive rounding"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "$accn",
+              "name": "Negative rounding",
+              "type": "checking",
+              "initial_balance": "-1.00"
+            },
+            {
+              "id": "$accp",
+              "name": "Positive rounding",
+              "type": "checking",
+              "initial_balance": "1.01"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      },
+      "requires": [
+        "exact_decimal_money"
+      ]
+    },
+    {
+      "id": "txn-create-half-cent-cash",
+      "purpose": "A 1.005 expense is stored as 1.01 and debits exactly 1.01.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Half cent",
+            "amount": "1.005",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000001"
+          },
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "account_id": "acc000000000001",
+                "type": "expense"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "98.99"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "Half cent",
+              "amount": "1.01",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      },
+      "requires": [
+        "exact_decimal_money"
+      ]
+    },
+    {
+      "id": "txn-edit-realized",
+      "purpose": "Editing a realized expense reverts 30.00 and applies 50.00, leaving 50.00.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "70.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Power",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-06T00:00:00.000Z",
+            "realized_date": "2026-03-06T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.update",
+          "id": "txn000000000001",
+          "patch": {
+            "amount": "50.00"
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "50.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Power",
+              "amount": "50.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-06T00:00:00.000Z",
+              "realized_date": "2026-03-06T00:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-delete-realized",
+      "purpose": "Deleting a realized expense restores the debited amount.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "70.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Power",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-06T00:00:00.000Z",
+            "realized_date": "2026-03-06T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.delete",
+          "id": "txn000000000001"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "100.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "txn-transfer-neutral",
+      "purpose": "A realized transfer moves 25.00 between accounts, clears category and card, and leaves net worth at 150.00.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Savings",
+            "type": "savings",
+            "initial_balance": "50.00"
+          }
+        ],
+        "cards": [],
+        "categories": [
+          {
+            "id": "cat000000000001",
+            "name": "Food",
+            "type": "variable"
+          }
+        ],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Move to savings",
+            "amount": "25.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000002",
+            "category_id": "cat000000000001"
+          },
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "type": "transfer"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "75.00"
+            },
+            {
+              "id": "acc000000000002",
+              "name": "Savings",
+              "type": "savings",
+              "initial_balance": "75.00"
+            }
+          ],
+          "cards": [],
+          "categories": [
+            {
+              "id": "cat000000000001",
+              "name": "Food",
+              "type": "variable"
+            }
+          ],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "Move to savings",
+              "amount": "25.00",
+              "type": "transfer",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001",
+              "destination_account_id": "acc000000000002"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-transfer-atomic-failure",
+      "purpose": "A storage failure on the destination write rolls back the source debit and creates no transfer.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Savings",
+            "type": "savings",
+            "initial_balance": "50.00"
+          }
+        ],
+        "cards": [],
+        "categories": [
+          {
+            "id": "cat000000000001",
+            "name": "Food",
+            "type": "variable"
+          }
+        ],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Move to savings",
+            "amount": "25.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000002",
+            "category_id": "cat000000000001"
+          },
+          "fault": {
+            "on_write": {
+              "collection": "accounts",
+              "record_id": "acc000000000002"
+            },
+            "error": "storage_failure"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "storage_failure"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "100.00"
+            },
+            {
+              "id": "acc000000000002",
+              "name": "Savings",
+              "type": "savings",
+              "initial_balance": "50.00"
+            }
+          ],
+          "cards": [],
+          "categories": [
+            {
+              "id": "cat000000000001",
+              "name": "Food",
+              "type": "variable"
+            }
+          ],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      },
+      "requires": [
+        "atomic_compound_writes"
+      ],
+      "divergence": {
+        "against": "server",
+        "policy": "compound_write_all_or_nothing",
+        "source": "server/src/application/use-cases/transactions/CreateTransactionUseCase.ts",
+        "note": "The server updates the source and destination in separate writes; the observed failure left 75.00 and 50.00."
+      },
+      "known_blocker": "transfer_partial_debit_observed_75_50"
+    },
+    {
+      "id": "txn-effective-at-offline",
+      "purpose": "A replay at 2026-03-09 preserves the offline business date 2026-03-05 for the realization.",
+      "clock": {
+        "now": "2026-03-09T12:00:00.000Z",
+        "effective_at": "2026-03-05T10:00:00.000Z",
+        "applied_at": "2026-03-09T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent",
+            "amount": "25.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "75.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent",
+              "amount": "25.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-05T00:00:00.000Z",
+              "realized_date": "2026-03-05T10:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      },
+      "requires": [
+        "effective_at_clock"
+      ]
+    },
+    {
+      "id": "txn-midnight-boundary",
+      "purpose": "A realization at UTC midnight keeps the previous expected date and stamps March 1 exactly.",
+      "clock": {
+        "now": "2026-03-01T00:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "0.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Late bill",
+            "amount": "10.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-02-28T23:59:59.999Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.realize",
+          "id": "txn000000000001",
+          "update_balance": true
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "-10.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Late bill",
+              "amount": "10.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-02-28T23:59:59.999Z",
+              "realized_date": "2026-03-01T00:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "txn-invalid-same-account",
+      "purpose": "A transfer whose source and destination are the same account is rejected.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Self move",
+            "amount": "10.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000001"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "validation"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "100.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      },
+      "requires": [
+        "relation_validation"
+      ]
+    },
+    {
+      "id": "txn-invalid-missing-account",
+      "purpose": "A transaction referencing an unknown account is rejected with not_found.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Ghost",
+            "amount": "10.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-08T12:00:00.000Z",
+            "account_id": "acc000000000099"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "not_found",
+          "entity": "Account",
+          "entity_id": "acc000000000099"
+        },
+        "snapshot": {
+          "accounts": [],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      },
+      "requires": [
+        "relation_validation"
+      ]
+    }
+  ]
+}

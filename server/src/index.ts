@@ -3,7 +3,7 @@ import type PocketBase from 'pocketbase';
 import { createPocketBaseClient } from './infrastructure/plugins/pocketbase';
 import { createContainer } from './infrastructure/di/container';
 import { errorPlugin } from './infrastructure/plugins/errorPlugin';
-import { schedulerPlugin } from './infrastructure/scheduler';
+import { createScheduler } from './infrastructure/scheduler';
 import { transactionController } from './infrastructure/controllers/TransactionController';
 import { forecastController } from './infrastructure/controllers/ForecastController';
 import { cardController } from './infrastructure/controllers/CardController';
@@ -13,6 +13,8 @@ import { projectController } from './infrastructure/controllers/ProjectControlle
 import { accountController } from './infrastructure/controllers/AccountController';
 import { jobController } from './infrastructure/controllers/JobController';
 import { adminController } from './infrastructure/controllers/AdminController';
+import { createSyncController } from './infrastructure/controllers/SyncController';
+import { FinancialMutationRuntime } from './infrastructure/sync/FinancialMutationRuntime';
 import {
   SETUP_TOKEN_TTL_MS,
   createSetupToken,
@@ -21,6 +23,7 @@ import {
   ownerRecordExistsIn,
   pocketBaseStatusOf,
   resolveRemoteAuthOptions,
+  resolveServerName,
   type CredentialsClient,
   type RemoteAuthOptions,
 } from './infrastructure/plugins/remoteAuth';
@@ -38,14 +41,22 @@ export interface RemoteServerAuth {
  *
  * `remoteAuth`:
  * - `undefined` (default): remote auth activates only when
- *   `OBOL_SESSION_SECRET` is configured; otherwise the composition stays
- *   exactly as before D009 (D10) for desktop local and legacy runtimes.
- * - `null`: force the legacy, unauthenticated composition regardless of env.
- * - `RemoteAuthOptions` / `RemoteServerAuth`: force remote mode.
+ *   `OBOL_SESSION_SECRET` is configured; otherwise the composition runs the
+ *   local runtime for desktop and legacy runtimes.
+ * - `null`: force the legacy, unauthenticated local composition regardless of
+ *   env (the explicit trusted local-desktop factory).
+ * - `RemoteAuthOptions` / `RemoteServerAuth`: force remote/central mode.
+ *
+ * `mutationRuntime` is the shared FIFO runtime. Public startup callers create
+ * it, await `initialize()` before listening and pass it here; when omitted the
+ * function constructs the role implied by the effective auth. Construction is
+ * synchronous; initialization stays lazy for direct `.handle` users.
  */
-export function createServer(pb: PocketBase, remoteAuth?: RemoteAuthOptions | null | RemoteServerAuth) {
-  const container = createContainer(pb);
-
+export function createServer(
+  pb: PocketBase,
+  remoteAuth?: RemoteAuthOptions | null | RemoteServerAuth,
+  mutationRuntime?: FinancialMutationRuntime,
+) {
   const remoteAuthDeps = remoteAuth === null
     ? { options: undefined }
     : remoteAuth === undefined
@@ -54,12 +65,24 @@ export function createServer(pb: PocketBase, remoteAuth?: RemoteAuthOptions | nu
         ? remoteAuth
         : { options: remoteAuth };
 
+  const runtime = mutationRuntime ?? new FinancialMutationRuntime(pb, {
+    role: remoteAuthDeps.options === undefined ? 'local' : 'central',
+  });
+  const container = createContainer(pb, runtime.mutationContext());
+
   const remoteAuthPlugin = createRemoteAuthPlugin({ pb, ...remoteAuthDeps });
+  // The scheduler owns a live cron handle from the installed plugin; the
+  // application exposes its typed stop lifecycle so desktop/hosted shutdown
+  // can stop the timer and drain a run already inside the FIFO gate.
+  const scheduler = createScheduler(container);
 
   return new Elysia()
+    .decorate('schedulerLifecycle', scheduler.lifecycle)
     .use(errorPlugin)
     .use(remoteAuthPlugin)
-    .use(schedulerPlugin(container))
+    // D009 authenticates before the sync surface mounts.
+    .use(createSyncController(runtime))
+    .use(scheduler.plugin)
     .use(transactionController(container))
     .use(forecastController(container))
     .use(cardController(container))
@@ -118,14 +141,29 @@ export async function startHostedServer() {
     adminPassword: process.env.PB_ADMIN_PASSWORD ?? ''
   });
 
-  // Fail closed (D7): a configured-but-too-short secret throws here, before
-  // any route binds. Without the secret the D10 legacy composition applies.
-  let options: RemoteAuthOptions | undefined = resolveRemoteAuthOptions();
-  if (options) {
-    options = await bootSetupCredentials(pb, options);
+  // Fail closed (D7/D10): a hosted deployment without a session secret never
+  // starts. The trusted local-desktop factory uses `createServer(pb, null)`
+  // explicitly and is unaffected.
+  const resolved = resolveRemoteAuthOptions();
+  if (!resolved) {
+    throw new Error(
+      'OBOL_SESSION_SECRET is required to start the hosted Obol server; refusing to listen without authenticated sessions.',
+    );
   }
+  const options = await bootSetupCredentials(pb, resolved);
 
-  const app = createServer(pb, options);
+  const runtime = new FinancialMutationRuntime(pb, {
+    role: 'central',
+    // The same `${options.serverName ?? deriveServerName(options.publicUrl)}`
+    // result the auth plugin surfaces at login, so the sync handshake
+    // (`/api/sync/handshake`) and the HTTP auth metadata can never disagree.
+    serverName: resolveServerName(options),
+  });
+  // The durable identity, meta and deterministic backfill finish BEFORE the
+  // port binds, so no served mutation can observe half-initialized metadata.
+  await runtime.initialize();
+
+  const app = createServer(pb, options, runtime);
   const port = Number(process.env.PORT) || 8080;
   app.listen({ port, hostname: '0.0.0.0' });
   console.log(`🚀 Obol BFF running at ${app.server?.hostname}:${app.server?.port}`);

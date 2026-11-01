@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
-# Build an App Store-signed iOS archive and upload it to TestFlight.
+# Build an App Store-signed archive of the NATIVE Obol iOS app, export the
+# IPA, and upload it to TestFlight.
+#
+# The native app has no web bundle: there is no npm step, no asset generation,
+# and no web-asset copy in this pipeline.
 #
 # Local usage:
 #   APPLE_TEAM_ID=XXXXXXXXXX \
 #   ASC_KEY_ID=XXXXXXXXXX \
 #   ASC_ISSUER_ID=00000000-0000-0000-0000-000000000000 \
 #   ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_XXXXXXXXXX.p8" \
-#   npm run ios:testflight
+#   bash app/scripts/ios-testflight.sh
 #
-# CI usage is the same command; `.github/workflows/ios-testflight.yml` installs
-# the API key and distribution certificate into a temporary keychain first.
-# Set SKIP_UPLOAD=1 to produce the IPA without uploading.
+# Build only (no App Store Connect credentials required):
+#   SKIP_UPLOAD=1 BUILD_NUMBER=2026103001 bash app/scripts/ios-testflight.sh
+#
+# CI usage is the same command; the manual workflow installs the API key and
+# distribution certificate into a temporary keychain first. Uploads fail
+# closed: missing credentials never produce a fake success, and the script
+# never reports an IPA or upload that was not actually produced.
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,21 +37,31 @@ ARCHIVE="${OUT}/Obol.xcarchive"
 EXPORT_DIR="${OUT}/export"
 EXPORT_PLIST="${OUT}/ExportOptions.plist"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
-SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
 
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+case "${SKIP_UPLOAD}" in
+  0|1) ;;
+  *) die "SKIP_UPLOAD must be 0 or 1 (got '${SKIP_UPLOAD}')." ;;
+esac
+
 [[ -n "${OUT}" && "${OUT}" != "/" && "${OUT}" != "${HOME}" && "${OUT}" != "${REPO_ROOT}" && "${OUT}" != "${APP_ROOT}" ]] \
   || die "Refusing unsafe IOS_BUILD_DIR: ${OUT}"
-
-command -v xcodebuild >/dev/null 2>&1 || die "xcodebuild not found; install Xcode."
-command -v node >/dev/null 2>&1 || die "node not found; run inside 'nix develop' or install Node."
 [[ -d "${PROJECT}" ]] || die "Xcode project not found: ${PROJECT}"
+command -v xcodebuild >/dev/null 2>&1 || die "xcodebuild not found; install a full Xcode."
 [[ -n "${TEAM_ID}" ]] || die "APPLE_TEAM_ID is required (Apple Developer Team ID)."
 
-DEFAULT_VERSION="$(node -p "require('${REPO_ROOT}/desktop/app.json').version")"
-VERSION="${MARKETING_VERSION:-$(printf '%s' "${DEFAULT_VERSION}" | sed -E 's/[-+].*$//')}"
+if [[ "${SKIP_UPLOAD}" == "0" ]]; then
+  [[ -n "${KEY_ID}" && -n "${ISSUER_ID}" && -n "${KEY_PATH}" ]] \
+    || die "Upload requires ASC_KEY_ID, ASC_ISSUER_ID, and ASC_KEY_PATH. Set SKIP_UPLOAD=1 for an archive-only run."
+  [[ -f "${KEY_PATH}" ]] || die "App Store Connect key not found: ${KEY_PATH}"
+  xcrun --find altool >/dev/null 2>&1 || die "altool not found in the active Xcode."
+fi
+
+VERSION="${MARKETING_VERSION:-0.4.5}"
+VERSION="${VERSION%%-*}"
+VERSION="${VERSION%%+*}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
 
 [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
@@ -52,22 +70,12 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
   || die "BUILD_NUMBER must be numeric (got '${BUILD_NUMBER}')."
 
 KEY_ARGS=()
-if [[ -n "${KEY_PATH}" || -n "${KEY_ID}" || -n "${ISSUER_ID}" ]]; then
-  [[ -n "${KEY_PATH}" && -n "${KEY_ID}" && -n "${ISSUER_ID}" ]] \
-    || die "ASC_KEY_PATH, ASC_KEY_ID and ASC_ISSUER_ID must be set together."
-  [[ -f "${KEY_PATH}" ]] || die "App Store Connect key not found: ${KEY_PATH}"
+if [[ -n "${KEY_ID}" && -n "${ISSUER_ID}" && -n "${KEY_PATH}" ]]; then
   KEY_ARGS=(
     -authenticationKeyPath "${KEY_PATH}"
     -authenticationKeyID "${KEY_ID}"
     -authenticationKeyIssuerID "${ISSUER_ID}"
   )
-fi
-
-if [[ "${SKIP_UPLOAD}" != "1" ]]; then
-  [[ ${#KEY_ARGS[@]} -gt 0 ]] \
-    || die "Upload requires ASC_KEY_PATH, ASC_KEY_ID and ASC_ISSUER_ID."
-  command -v xcrun >/dev/null 2>&1 || die "xcrun not found; install Xcode command line tools."
-  xcrun --find altool >/dev/null 2>&1 || die "altool not found in the active Xcode."
 fi
 
 XC_MAJOR="$(xcodebuild -version | awk '/^Xcode / { split($2, parts, "."); print parts[1]; exit }')"
@@ -76,13 +84,8 @@ if [[ "${EXPORT_METHOD}" == "app-store-connect" && "${XC_MAJOR:-0}" -lt 15 ]]; t
   EXPORT_METHOD="app-store"
 fi
 
-log "Obol ${VERSION} (build ${BUILD_NUMBER}) for ${BUNDLE_ID}"
-log "Team ${TEAM_ID}; export method ${EXPORT_METHOD}; output ${OUT}"
-
-if [[ "${SKIP_WEB_BUILD}" != "1" ]]; then
-  log "Generating and syncing the iOS web bundle"
-  (cd "${APP_ROOT}" && npm run ios:generate && npm run ios:sync)
-fi
+log "Obol ${VERSION} (build ${BUILD_NUMBER}) for ${BUNDLE_ID}; team ${TEAM_ID}"
+log "Export method: ${EXPORT_METHOD}; output: ${OUT}"
 
 rm -rf "${OUT}"
 mkdir -p "${EXPORT_DIR}"
@@ -108,7 +111,7 @@ cat > "${EXPORT_PLIST}" <<EOF
 </plist>
 EOF
 
-log "Archiving"
+log "Archiving the native app"
 ARCHIVE_CMD=(
   xcodebuild
   -project "${PROJECT}"
@@ -132,6 +135,9 @@ ARCHIVE_CMD+=(
 )
 "${ARCHIVE_CMD[@]}"
 
+ARCHIVED_APP="${ARCHIVE}/Products/Applications/App.app"
+[[ -d "${ARCHIVED_APP}" ]] || die "Archive finished without the expected app at ${ARCHIVED_APP}."
+
 log "Exporting the App Store IPA"
 EXPORT_CMD=(
   xcodebuild
@@ -146,8 +152,8 @@ if [[ ${#KEY_ARGS[@]} -gt 0 ]]; then
 fi
 "${EXPORT_CMD[@]}"
 
-IPA="$(find "${EXPORT_DIR}" -maxdepth 1 -name '*.ipa' -print -quit)"
-[[ -n "${IPA}" ]] || die "Export finished without an IPA in ${EXPORT_DIR}"
+IPA="$(find "${EXPORT_DIR}" -maxdepth 1 -type f -name '*.ipa' -print | sed -n '1p')"
+[[ -n "${IPA}" && -f "${IPA}" && -s "${IPA}" ]] || die "Export finished without a usable IPA in ${EXPORT_DIR}."
 
 log "IPA: ${IPA}"
 if [[ "${SKIP_UPLOAD}" == "1" ]]; then
@@ -156,6 +162,7 @@ if [[ "${SKIP_UPLOAD}" == "1" ]]; then
 fi
 
 log "Uploading to TestFlight"
+API_PRIVATE_KEYS_DIR="$(cd "$(dirname "${KEY_PATH}")" && pwd)" \
 xcrun altool --upload-app \
   -f "${IPA}" \
   -t ios \
@@ -163,4 +170,4 @@ xcrun altool --upload-app \
   --api-issuer "${ISSUER_ID}" \
   --p8-file-path "${KEY_PATH}"
 
-log "Upload accepted. App Store Connect processing is asynchronous; the build appears in TestFlight when processing finishes."
+log "Upload accepted. App Store Connect processing is asynchronous; the build appears in TestFlight after processing finishes."

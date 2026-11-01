@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { AccountDTO } from '../validators/accountSchemas';
-import { executeUseCase } from '../use-case-routes';
+import { executeMutationUseCase, executeUseCase } from '../use-case-routes';
 
 export const accountController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/accounts' })
@@ -12,7 +12,7 @@ export const accountController = (container: AwilixContainer) =>
 
     // POST /api/accounts
     .post('/', async ({ body, set }) => {
-      const account = await executeUseCase(container, 'createAccountUseCase', body);
+      const account = await executeMutationUseCase(container, 'createAccountUseCase', body);
       set.status = 201;
       return account;
     }, {

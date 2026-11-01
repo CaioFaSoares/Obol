@@ -1,6 +1,8 @@
 import { CategoryRepository } from '../../../domain/interfaces/CategoryRepository';
 import { TransactionRepository } from '../../../domain/interfaces/TransactionRepository';
-import { sum, sub } from '../../../domain/utils/mathUtils';
+import { addUtcMonths, startOfUtcMonth } from '../../../domain/utils/dateUtils';
+import { roundCurrency, sum } from '../../../domain/utils/mathUtils';
+import { SyncClock, systemSyncClock } from '../../../domain/sync/MutationContext';
 
 interface EnrichedCategory {
   id: string;
@@ -9,43 +11,44 @@ interface EnrichedCategory {
   spent: number;
 }
 
+/**
+ * Accrual budget for the UTC month containing the injected clock instant.
+ *
+ * Expenses count on `purchase_date` when present (card purchases), otherwise
+ * on `expected_date`, regardless of status. This planned basis deliberately
+ * includes pending and simulated rows; `spent` is expenses minus incomes.
+ */
 export class GetBudgetsUseCase {
   constructor(
     private readonly categoryRepository: CategoryRepository,
-    private readonly transactionRepository: TransactionRepository
+    private readonly transactionRepository: TransactionRepository,
+    private readonly clock: SyncClock = systemSyncClock
   ) {}
 
   async execute(): Promise<EnrichedCategory[]> {
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth();
+    const monthStart = startOfUtcMonth(this.clock.now());
+    const nextMonth = addUtcMonths(monthStart, 1);
 
-    const startOfMonth = new Date(Date.UTC(year, month, 1)).toISOString();
-    const endOfMonth = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999)).toISOString();
-
-    // 1. Busca todas as categorias
     const categories = await this.categoryRepository.listAll();
+    const transactions = await this.transactionRepository.listAll();
 
-    // 2. Busca todas as transações do mês relevantes
-    const monthlyTransactions = await this.transactionRepository.listAll({
-      filter: `(type = 'expense' || type = 'income') && ( (purchase_date != "" && purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}') || (purchase_date = "" && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') )`
-    });
+    const totals = new Map<string, number>();
+    for (const txn of transactions) {
+      if (txn.type !== 'income' && txn.type !== 'expense') continue;
+      if (!txn.category_id) continue;
 
-    // 3. Agrupa por categoria na memória e calcula os totais
-    return categories.map((cat) => {
-      const catTxns = monthlyTransactions.filter(t => t.category_id === cat.id);
-      const spent = catTxns.reduce((acc, t) => {
-        if (t.type === 'expense') return sum(acc, t.amount || 0);
-        if (t.type === 'income') return sub(acc, t.amount || 0);
-        return acc;
-      }, 0);
+      const accrualDate = new Date(txn.purchase_date || txn.expected_date);
+      if (accrualDate < monthStart || accrualDate >= nextMonth) continue;
 
-      return {
-        id: cat.id,
-        name: cat.name,
-        monthly_budget: cat.monthly_budget || 0,
-        spent,
-      };
-    });
+      const signed = txn.type === 'expense' ? roundCurrency(txn.amount) : -roundCurrency(txn.amount);
+      totals.set(txn.category_id, sum(totals.get(txn.category_id) ?? 0, signed));
+    }
+
+    return categories.map(category => ({
+      id: category.id,
+      name: category.name,
+      monthly_budget: category.monthly_budget ?? 0,
+      spent: roundCurrency(totals.get(category.id) ?? 0)
+    }));
   }
 }

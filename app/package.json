@@ -8,32 +8,33 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "ios:generate": "OBOL_DESKTOP_STATIC=true nuxt generate",
-    "ios:sync": "cap sync ios",
-    "ios:open": "cap open ios",
-    "ios:run": "npm run ios:generate && npm run ios:sync && cap run ios",
+    "ios:open": "open ios/App/App.xcodeproj",
+    "ios:run": "bash scripts/ios-run.sh",
     "ios:testflight": "bash scripts/ios-testflight.sh"
   },
   "dependencies": {
-    "@aparajita/capacitor-secure-storage": "8.0.1",
-    "@capacitor/core": "^8.6.0",
-    "@capacitor/ios": "^8.6.0",
     "@elysiajs/eden": "^1.4.9",
     "@nuxt/ui": "^2.22.3",
     "@pinia/nuxt": "^0.11.3",
     "echarts": "^6.1.0",
-    "nuxt": "^3.11.2",
+    "nuxt": "^3.21.11",
     "pinia": "^3.0.4",
     "pretext": "^0.3.0",
-    "vue": "^3.4.21",
+    "vue": "^3.5.44",
     "vue-echarts": "^8.0.1",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.6.0",
     "@iconify-json/heroicons": "^1.2.3",
     "@types/node": "^25.9.1",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.13"
+  },
+  "overrides": {
+    "vite": "7.3.7",
+    "elysia": "1.4.30",
+    "@tailwindcss/typography": {
+      "postcss-selector-parser": "6.1.5"
+    }
   }
 }

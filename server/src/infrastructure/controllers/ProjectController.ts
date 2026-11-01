@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { ProjectCreateDTO, ProjectPaymentDTO } from '../validators/projectSchemas';
-import { executeUseCase } from '../use-case-routes';
+import { executeMutationUseCase, executeUseCase } from '../use-case-routes';
 
 export const projectController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/projects' })
@@ -12,7 +12,7 @@ export const projectController = (container: AwilixContainer) =>
 
     // POST /api/projects
     .post('/', async ({ body, set }) => {
-      const project = await executeUseCase(container, 'createProjectUseCase', body);
+      const project = await executeMutationUseCase(container, 'createProjectUseCase', body);
       set.status = 201;
       return project;
     }, {
@@ -21,7 +21,7 @@ export const projectController = (container: AwilixContainer) =>
 
     // POST /api/projects/:id/payment
     .post('/:id/payment', async ({ params, body, set }) => {
-      const transaction = await executeUseCase(container, 'registerPaymentUseCase', params.id, body);
+      const transaction = await executeMutationUseCase(container, 'registerPaymentUseCase', params.id, body);
       set.status = 201;
       return transaction;
     }, {
@@ -30,5 +30,5 @@ export const projectController = (container: AwilixContainer) =>
 
     // PATCH /api/projects/:id/complete
     .patch('/:id/complete', async ({ params }) => {
-      return await executeUseCase(container, 'completeProjectUseCase', params.id);
+      return await executeMutationUseCase(container, 'completeProjectUseCase', params.id);
     });

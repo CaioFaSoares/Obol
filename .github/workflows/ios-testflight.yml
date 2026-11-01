@@ -1,4 +1,6 @@
-# Builds an App Store-signed iOS archive and uploads it to TestFlight.
+# Builds an App Store-signed archive of the NATIVE Obol iOS app and uploads
+# it to TestFlight. The native app has no web bundle: no Node step and no web
+# asset generation run here.
 #
 # Manual only. Run it from the Actions tab or with:
 #   gh workflow run ios-testflight.yml --repo <owner>/<repo> -f build_number=123
@@ -11,8 +13,11 @@
 #   IOS_DISTRIBUTION_CERT_P12_BASE64     base64 of the Apple Distribution .p12
 #   IOS_DISTRIBUTION_CERT_PASSWORD       password for that .p12
 #
-# The same build runs locally with `npm run ios:testflight` (see
-# docs/ios-testflight.md); the workflow only installs the signing material.
+# The same build runs locally with `bash app/scripts/ios-testflight.sh` (see
+# docs/ios-testflight.md); this workflow only provides the macOS toolchain and
+# the signing material. Package resolution uses the committed LOCAL Swift
+# packages (app/ios/ObolCore and app/ios/Package.swift), so no remote package
+# secret is needed.
 name: ios testflight
 
 on:
@@ -42,13 +47,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - run: npm ci
-        working-directory: app
 
       - name: show toolchain
         run: |
@@ -104,8 +102,7 @@ jobs:
           ASC_KEY_PATH: ${{ runner.temp }}/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
           BUILD_NUMBER: ${{ github.event.inputs.build_number }}
           SKIP_UPLOAD: ${{ github.event.inputs.upload == 'false' && '1' || '0' }}
-        run: npm run ios:testflight
-        working-directory: app
+        run: bash app/scripts/ios-testflight.sh
 
       - name: upload build artifacts
         if: always()

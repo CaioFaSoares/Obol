@@ -2,8 +2,12 @@ import { TransactionRepository } from '../../../domain/interfaces/TransactionRep
 import { AccountRepository } from '../../../domain/interfaces/AccountRepository';
 import { InvoiceRepository } from '../../../domain/interfaces/InvoiceRepository';
 import { RecurrenceRepository } from '../../../domain/interfaces/RecurrenceRepository';
+import { Invoice } from '../../../domain/entities/Invoice';
+import { Recurrence } from '../../../domain/entities/Recurrence';
 import { NotFoundError } from '../../../domain/errors';
-import { sum, sub } from '../../../domain/utils/mathUtils';
+import { dayKey } from '../../../domain/utils/dateUtils';
+import { recurrenceCadence } from '../../../domain/recurrence/cadence';
+import { roundCurrency, sum, sub } from '../../../domain/utils/mathUtils';
 
 export class DeleteTransactionUseCase {
   constructor(
@@ -16,62 +20,67 @@ export class DeleteTransactionUseCase {
   async execute(id: string): Promise<{ success: boolean }> {
     const oldTxn = await this.transactionRepository.findById(id);
     if (!oldTxn) {
-      throw new NotFoundError('Transação não encontrada');
+      throw new NotFoundError('Transaction was not found.');
     }
 
-    if (oldTxn.account_id && oldTxn.status === 'realized') {
-      if (oldTxn.type === 'transfer' && oldTxn.destination_account_id) {
-        const sourceAcc = await this.accountRepository.findById(oldTxn.account_id);
-        const destAcc = await this.accountRepository.findById(oldTxn.destination_account_id);
-        await this.accountRepository.update(sourceAcc.id, { initial_balance: sum(sourceAcc.initial_balance, oldTxn.amount) });
-        await this.accountRepository.update(destAcc.id, { initial_balance: sub(destAcc.initial_balance, oldTxn.amount) });
-      } else {
+    // Resolve every referenced record before mutating anything. A missing
+    // invoice or recurrence must surface, never be swallowed.
+    let invoice: Invoice | null = null;
+    if (oldTxn.invoice_id && oldTxn.is_simulated !== true) {
+      invoice = await this.invoiceRepository.findById(oldTxn.invoice_id);
+      if (!invoice) throw new NotFoundError(`Invoice ${oldTxn.invoice_id} was not found.`);
+    }
+
+    let recurrence: Recurrence | null = null;
+    if (oldTxn.recurrence_id) {
+      recurrence = await this.recurrenceRepository.findById(oldTxn.recurrence_id);
+      if (!recurrence) throw new NotFoundError(`Recurrence ${oldTxn.recurrence_id} was not found.`);
+    }
+
+    const amount = roundCurrency(oldTxn.amount);
+
+    if (oldTxn.status === 'realized' && oldTxn.is_silent !== true && oldTxn.is_simulated !== true) {
+      if (oldTxn.type === 'transfer' && oldTxn.account_id && oldTxn.destination_account_id) {
+        const source = await this.accountRepository.findById(oldTxn.account_id);
+        const destination = await this.accountRepository.findById(oldTxn.destination_account_id);
+        if (!source) throw new NotFoundError(`Account ${oldTxn.account_id} was not found.`);
+        if (!destination) throw new NotFoundError(`Account ${oldTxn.destination_account_id} was not found.`);
+        await this.accountRepository.update(source.id, {
+          initial_balance: sum(source.initial_balance, amount)
+        });
+        await this.accountRepository.update(destination.id, {
+          initial_balance: sub(destination.initial_balance, amount)
+        });
+      } else if (oldTxn.account_id && oldTxn.type !== 'transfer') {
         const account = await this.accountRepository.findById(oldTxn.account_id);
-        let revertedBalance = account.initial_balance;
-        
-        if (oldTxn.type === 'income') revertedBalance = sub(revertedBalance, oldTxn.amount);
-        if (oldTxn.type === 'expense') revertedBalance = sum(revertedBalance, oldTxn.amount);
-
-        await this.accountRepository.update(oldTxn.account_id, { 
-          initial_balance: revertedBalance 
+        if (!account) throw new NotFoundError(`Account ${oldTxn.account_id} was not found.`);
+        const revertDelta = oldTxn.type === 'income' ? -amount : amount;
+        await this.accountRepository.update(account.id, {
+          initial_balance: sum(account.initial_balance, revertDelta)
         });
       }
     }
 
-    // REGRA DE FATURAS FÍSICAS: Estornar do total_amount da fatura pai
-    if (oldTxn.card_id && oldTxn.invoice_id) {
-      try {
-        const invoice = await this.invoiceRepository.findById(oldTxn.invoice_id);
-        const amountDelta = oldTxn.type === 'expense' ? -oldTxn.amount : oldTxn.amount;
-        await this.invoiceRepository.update(invoice.id, {
-          total_amount: sum(invoice.total_amount, amountDelta)
-        });
+    if (invoice) {
+      const amountDelta = oldTxn.type === 'expense' ? -amount : amount;
+      await this.invoiceRepository.update(invoice.id, {
+        total_amount: sum(invoice.total_amount, amountDelta)
+      });
+    }
 
-        if (oldTxn.recurrence_id) {
-          const rec = await this.recurrenceRepository.findById(oldTxn.recurrence_id);
-          let skipped = rec.skipped_periods || [];
-          const pDate = oldTxn.purchase_date || oldTxn.expected_date;
-          const purchasePeriod = pDate.substring(0, 7);
-          if (!skipped.includes(purchasePeriod)) skipped.push(purchasePeriod);
-          if (!skipped.includes(invoice.period)) skipped.push(invoice.period);
-          await this.recurrenceRepository.update(rec.id, { skipped_periods: skipped });
-        }
-      } catch (e) {
-        console.error("Fatura ou Recorrência não encontrada para estorno:", e);
+    if (recurrence) {
+      const periods = new Set<string>(recurrence.skipped_periods || []);
+      const weekly = recurrenceCadence(recurrence) === 'weekly';
+      const referenceDate = oldTxn.purchase_date || oldTxn.expected_date;
+      if (referenceDate) {
+        // Weekly rows skip their occurrence day; monthly rows keep the month.
+        periods.add(weekly ? dayKey(referenceDate) : referenceDate.substring(0, 7));
       }
-    } else if (oldTxn.recurrence_id) {
-      try {
-        const rec = await this.recurrenceRepository.findById(oldTxn.recurrence_id);
-        let skipped = rec.skipped_periods || [];
-        const pDate = oldTxn.purchase_date || oldTxn.expected_date;
-        const purchasePeriod = pDate.substring(0, 7);
-        if (!skipped.includes(purchasePeriod)) {
-          skipped.push(purchasePeriod);
-          await this.recurrenceRepository.update(rec.id, { skipped_periods: skipped });
-        }
-      } catch (e) {
-        console.error("Recorrência não encontrada para estorno:", e);
-      }
+      // The invoice month is a monthly skip key; a weekly row is keyed by day.
+      if (invoice && !weekly) periods.add(invoice.period);
+      await this.recurrenceRepository.update(recurrence.id, {
+        skipped_periods: Array.from(periods).sort()
+      });
     }
 
     await this.transactionRepository.delete(id);

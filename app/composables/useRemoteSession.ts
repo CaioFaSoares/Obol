@@ -1,6 +1,4 @@
 import { computed, ref } from 'vue'
-import { Capacitor } from '@capacitor/core'
-import { SecureStorage } from '@aparajita/capacitor-secure-storage'
 
 import { api, apiClientFor, onRemoteAuthFailure, setRemoteTransport, remoteServerUrl } from '../utils/api'
 
@@ -11,12 +9,12 @@ import { api, apiClientFor, onRemoteAuthFailure, setRemoteTransport, remoteServe
  * `SESSION_EXPIRED`/revocation before any unauthenticated financial call.
  *
  * Credential storage per client (D9):
- * - iOS: Keychain via `@aparajita/capacitor-secure-storage`, always after the
- *   nonblank `obol.remote.` prefix is set, never falling back to localStorage.
  * - Desktop remote mode: WebView `localStorage`, stored separately from the
  *   local profile (D008 no-sync rule).
  * - Hosted web: no JS token storage at all; the `__Host-obol_session` httpOnly
  *   cookie travels with `credentials: 'include'` requests.
+ * Native iOS is a separate SwiftUI client with its own Keychain storage; it
+ * does not run this Nuxt bundle.
  * Only the endpoint URL lives in localStorage; it is not a secret.
  *
  * Transport field contract (backend slice): login requests carry an explicit
@@ -87,7 +85,6 @@ const SERVER_NAME_KEY = 'obol.remote.serverName'
 const SERVER_URL_STORAGE_PREFIX = 'obol.remote.'
 const TOKEN_KEY = 'sessionToken'
 const EXPIRES_KEY = 'sessionExpiresAt'
-const SECURE_PREFIX = 'obol.remote.'
 const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000
 
 type HostedCapability = 'auth' | 'legacy' | 'unknown'
@@ -148,71 +145,30 @@ const renewTimer: { current: ReturnType<typeof setTimeout> | null } = { current:
 let pendingResetToken = ''
 let bearerToken: string | null = null
 let failureHandlerBound = false
-let secureStorageReady: Promise<void> | null = null
 
 export function useRemoteSession() {
-  function nativeClient(): boolean {
-    return typeof window !== 'undefined' && Capacitor.isNativePlatform() === true
-  }
-
   // Desktop remote mode only ever runs inside the Electrobun webview bridge.
   function desktopClient(): boolean {
     return typeof window !== 'undefined' && window.obol?.auth !== undefined
   }
 
   function hostedWeb(): boolean {
-    return !nativeClient() && !desktopClient()
+    return typeof window === 'undefined' || window.obol?.auth === undefined
   }
 
   // ---------- credential storage ----------
 
-  async function secureReady(): Promise<void> {
-    if (!secureStorageReady) {
-      // The plugin rejects a blank prefix (v8.0.1); set the nonblank D009
-      // prefix once before any get/set/remove so every session item is
-      // namespaced inside the Keychain.
-      secureStorageReady = SecureStorage.setKeyPrefix(SECURE_PREFIX)
-    }
-    await secureStorageReady
-  }
-
   async function readToken(): Promise<string | null> {
     if (bearerToken || hostedWeb()) return bearerToken
-    if (nativeClient()) {
-      try {
-        await secureReady()
-        const stored = await SecureStorage.getItem(TOKEN_KEY)
-        bearerToken = typeof stored === 'string' && stored.length > 0 ? stored : null
-        if (bearerToken) {
-          // Retain the stored token expiry so start-up verification can
-          // schedule the renewal without a fresh round trip.
-          const storedExpiryValue = await SecureStorage.getItem(EXPIRES_KEY)
-          remoteExpiresAt.value = parseExpiry(storedExpiryValue) ?? remoteExpiresAt.value
-        }
-      } catch (error) {
-        console.error('Could not read the remote session from the Keychain:', error)
-      }
-    } else if (desktopClient()) {
-      const stored = window.localStorage.getItem(`${SERVER_URL_STORAGE_PREFIX}${TOKEN_KEY}`)
-      bearerToken = typeof stored === 'string' && stored.length > 0 ? stored : null
-    }
+    const stored = window.localStorage.getItem(`${SERVER_URL_STORAGE_PREFIX}${TOKEN_KEY}`)
+    bearerToken = typeof stored === 'string' && stored.length > 0 ? stored : null
     return bearerToken
   }
 
   function saveToken(token: string, expiresAt: string | null): void {
     bearerToken = token
     remoteExpiresAt.value = expiresAt === null ? null : parseExpiry(expiresAt)
-    if (nativeClient()) {
-      void (async () => {
-        // Keychain after first unlock; the prefix is set before every mutation.
-        await secureReady()
-        await SecureStorage.setItem(TOKEN_KEY, token)
-        if (expiresAt) await SecureStorage.setItem(EXPIRES_KEY, expiresAt)
-      })().catch(error => {
-        console.error('Could not persist the remote session to the iOS Keychain:', error)
-        remoteMessage.value = 'The session could not be saved to the iOS Keychain.'
-      })
-    } else if (desktopClient()) {
+    if (desktopClient()) {
       window.localStorage.setItem(`${SERVER_URL_STORAGE_PREFIX}${TOKEN_KEY}`, token)
       if (expiresAt) {
         window.localStorage.setItem(`${SERVER_URL_STORAGE_PREFIX}${EXPIRES_KEY}`, expiresAt)
@@ -225,15 +181,6 @@ export function useRemoteSession() {
   async function clearStoredToken(): Promise<void> {
     bearerToken = null
     remoteExpiresAt.value = null
-    if (nativeClient()) {
-      try {
-        await secureReady()
-        await SecureStorage.removeItem(TOKEN_KEY)
-        await SecureStorage.removeItem(EXPIRES_KEY)
-      } catch (error) {
-        console.error('Could not clear the remote session from the Keychain:', error)
-      }
-    }
     if (desktopClient()) {
       window.localStorage.removeItem(`${SERVER_URL_STORAGE_PREFIX}${TOKEN_KEY}`)
       window.localStorage.removeItem(`${SERVER_URL_STORAGE_PREFIX}${EXPIRES_KEY}`)
@@ -247,7 +194,7 @@ export function useRemoteSession() {
   }
 
   function storedExpiry(): number | null {
-    if (nativeClient() || hostedWeb()) return null
+    if (hostedWeb()) return null
     return parseExpiry(window.localStorage.getItem(`${SERVER_URL_STORAGE_PREFIX}${EXPIRES_KEY}`))
   }
 
@@ -659,7 +606,6 @@ export function useRemoteSession() {
   // ---------- auth actions ----------
 
   function deviceLabel(): string {
-    if (nativeClient()) return 'iOS app'
     if (desktopClient()) return 'Desktop remote'
     return 'Hosted web browser'
   }
@@ -743,13 +689,11 @@ export function useRemoteSession() {
   }
 
   // Financial records loaded from a remote deployment never linger in memory
-  // when the transport switches away or the session ends.
+  // when the transport switches away or the session ends. The store owns the
+  // reset so it can also invalidate loads still in flight against the old
+  // endpoint instead of letting them repopulate the cleared cache.
   function clearFinanceCache(): void {
-    const store = useFinanceStore()
-    store.accounts = []
-    store.cards = []
-    store.categories = []
-    store.projects = []
+    useFinanceStore().resetBaseData()
   }
 
   async function openSessionManager(): Promise<void> {
@@ -870,7 +814,7 @@ export function useRemoteSession() {
     remoteServerName: computed(() => remoteServerName.value),
     remoteServerUrl: computed(() => remoteServerUrlRef.value ?? remoteServerUrl()),
     remoteSessions: computed(() => remoteSessions.value),
-    // Only bearer clients (desktop remote, iOS) can point at another origin;
+    // Only bearer clients (desktop remote) can point at another origin;
     // the hosted web is pinned to its own origin by the Nuxt proxy.
     endpointConfigurable: computed(() => hostedWeb() === false),
     smtpConfigured: computed(() => smtpConfigured.value),

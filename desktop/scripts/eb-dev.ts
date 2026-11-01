@@ -29,20 +29,46 @@ function run(command: string[], cwd: string, label: string, env: NodeJS.ProcessE
   }
 }
 
+const NUXT_READY_TIMEOUT_MS = 30_000;
+
 async function waitForNuxt(baseUrl: string, server: Bun.Subprocess): Promise<void> {
-  const readyUrl = new URL('/_nuxt/@vite/client', baseUrl).toString();
-  const deadline = Date.now() + 30_000;
+  const viteUrl = new URL('/_nuxt/@vite/client', baseUrl).toString();
+  const documentUrl = new URL('/', baseUrl).toString();
+  const deadline = Date.now() + NUXT_READY_TIMEOUT_MS;
+  let lastStatus = 'no response yet';
   while (Date.now() < deadline) {
     if (server.exitCode !== null) throw new Error(`Nuxt dev server exited with ${server.exitCode}`);
     try {
-      const response = await fetch(readyUrl);
-      if (response.ok) return;
+      // Each request, including the body read, is aborted once the remaining
+      // startup budget is exhausted so a hanging response cannot outlive it.
+      const viteResponse = await fetch(viteUrl, { signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())) });
+      const viteOk = viteResponse.ok;
+      const viteStatus = viteResponse.status;
+      // The Vite client body is never read; release it in either branch.
+      await viteResponse.body?.cancel();
+      if (!viteOk) {
+        lastStatus = `Vite client responded with ${viteStatus}`;
+      } else {
+        const documentResponse = await fetch(documentUrl, {
+          signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+        });
+        if (!documentResponse.ok) {
+          await documentResponse.body?.cancel();
+          lastStatus = `application document responded with ${documentResponse.status}`;
+        } else {
+          const html = await documentResponse.text();
+          if (html.includes('id="__nuxt"')) return;
+          lastStatus = 'application document did not contain the Nuxt root element';
+        }
+      }
     } catch {
-      // The Vite client asset is not available until Nuxt's dev server is ready.
+      // The dev server is not accepting requests yet, or a request was aborted
+      // because it exceeded the remaining startup deadline.
+      lastStatus = 'request failed or exceeded the remaining startup deadline';
     }
     await Bun.sleep(250);
   }
-  throw new Error(`Nuxt dev server did not become ready at ${readyUrl}`);
+  throw new Error(`Nuxt dev server did not become ready at ${documentUrl} (${lastStatus})`);
 }
 
 async function stopNuxt(server: Bun.Subprocess): Promise<void> {

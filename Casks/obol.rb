@@ -2,7 +2,10 @@
 cask "obol" do
   arch arm: "arm64", intel: "x86_64"
 
-  version "0.2.0a"
+  version "0.4.5"
+  # The sha256 below is the 0.2.0a pair and does not describe the 0.4.5 zips. The release job
+  # regenerates this file from the published 0.4.5 manifest (`desktop/scripts/brew-cask.ts`);
+  # never install from this entry until that commit lands. Do not rewrite the hash by hand.
   sha256 arm:   "ace9b08d7690ae09e7f384cc8ae32f0031ca84ef658611d71a0e0eaae56630d6",
          intel: "d8e38742aeccd1a2b3e18a8583e917479444405e062e7635ea63708e994f5a0a"
 

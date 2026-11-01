@@ -3,3 +3,5 @@ node_modules
 .output
 .env
 dist
+# Native Swift/Xcode sources and build/signing outputs are not SSR web inputs.
+ios

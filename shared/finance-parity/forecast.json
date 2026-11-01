@@ -1,0 +1,1084 @@
+{
+  "protocol": 1,
+  "file": "forecast",
+  "title": "Forecast reconstruction, pending events, invoices, recurrences, and simulations",
+  "cases": [
+    {
+      "id": "fcst-rollback-and-pending",
+      "purpose": "Past reconstruction, future pending events, one invoice due event, one unlaunched recurrence, and the simulation toggle in one timeline.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Savings",
+            "type": "savings",
+            "initial_balance": "200.00"
+          },
+          {
+            "id": "acc000000000003",
+            "name": "Broker",
+            "type": "investment",
+            "initial_balance": "5000.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "200.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Salary",
+            "amount": "500.00",
+            "payday": 10,
+            "type": "income",
+            "status": "active",
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "rec000000000002",
+            "name": "Rent",
+            "amount": "200.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "rec000000000003",
+            "name": "Power",
+            "amount": "150.00",
+            "payday": 22,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "realized_date": "2026-03-05T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Savings",
+            "amount": "50.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-06T00:00:00.000Z",
+            "realized_date": "2026-03-06T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000002"
+          },
+          {
+            "id": "txn000000000003",
+            "title": "Manual adjustment",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-03-07T00:00:00.000Z",
+            "realized_date": "2026-03-07T00:00:00.000Z",
+            "is_silent": true,
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "txn000000000004",
+            "title": "Groceries",
+            "amount": "200.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          },
+          {
+            "id": "txn000000000005",
+            "title": "Bonus",
+            "amount": "300.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-03-12T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "txn000000000006",
+            "title": "Utilities",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-15T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "txn000000000007",
+            "title": "Salary March",
+            "amount": "500.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          },
+          {
+            "id": "txn000000000008",
+            "title": "Rent March",
+            "amount": "200.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000002"
+          },
+          {
+            "id": "txn000000000009",
+            "title": "New laptop",
+            "amount": "40.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-18T00:00:00.000Z",
+            "is_simulated": true,
+            "account_id": "acc000000000001"
+          },
+          {
+            "id": "txn000000000010",
+            "title": "Tax bill",
+            "amount": "2000.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-25T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-25",
+          "include_simulations": false
+        },
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-25",
+          "include_simulations": true
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-25",
+            "include_simulations": false,
+            "timeline": [
+              {
+                "date": "2026-03-01",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-02",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-03",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-04",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-05",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-06",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-07",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-08",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-09",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-10",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-11",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-12",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-13",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-14",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-15",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-16",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-17",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-18",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-19",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-20",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-21",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-22",
+                "balance": "1350.00"
+              },
+              {
+                "date": "2026-03-23",
+                "balance": "1350.00"
+              },
+              {
+                "date": "2026-03-24",
+                "balance": "1350.00"
+              },
+              {
+                "date": "2026-03-25",
+                "balance": "-650.00"
+              }
+            ],
+            "upcoming_invoices": [
+              {
+                "card_id": "card00000000001",
+                "card_name": "Visa",
+                "due_date": "2026-03-20T00:00:00.000Z",
+                "amount_due": "200.00",
+                "status": "OPEN"
+              }
+            ],
+            "first_negative_date": "2026-03-25T00:00:00.000Z"
+          },
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-25",
+            "include_simulations": true,
+            "timeline": [
+              {
+                "date": "2026-03-01",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-02",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-03",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-04",
+                "balance": "1300.00"
+              },
+              {
+                "date": "2026-03-05",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-06",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-07",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-08",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-09",
+                "balance": "1200.00"
+              },
+              {
+                "date": "2026-03-10",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-11",
+                "balance": "1500.00"
+              },
+              {
+                "date": "2026-03-12",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-13",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-14",
+                "balance": "1800.00"
+              },
+              {
+                "date": "2026-03-15",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-16",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-17",
+                "balance": "1700.00"
+              },
+              {
+                "date": "2026-03-18",
+                "balance": "1660.00"
+              },
+              {
+                "date": "2026-03-19",
+                "balance": "1660.00"
+              },
+              {
+                "date": "2026-03-20",
+                "balance": "1460.00"
+              },
+              {
+                "date": "2026-03-21",
+                "balance": "1460.00"
+              },
+              {
+                "date": "2026-03-22",
+                "balance": "1310.00"
+              },
+              {
+                "date": "2026-03-23",
+                "balance": "1310.00"
+              },
+              {
+                "date": "2026-03-24",
+                "balance": "1310.00"
+              },
+              {
+                "date": "2026-03-25",
+                "balance": "-690.00"
+              }
+            ],
+            "upcoming_invoices": [
+              {
+                "card_id": "card00000000001",
+                "card_name": "Visa",
+                "due_date": "2026-03-20T00:00:00.000Z",
+                "amount_due": "200.00",
+                "status": "OPEN"
+              }
+            ],
+            "first_negative_date": "2026-03-25T00:00:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-overdue-pending",
+      "purpose": "An overdue pending expense is applied on today, 2026-03-08, without changing its stored expected date or appearing in reconstructed past days.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Overdue bill",
+            "amount": "75.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-02-20T00:00:00.000Z",
+            "account_id": "acc000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-10",
+          "include_simulations": false
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-10",
+            "include_simulations": false,
+            "timeline": [
+              {
+                "date": "2026-03-01",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-02",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-03",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-04",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-05",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-06",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-07",
+                "balance": "1000.00"
+              },
+              {
+                "date": "2026-03-08",
+                "balance": "925.00"
+              },
+              {
+                "date": "2026-03-09",
+                "balance": "925.00"
+              },
+              {
+                "date": "2026-03-10",
+                "balance": "925.00"
+              }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-investment-exclusion",
+      "purpose": "Investment accounts and their transactions never enter the forecast, leaving checking at 100.00.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "100.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Broker",
+            "type": "investment",
+            "initial_balance": "5000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Broker fee",
+            "amount": "60.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-09T00:00:00.000Z",
+            "account_id": "acc000000000002"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Dividend",
+            "amount": "500.00",
+            "type": "income",
+            "status": "realized",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "realized_date": "2026-03-05T00:00:00.000Z",
+            "account_id": "acc000000000002"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-10",
+          "include_simulations": false
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-10",
+            "include_simulations": false,
+            "timeline": [
+              {
+                "date": "2026-03-01",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-02",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-03",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-04",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-05",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-06",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-07",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-08",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-09",
+                "balance": "100.00"
+              },
+              {
+                "date": "2026-03-10",
+                "balance": "100.00"
+              }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-unassigned-pending",
+      "purpose": "Unassigned pending expenses and incomes affect aggregate cash, simulated unassigned rows enter only with include_simulations, and a realized unassigned project income never invents a historical cash movement.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [
+          {
+            "id": "prj000000000001",
+            "name": "Website",
+            "total_value": "1000.00",
+            "status": "active"
+          }
+        ],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Unassigned project payment",
+            "amount": "300.00",
+            "type": "income",
+            "status": "realized",
+            "expected_date": "2026-03-04T00:00:00.000Z",
+            "realized_date": "2026-03-04T00:00:00.000Z",
+            "project_id": "prj000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Unassigned scheduled bill",
+            "amount": "50.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "is_scheduled": true
+          },
+          {
+            "id": "txn000000000003",
+            "title": "Unassigned income",
+            "amount": "20.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-03-12T00:00:00.000Z"
+          },
+          {
+            "id": "txn000000000004",
+            "title": "Unassigned simulated expense",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-11T00:00:00.000Z",
+            "is_simulated": true
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-15",
+          "include_simulations": false
+        },
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-15",
+          "include_simulations": true
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-15",
+            "include_simulations": false,
+            "timeline": [
+              { "date": "2026-03-01", "balance": "1000.00" },
+              { "date": "2026-03-02", "balance": "1000.00" },
+              { "date": "2026-03-03", "balance": "1000.00" },
+              { "date": "2026-03-04", "balance": "1000.00" },
+              { "date": "2026-03-05", "balance": "1000.00" },
+              { "date": "2026-03-06", "balance": "1000.00" },
+              { "date": "2026-03-07", "balance": "1000.00" },
+              { "date": "2026-03-08", "balance": "1000.00" },
+              { "date": "2026-03-09", "balance": "1000.00" },
+              { "date": "2026-03-10", "balance": "950.00" },
+              { "date": "2026-03-11", "balance": "950.00" },
+              { "date": "2026-03-12", "balance": "970.00" },
+              { "date": "2026-03-13", "balance": "970.00" },
+              { "date": "2026-03-14", "balance": "970.00" },
+              { "date": "2026-03-15", "balance": "970.00" }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          },
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-15",
+            "include_simulations": true,
+            "timeline": [
+              { "date": "2026-03-01", "balance": "1000.00" },
+              { "date": "2026-03-02", "balance": "1000.00" },
+              { "date": "2026-03-03", "balance": "1000.00" },
+              { "date": "2026-03-04", "balance": "1000.00" },
+              { "date": "2026-03-05", "balance": "1000.00" },
+              { "date": "2026-03-06", "balance": "1000.00" },
+              { "date": "2026-03-07", "balance": "1000.00" },
+              { "date": "2026-03-08", "balance": "1000.00" },
+              { "date": "2026-03-09", "balance": "1000.00" },
+              { "date": "2026-03-10", "balance": "950.00" },
+              { "date": "2026-03-11", "balance": "920.00" },
+              { "date": "2026-03-12", "balance": "940.00" },
+              { "date": "2026-03-13", "balance": "940.00" },
+              { "date": "2026-03-14", "balance": "940.00" },
+              { "date": "2026-03-15", "balance": "940.00" }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-overdue-invoice-past",
+      "purpose": "An unpaid invoice due before today is projected on today and never deducted from reconstructed past days, and its stored due date is unchanged.",
+      "clock": {
+        "now": "2026-03-15T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 25,
+            "due_day": 10,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-10T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "200.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "200.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-02-20T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-20",
+          "include_simulations": false
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-20",
+            "include_simulations": false,
+            "timeline": [
+              { "date": "2026-03-01", "balance": "1000.00" },
+              { "date": "2026-03-02", "balance": "1000.00" },
+              { "date": "2026-03-03", "balance": "1000.00" },
+              { "date": "2026-03-04", "balance": "1000.00" },
+              { "date": "2026-03-05", "balance": "1000.00" },
+              { "date": "2026-03-06", "balance": "1000.00" },
+              { "date": "2026-03-07", "balance": "1000.00" },
+              { "date": "2026-03-08", "balance": "1000.00" },
+              { "date": "2026-03-09", "balance": "1000.00" },
+              { "date": "2026-03-10", "balance": "1000.00" },
+              { "date": "2026-03-11", "balance": "1000.00" },
+              { "date": "2026-03-12", "balance": "1000.00" },
+              { "date": "2026-03-13", "balance": "1000.00" },
+              { "date": "2026-03-14", "balance": "1000.00" },
+              { "date": "2026-03-15", "balance": "800.00" },
+              { "date": "2026-03-16", "balance": "800.00" },
+              { "date": "2026-03-17", "balance": "800.00" },
+              { "date": "2026-03-18", "balance": "800.00" },
+              { "date": "2026-03-19", "balance": "800.00" },
+              { "date": "2026-03-20", "balance": "800.00" }
+            ],
+            "upcoming_invoices": [
+              {
+                "card_id": "card00000000001",
+                "card_name": "Visa",
+                "due_date": "2026-03-10T00:00:00.000Z",
+                "amount_due": "200.00",
+                "status": "CLOSED"
+              }
+            ],
+            "first_negative_date": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-transfer-to-investment",
+      "purpose": "A transfer from a liquid account into an investment account moves liquid cash by only the liquid side, and investment rows never enter the liquid forecast.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "800.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Broker",
+            "type": "investment",
+            "initial_balance": "5200.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Dividend",
+            "amount": "500.00",
+            "type": "income",
+            "status": "realized",
+            "expected_date": "2026-03-02T00:00:00.000Z",
+            "realized_date": "2026-03-02T00:00:00.000Z",
+            "account_id": "acc000000000002"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Move to broker",
+            "amount": "200.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "realized_date": "2026-03-05T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000002"
+          },
+          {
+            "id": "txn000000000003",
+            "title": "Broker fee",
+            "amount": "60.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-11T00:00:00.000Z",
+            "account_id": "acc000000000002"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-03-01",
+          "end_date": "2026-03-12",
+          "include_simulations": false
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-12",
+            "include_simulations": false,
+            "timeline": [
+              { "date": "2026-03-01", "balance": "1000.00" },
+              { "date": "2026-03-02", "balance": "1000.00" },
+              { "date": "2026-03-03", "balance": "1000.00" },
+              { "date": "2026-03-04", "balance": "1000.00" },
+              { "date": "2026-03-05", "balance": "800.00" },
+              { "date": "2026-03-06", "balance": "800.00" },
+              { "date": "2026-03-07", "balance": "800.00" },
+              { "date": "2026-03-08", "balance": "800.00" },
+              { "date": "2026-03-09", "balance": "800.00" },
+              { "date": "2026-03-10", "balance": "800.00" },
+              { "date": "2026-03-11", "balance": "800.00" },
+              { "date": "2026-03-12", "balance": "800.00" }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "fcst-weekly-occurrences",
+      "purpose": "A weekly expense projects one event per ISO week inside the horizon and skips the occurrence already launched in the current week.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Power",
+            "amount": "30.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Power - 2026-11-03",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "realized",
+            "expected_date": "2026-11-03T00:00:00.000Z",
+            "purchase_date": "2026-11-03T00:00:00.000Z",
+            "realized_date": "2026-11-03T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "forecast.generate",
+          "start_date": "2026-11-04",
+          "end_date": "2026-12-03",
+          "include_simulations": false
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "forecast",
+            "start_date": "2026-11-04",
+            "end_date": "2026-12-03",
+            "include_simulations": false,
+            "timeline": [
+              { "date": "2026-11-04", "balance": "1000.00" },
+              { "date": "2026-11-05", "balance": "1000.00" },
+              { "date": "2026-11-06", "balance": "1000.00" },
+              { "date": "2026-11-07", "balance": "1000.00" },
+              { "date": "2026-11-08", "balance": "1000.00" },
+              { "date": "2026-11-09", "balance": "1000.00" },
+              { "date": "2026-11-10", "balance": "970.00" },
+              { "date": "2026-11-11", "balance": "970.00" },
+              { "date": "2026-11-12", "balance": "970.00" },
+              { "date": "2026-11-13", "balance": "970.00" },
+              { "date": "2026-11-14", "balance": "970.00" },
+              { "date": "2026-11-15", "balance": "970.00" },
+              { "date": "2026-11-16", "balance": "970.00" },
+              { "date": "2026-11-17", "balance": "940.00" },
+              { "date": "2026-11-18", "balance": "940.00" },
+              { "date": "2026-11-19", "balance": "940.00" },
+              { "date": "2026-11-20", "balance": "940.00" },
+              { "date": "2026-11-21", "balance": "940.00" },
+              { "date": "2026-11-22", "balance": "940.00" },
+              { "date": "2026-11-23", "balance": "940.00" },
+              { "date": "2026-11-24", "balance": "910.00" },
+              { "date": "2026-11-25", "balance": "910.00" },
+              { "date": "2026-11-26", "balance": "910.00" },
+              { "date": "2026-11-27", "balance": "910.00" },
+              { "date": "2026-11-28", "balance": "910.00" },
+              { "date": "2026-11-29", "balance": "910.00" },
+              { "date": "2026-11-30", "balance": "910.00" },
+              { "date": "2026-12-01", "balance": "880.00" },
+              { "date": "2026-12-02", "balance": "880.00" },
+              { "date": "2026-12-03", "balance": "880.00" }
+            ],
+            "upcoming_invoices": [],
+            "first_negative_date": null
+          }
+        ]
+      }
+    }
+  ]
+}

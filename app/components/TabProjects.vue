@@ -18,25 +18,42 @@ const paymentModal = ref<{ open: boolean; projectId: string; projectName: string
 const paymentAmount = ref<number>()
 const paymentDesc = ref('')
 const isSubmitting = ref(false)
+const paymentError = ref<string | null>(null)
 const isFinishing = ref<string | null>(null)
+const finishError = ref<string | null>(null)
+const failedFinishId = ref<string | null>(null)
 
 async function finishProject(id: string) {
+  if (isFinishing.value) return
   isFinishing.value = id
+  finishError.value = null
+  failedFinishId.value = null
   try {
     const res = await api.api.projects({ id }).complete.patch()
     if (res.error) throw res.error
     await financeStore.loadBaseData(true)
   } catch (err) {
     console.error('Erro ao finalizar projeto', err)
+    finishError.value = 'The project could not be finished. Check your connection and retry.'
+    failedFinishId.value = id
   } finally {
     isFinishing.value = null
   }
+}
+
+function retryFinish() {
+  if (failedFinishId.value) finishProject(failedFinishId.value)
+}
+
+function retryBaseData() {
+  financeStore.loadBaseData(true)
 }
 
 function openPayment(project: any) {
   paymentModal.value = { open: true, projectId: project.id, projectName: project.name }
   paymentAmount.value = undefined
   paymentDesc.value = ''
+  paymentError.value = null
 }
 
 function closePayment() {
@@ -44,8 +61,10 @@ function closePayment() {
 }
 
 async function submitPayment() {
+  if (isSubmitting.value) return
   if (!paymentAmount.value) return
   isSubmitting.value = true
+  paymentError.value = null
   try {
     const res = await api.api.projects({ id: paymentModal.value.projectId }).payment.post({
       amount: paymentAmount.value,
@@ -53,9 +72,11 @@ async function submitPayment() {
     })
     if (res.error) throw res.error
     await financeStore.loadBaseData(true)
+    isSubmitting.value = false
     closePayment()
   } catch (err) {
     console.error('Erro ao registrar pagamento', err)
+    paymentError.value = 'The payment could not be recorded. Your values are still here; adjust and retry.'
   } finally {
     isSubmitting.value = false
   }
@@ -74,7 +95,52 @@ function receivedPercent(received: number, total: number) {
       <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Projeto" class="w-full sm:w-auto justify-center" @click="projectModal?.open()" />
     </div>
 
-    <div v-if="!activeProjects?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
+    <UAlert
+      v-if="financeStore.loadError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="soft"
+      title="Financial data could not be fully loaded"
+      :description="financeStore.loadError"
+    >
+      <template #actions>
+        <UButton
+          label="Retry"
+          icon="i-heroicons-arrow-path"
+          color="red"
+          size="sm"
+          :loading="financeStore.isLoading"
+          @click="retryBaseData"
+        />
+      </template>
+    </UAlert>
+
+    <UAlert
+      v-if="finishError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="soft"
+      title="Could not finish project"
+      :description="finishError"
+    >
+      <template #actions>
+        <UButton
+          label="Retry"
+          icon="i-heroicons-arrow-path"
+          color="red"
+          size="sm"
+          :loading="isFinishing !== null"
+          @click="retryFinish"
+        />
+      </template>
+    </UAlert>
+
+    <div v-if="financeStore.isLoading && !projects.length" class="space-y-3" aria-busy="true">
+      <USkeleton class="h-28 w-full rounded-xl bg-zinc-800" />
+      <USkeleton class="h-28 w-full rounded-xl bg-zinc-800" />
+    </div>
+
+    <div v-else-if="!activeProjects?.length && !financeStore.loadError && !financeStore.isLoading" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
       <UIcon name="i-heroicons-briefcase" class="w-10 h-10" />
       <p>Nenhum projeto ativo no momento.</p>
     </div>
@@ -99,6 +165,7 @@ function receivedPercent(received: number, total: number) {
               variant="solid"
               label="Finalizar"
               :loading="isFinishing === project.id"
+              :disabled="isFinishing !== null && isFinishing !== project.id"
               @click="finishProject(project.id)"
             />
             <UButton
@@ -162,18 +229,27 @@ function receivedPercent(received: number, total: number) {
     </div>
 
     <!-- Modal de Pagamento -->
-    <UModal v-model="paymentModal.open">
+    <UModal v-model="paymentModal.open" :prevent-close="isSubmitting">
       <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }">
         <template #header>
           <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold text-white">
               Dar Baixa — {{ paymentModal.projectName }}
             </h3>
-            <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" @click="closePayment" />
+            <UButton color="gray" variant="ghost" icon="i-heroicons-x-mark" class="-my-1" aria-label="Close payment form" :disabled="isSubmitting" @click="closePayment" />
           </div>
         </template>
 
         <form @submit.prevent="submitPayment" class="space-y-4">
+          <UAlert
+            v-if="paymentError"
+            icon="i-heroicons-exclamation-triangle"
+            color="red"
+            variant="soft"
+            title="Payment not recorded"
+            :description="paymentError"
+          />
+
           <UFormGroup label="Valor recebido (R$)">
             <UInput v-model="paymentAmount" type="text" placeholder="0.00" autofocus />
           </UFormGroup>
@@ -181,7 +257,7 @@ function receivedPercent(received: number, total: number) {
             <UInput v-model="paymentDesc" placeholder="Ex: 1ª parcela, entrega final..." />
           </UFormGroup>
           <div class="flex flex-wrap justify-end gap-3 pt-2">
-            <UButton label="Cancelar" variant="ghost" color="gray" @click="closePayment" />
+            <UButton label="Cancelar" variant="ghost" color="gray" :disabled="isSubmitting" @click="closePayment" />
             <UButton type="submit" label="Confirmar Recebimento" color="emerald" :loading="isSubmitting" />
           </div>
         </form>

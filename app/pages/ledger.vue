@@ -4,7 +4,7 @@ import { formatCurrency, formatDate } from '../utils/formatters'
 import { api } from '../utils/api'
 import { useFinanceStore } from '../stores/finance'
 import { useTransactionEdit } from '../composables/useTransactionEdit'
-import type { Transaction } from '../../server/src/domain/entities/Transaction'
+import type { TransactionUpdatePatch } from '../../server/src/domain/entities/Transaction'
 import type { TransactionListItem, TransactionQueryFilters, TransactionSummary } from '../../server/src/domain/interfaces/TransactionQuery'
 
 type LedgerSortField = 'expected_date' | 'realized_date' | 'amount' | 'created'
@@ -390,26 +390,36 @@ async function confirmRealityConversion() {
 
   isConverting.value = true;
   try {
-    const payload: Partial<Transaction> = {
+    const base: TransactionUpdatePatch = {
       is_simulated: false,
       status: 'pending'
     };
+    let payload: TransactionUpdatePatch;
 
     if (transaction.type === 'transfer') {
-      payload.account_id = targetAccountId.value;
-      payload.destination_account_id = destinationId.value;
-      payload.status = 'realized';
-      payload.realized_date = new Date().toISOString();
+      payload = {
+        ...base,
+        account_id: targetAccountId.value,
+        destination_account_id: destinationId.value,
+        card_id: null,
+        status: 'realized',
+        realized_date: new Date().toISOString()
+      };
     } else if (conversionSource.value === 'account') {
-      payload.account_id = targetAccountId.value;
-      payload.card_id = '';
-      if (transaction.type === 'expense') {
-        payload.status = 'realized';
-        payload.realized_date = new Date().toISOString();
-      }
+      payload = {
+        ...base,
+        account_id: targetAccountId.value,
+        card_id: null,
+        ...(transaction.type === 'expense'
+          ? { status: 'realized' as const, realized_date: new Date().toISOString() }
+          : {})
+      };
     } else {
-      payload.card_id = targetCardId.value;
-      payload.account_id = '';
+      payload = {
+        ...base,
+        card_id: targetCardId.value,
+        account_id: null
+      };
     }
 
     const res = await api.api.transactions({ id: transaction.id }).patch(payload);

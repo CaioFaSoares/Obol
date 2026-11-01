@@ -55,9 +55,9 @@ These invariants are non-negotiable in every new dashboard surface, including th
 5. **Silent realize exists and is honored.** `update_balance = false` = "already moved manually": no balance mutation; shows in the surface that no balance was touched (canon §4, `is_silent: true` badge).
 6. **Edit is financial (canon §4).** Editing reverts the old effect before applying the new one, including invoice total and balance changes. The surface must not pre-estimate the new balance client-side; it refetches on `triggerRefresh()`.
 7. **Invoices route, never realize inline (canon §5).** Virtual invoice rows in pending lists are *due amounts* computed from `total_amount − paid_amount` and projected recurrence rows — not standalone transactions. Their action routes to the cards module for `PayInvoiceUseCase`; the dashboard never debits an account for an invoice payment.
-8. **Today-edge consistency.** The "current" balance and the timeline point for today come from the same forecast pass (§7 does not double-count snapshot + events). Balance cards and calendar must agree on that boundary for the same `includeSimulations` and range settings.
+8. **Today-edge consistency (canon §13.1).** The "current" balance is the actual cash snapshot: the sum of current non-investment account balances. The forecast timeline is end-of-day cash: past days reconstruct realized non-silent effects, and today/future include projected obligations. The balance card and the calendar's today cell are therefore consistent only when today has no projected obligations; when they differ, the difference must equal today's projected events for the same `includeSimulations` and range settings. Both surfaces state current vs projected explicitly. Never rewrite the cash snapshot to force equality.
 9. **Currency rendering.** All amounts flow through the shared formatters (`formatCurrency`, `parseCurrencyInput`); values render in mono font, sign- and type-colored per the baseline list styling (signed `expense`/`income`, neutral `transfer`, red/emerald at the balance level).
-10. **RoundCurrency.** Every monetary computation on the server goes through `roundCurrency`; the frontend never invents its own rounding on currency display or accumulation.
+10. **RoundCurrency (canon §13.5).** Every monetary computation on the server goes through `roundCurrency`, which rounds an exact half toward positive infinity (`1.005 → 1.01`, `10.075 → 10.08`); the frontend never invents its own rounding on currency display or accumulation.
 
 ## UX acceptance criteria
 
@@ -114,7 +114,7 @@ The checklist records remaining acceptance verification against the running app 
 - [ ] A transfer row renders in neutral color and does not add to money totals (guardrail 4).
 - [ ] Editing from a row opens the shared edit modal; cancel leaves balances and lists untouched; a real edit reflects in chart + calendar + lists after refetch (guardrail 6, R15, R6).
 - [ ] An invoice row routes to the card module pre-scoped to that card and performs the payment there, not in this page (guardrail 7, R16).
-- [ ] Balance card and calendar agree on "today's" balance for the same `includeSimulations` (guardrail 8).
+- [ ] Balance card shows the actual non-investment cash snapshot and the calendar's today cell shows the end-of-day projection; any difference equals today's projected obligations for the same `includeSimulations`, and both are labeled current vs projected (guardrail 8, canon §13.1).
 - [ ] All amounts in lists, modal and calendar respect `formatCurrency` and mono/type coloring (R7, guardrail 9).
 - [ ] Skeletons replace content during forecast load, then content appears with no layout jump (R3).
 - [ ] Stopping the server produces the destructive alert (not a blank screen) on the main page; toggling range back recovers (R4, R6).

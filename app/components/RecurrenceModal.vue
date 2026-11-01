@@ -6,10 +6,14 @@ import { useFinanceStore } from '../stores/finance'
 const { isOpen, close, recurrenceToEdit } = useRecurrenceModal()
 const financeStore = useFinanceStore()
 
+type RecurrenceFrequency = 'monthly' | 'weekly'
+
 const isSubmitting = ref(false)
 const name = ref('')
 const amount = ref<number>()
 const payday = ref<number>(1)
+const frequency = ref<RecurrenceFrequency>('monthly')
+const weekday = ref<number>(1)
 const type = ref<'income' | 'expense'>('expense')
 const source = ref<'account' | 'card'>('account')
 const accountId = ref('')
@@ -18,6 +22,11 @@ const categoryId = ref('')
 const endDate = ref('')
 const isInstallment = ref(false)
 const totalInstallments = ref<number>()
+
+/** ISO weekday 1..7 (Monday = 1); anything else falls back to Monday. */
+function isIsoWeekday(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7
+}
 
 watch(type, (newType) => {
   if (newType === 'income' && source.value === 'card') {
@@ -30,6 +39,8 @@ watch(recurrenceToEdit, (val) => {
     name.value = val.name
     amount.value = val.amount
     payday.value = val.payday
+    frequency.value = val.frequency === 'weekly' ? 'weekly' : 'monthly'
+    weekday.value = isIsoWeekday(val.weekday) ? val.weekday : 1
     type.value = val.type
     if (val.card_id) {
       source.value = 'card'
@@ -51,6 +62,8 @@ watch(recurrenceToEdit, (val) => {
     name.value = ''
     amount.value = undefined
     payday.value = 1
+    frequency.value = 'monthly'
+    weekday.value = 1
     type.value = 'expense'
     source.value = 'account'
     accountId.value = ''
@@ -64,29 +77,117 @@ watch(recurrenceToEdit, (val) => {
 
 const emit = defineEmits<{ created: [] }>()
 
+/**
+ * Update body built from the editable form fields.
+ *
+ * An omitted field keeps the stored value and `null` clears it. The wire
+ * contract allows a readonly `skipped_periods` list, but this modal never edits
+ * skipped periods, so it is omitted here (preserved server-side) instead of
+ * being echoed back as a mutable default.
+ */
+interface RecurrenceFormPatch {
+  name: string
+  amount: number
+  payday: number
+  frequency: RecurrenceFrequency
+  weekday: number | null
+  type: 'income' | 'expense'
+  account_id: string | null
+  card_id: string | null
+  category_id: string | null
+  end_date: string | null
+  total_installments?: number | null
+}
+
+/**
+ * Switching origin clears the other relation explicitly, and an emptied end
+ * date or a disabled installment plan clears those fields instead of
+ * preserving stale values. Create requests omit unset fields and never send
+ * null.
+ *
+ * A monthly cadence clears `weekday` with `null` so a row switched back from
+ * weekly does not keep a stored ISO weekday.
+ */
+function buildUpdatePatch(input: {
+  name: string
+  amount: number
+  payday: number
+  frequency: RecurrenceFrequency
+  weekday: number
+  type: 'income' | 'expense'
+  source: 'account' | 'card'
+  accountId: string
+  cardId: string
+  categoryId: string
+  endDate: string
+  isInstallment: boolean
+  totalInstallments: number | undefined
+}): RecurrenceFormPatch {
+  const base: RecurrenceFormPatch = {
+    name: input.name,
+    amount: input.amount,
+    payday: input.payday,
+    frequency: input.frequency,
+    weekday: input.frequency === 'weekly' ? input.weekday : null,
+    type: input.type,
+    account_id: input.source === 'account' ? input.accountId || null : null,
+    card_id: input.source === 'card' ? input.cardId || null : null,
+    category_id: input.categoryId || null,
+    end_date: input.endDate || null
+  }
+  if (!input.isInstallment) {
+    return { ...base, total_installments: null }
+  }
+  if (input.totalInstallments !== undefined) {
+    return { ...base, total_installments: input.totalInstallments }
+  }
+  return base
+}
+
 async function submit() {
   if (!name.value || !amount.value || !payday.value) return
+  if (frequency.value === 'weekly' && !isIsoWeekday(weekday.value)) return
   isSubmitting.value = true
   try {
-    const payload: any = {
-      name: name.value,
-      amount: parseCurrencyInput(amount.value),
-      payday: Number(payday.value),
-      type: type.value,
-    }
-    if (source.value === 'account' && accountId.value) payload.account_id = accountId.value
-    if (source.value === 'card' && cardId.value) payload.card_id = cardId.value
-    if (categoryId.value) payload.category_id = categoryId.value
-    if (endDate.value) payload.end_date = endDate.value
-    if (isInstallment.value && totalInstallments.value && totalInstallments.value > 0) {
-      payload.total_installments = Number(totalInstallments.value)
-    }
+    const amountValue = parseCurrencyInput(amount.value ?? 0)
+    const totalInstallmentsValue =
+      isInstallment.value && totalInstallments.value && totalInstallments.value > 0
+        ? Number(totalInstallments.value)
+        : undefined
 
     if (recurrenceToEdit.value) {
-      const res = await api.api.recurrences({ id: recurrenceToEdit.value.id }).put(payload)
+      const patch = buildUpdatePatch({
+        name: name.value,
+        amount: amountValue,
+        payday: Number(payday.value),
+        frequency: frequency.value,
+        weekday: weekday.value,
+        type: type.value,
+        source: source.value,
+        accountId: accountId.value,
+        cardId: cardId.value,
+        categoryId: categoryId.value,
+        endDate: endDate.value,
+        isInstallment: isInstallment.value,
+        totalInstallments: totalInstallmentsValue
+      })
+      const res = await api.api.recurrences({ id: recurrenceToEdit.value.id }).put(patch)
       if (res.error) throw res.error
     } else {
-      const res = await api.api.recurrences.post(payload)
+      const createBody = {
+        name: name.value,
+        amount: amountValue,
+        payday: Number(payday.value),
+        frequency: frequency.value,
+        ...(frequency.value === 'weekly' ? { weekday: Number(weekday.value) } : {}),
+        type: type.value,
+        ...(source.value === 'account' && accountId.value ? { account_id: accountId.value } : {}),
+        ...(source.value === 'card' && cardId.value ? { card_id: cardId.value } : {}),
+        ...(categoryId.value ? { category_id: categoryId.value } : {}),
+        ...(endDate.value ? { end_date: endDate.value } : {}),
+        ...(totalInstallmentsValue !== undefined ? { total_installments: totalInstallmentsValue } : {})
+      }
+      const res = await api.api.recurrences.post(createBody)
       if (res.error) throw res.error
     }
     emit('created')
@@ -99,6 +200,22 @@ async function submit() {
 }
 
 const paydayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `Dia ${i + 1}`, value: i + 1 }))
+
+const frequencyOptions: Array<{ label: string; value: RecurrenceFrequency }> = [
+  { label: 'Mensal', value: 'monthly' },
+  { label: 'Semanal', value: 'weekly' }
+]
+
+/** ISO weekdays, Monday = 1 through Sunday = 7. */
+const weekdayOptions: Array<{ label: string; value: number }> = [
+  { label: 'Segunda', value: 1 },
+  { label: 'Terça', value: 2 },
+  { label: 'Quarta', value: 3 },
+  { label: 'Quinta', value: 4 },
+  { label: 'Sexta', value: 5 },
+  { label: 'Sábado', value: 6 },
+  { label: 'Domingo', value: 7 }
+]
 
 const accountOptions = computed(() => {
   return financeStore.accounts.map(a => ({ label: a.name, value: a.id }))
@@ -142,10 +259,21 @@ const categoryOptions = computed(() => {
             </div>
           </UFormGroup>
 
-          <UFormGroup label="Dia de cobrança">
-            <USelect v-model="payday" :options="paydayOptions" />
+          <UFormGroup label="Periodicidade">
+            <USelect v-model="frequency" :options="frequencyOptions" />
           </UFormGroup>
         </div>
+
+        <UFormGroup v-if="frequency === 'monthly'" label="Dia de cobrança">
+          <USelect v-model="payday" :options="paydayOptions" />
+        </UFormGroup>
+
+        <UFormGroup v-else label="Dia da semana">
+          <USelect v-model="weekday" :options="weekdayOptions" />
+          <p v-if="recurrenceToEdit && recurrenceToEdit.frequency !== 'weekly'" class="text-xs text-zinc-500 mt-1">
+            Salvar como Semanal pode gerar ocorrências semanais já neste mês.
+          </p>
+        </UFormGroup>
 
         <UFormGroup label="Origem/Destino">
           <div class="flex flex-wrap gap-4 mt-1">

@@ -1,0 +1,186 @@
+{
+  "protocol": 1,
+  "file": "budgets",
+  "title": "Accrual budgets by category",
+  "cases": [
+    {
+      "id": "budget-accrual",
+      "purpose": "March budgets count card purchases on purchase_date, ignore an out-of-month purchase_date, include the last millisecond of the month, include simulations, and subtract incomes.",
+      "clock": {
+        "now": "2026-03-15T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          },
+          {
+            "id": "acc000000000002",
+            "name": "Savings",
+            "type": "savings",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [
+          {
+            "id": "cat000000000001",
+            "name": "Food",
+            "type": "fixed_budget",
+            "monthly_budget": "350.00"
+          },
+          {
+            "id": "cat000000000002",
+            "name": "Trip",
+            "type": "variable",
+            "monthly_budget": "100.00"
+          },
+          {
+            "id": "cat000000000003",
+            "name": "Salary",
+            "type": "variable"
+          }
+        ],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-04",
+            "due_date": "2026-04-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "120.50"
+          },
+          {
+            "id": "inv000000000002",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "200.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "120.50",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-04-20T00:00:00.000Z",
+            "purchase_date": "2026-03-20T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "category_id": "cat000000000001",
+            "invoice_id": "inv000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Refund",
+            "amount": "50.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "category_id": "cat000000000001"
+          },
+          {
+            "id": "txn000000000003",
+            "title": "Utilities",
+            "amount": "300.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-31T23:59:59.999Z",
+            "account_id": "acc000000000001",
+            "category_id": "cat000000000001"
+          },
+          {
+            "id": "txn000000000004",
+            "title": "New chair",
+            "amount": "40.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "is_simulated": true,
+            "account_id": "acc000000000001",
+            "category_id": "cat000000000001"
+          },
+          {
+            "id": "txn000000000005",
+            "title": "Old trip",
+            "amount": "200.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "purchase_date": "2026-02-28T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "category_id": "cat000000000002",
+            "invoice_id": "inv000000000002"
+          },
+          {
+            "id": "txn000000000006",
+            "title": "Salary March",
+            "amount": "1000.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "category_id": "cat000000000003"
+          },
+          {
+            "id": "txn000000000007",
+            "title": "Move",
+            "amount": "500.00",
+            "type": "transfer",
+            "status": "realized",
+            "expected_date": "2026-03-06T00:00:00.000Z",
+            "realized_date": "2026-03-06T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "destination_account_id": "acc000000000002"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "budget.summaries"
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "budgets",
+            "as_of": "2026-03-15T12:00:00.000Z",
+            "categories": [
+              {
+                "category_id": "cat000000000001",
+                "monthly_budget": "350.00",
+                "spent": "410.50"
+              },
+              {
+                "category_id": "cat000000000002",
+                "monthly_budget": "100.00",
+                "spent": "0.00"
+              },
+              {
+                "category_id": "cat000000000003",
+                "monthly_budget": "0.00",
+                "spent": "-1000.00"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

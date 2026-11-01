@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-const { data: budgets, refresh } = await useAsyncData('budgets', async () => {
+const { data: budgets, pending, error, refresh } = await useAsyncData('budgets', async () => {
   const res = await api.api.categories.budgets.get()
   if (res.error) throw res.error
   return (res.data as any[]) ?? []
@@ -26,15 +26,51 @@ const budgetModal = ref()
   <div class="space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-zinc-400 min-w-0">Monitoramento dos seus "potes" de orçamento mensal.</p>
-      <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Orçamento" class="w-full sm:w-auto justify-center" @click="budgetModal?.open()" />
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <UIcon
+          v-if="pending && budgets?.length"
+          name="i-heroicons-arrow-path"
+          class="w-4 h-4 animate-spin text-primary shrink-0"
+          aria-hidden="true"
+        />
+        <span v-if="pending && budgets?.length" class="sr-only" role="status">Refreshing budgets</span>
+        <UButton icon="i-heroicons-plus" size="sm" color="primary" label="Novo Orçamento" class="w-full sm:w-auto justify-center" @click="budgetModal?.open()" />
+      </div>
     </div>
 
-    <div v-if="!budgets?.length" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
-      <UIcon name="i-heroicons-chart-bar" class="w-10 h-10" />
-      <p>Nenhuma categoria de gastos cadastrada.</p>
+    <div v-if="pending && !budgets" class="space-y-3" aria-busy="true">
+      <USkeleton class="h-20 w-full rounded-xl bg-zinc-800" />
+      <USkeleton class="h-20 w-full rounded-xl bg-zinc-800" />
+      <USkeleton class="h-20 w-full rounded-xl bg-zinc-800" />
     </div>
 
-    <ul v-else class="space-y-4">
+    <template v-else>
+      <UAlert
+        v-if="error"
+        icon="i-heroicons-exclamation-triangle"
+        color="red"
+        variant="soft"
+        title="Could not load budgets"
+        description="The budget list could not be fetched. Check your connection and try again."
+      >
+        <template #actions>
+          <UButton
+            label="Retry"
+            icon="i-heroicons-arrow-path"
+            color="red"
+            size="sm"
+            :loading="pending"
+            @click="refresh()"
+          />
+        </template>
+      </UAlert>
+
+      <div v-if="!budgets?.length && !error" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
+        <UIcon name="i-heroicons-chart-bar" class="w-10 h-10" />
+        <p>Nenhuma categoria de gastos cadastrada.</p>
+      </div>
+
+      <ul v-else-if="budgets?.length" class="space-y-4">
       <li
         v-for="cat in budgets"
         :key="cat.id"
@@ -82,6 +118,7 @@ const budgetModal = ref()
         </template>
       </li>
     </ul>
+    </template>
 
     <!-- Modal -->
     <BudgetModal ref="budgetModal" @created="refresh" />

@@ -4,6 +4,7 @@
 // rate-limit windows.
 import { describe, expect, test } from 'bun:test';
 import type PocketBase from 'pocketbase';
+import { ClientResponseError } from 'pocketbase';
 import { Elysia } from 'elysia';
 import { createServer } from '../src/index';
 import type { RemoteServerAuth } from '../src/index';
@@ -39,6 +40,8 @@ type FakePb = {
   authStore: { token: string; record: { id: string; email: string } };
   collection(name: string): unknown;
   collection(name: string, source: 'credentials'): unknown;
+  createBatch(): unknown;
+  filter(raw: string, params?: Record<string, unknown>): string;
 };
 
 const FIXED_INSTANT_MS = 1_760_000_000_000;
@@ -50,10 +53,73 @@ const PB_RESET_TOKEN = 'pb-password-reset-token-fixed';
 
 /** PocketBase-shaped response error thrown by the SDK boundary. */
 function pbError(status: number, message: string) {
-  return Object.assign(new Error(message), {
+  return new ClientResponseError({
     status,
-    response: { message },
-    name: `ClientResponseError ${status}`,
+    url: '',
+    response: { code: status, message },
+    originalError: new Error(message),
+  });
+}
+
+/** Minimal PocketBase filter evaluation for the fake's real query shapes. */
+function matchesFilter(record: FakeRecord, filter: string | undefined): boolean {
+  if (!filter) return true;
+  const clauses = [...filter.matchAll(
+    /([A-Za-z0-9_]+)\s*(=|!=|>=|<=|>|<)\s*('(?:[^'\\]|\\.)*'|-?\d+(?:\.\d+)?|true|false|null)/g,
+  )];
+  if (clauses.length === 0) return true;
+  const evaluate = (match: RegExpMatchArray): boolean => {
+    const field = match[1]!;
+    const operator = match[2]!;
+    const raw = match[3]!;
+    const actual = record[field];
+    const expected =
+      raw.startsWith("'")
+        ? raw.slice(1, -1).replace(/\\'/g, "'")
+        : raw === 'null'
+          ? null
+          : raw === 'true'
+            ? true
+            : raw === 'false'
+              ? false
+              : Number(raw);
+    if (operator === '=') return actual === expected;
+    if (operator === '!=') return actual !== expected;
+    const left = actual as number | string;
+    const right = expected as number | string;
+    if (operator === '>') return left > right;
+    if (operator === '<') return left < right;
+    if (operator === '>=') return left >= right;
+    return left <= right;
+  };
+  const statusClauses = clauses.filter((match) => match[1] === 'status');
+  const otherClauses = clauses.filter((match) => match[1] !== 'status');
+  return (
+    otherClauses.every(evaluate) &&
+    (statusClauses.length === 0 || statusClauses.some(evaluate))
+  );
+}
+
+function sortRecords(
+  records: FakeRecord[],
+  sort: string | undefined,
+): FakeRecord[] {
+  if (!sort) return records;
+  const segments = sort.split(',').map((segment) => {
+    const name = segment.trim();
+    return { field: name.replace(/^[+-]/, ''), descending: name.startsWith('-') };
+  });
+  return [...records].sort((left, right) => {
+    for (const segment of segments) {
+      const a = left[segment.field];
+      const b = right[segment.field];
+      const order =
+        typeof a === 'number' && typeof b === 'number'
+          ? a - b
+          : String(a ?? '').localeCompare(String(b ?? ''));
+      if (order !== 0) return segment.descending ? -order : order;
+    }
+    return 0;
   });
 }
 
@@ -73,6 +139,14 @@ function createFakePb(
     lastSessionListSort: undefined as string | undefined,
   };
   let idCounter = 1;
+  const stores = new Map<string, FakeRecord[]>();
+  const storeOf = (name: string): FakeRecord[] => {
+    const existing = stores.get(name);
+    if (existing) return existing;
+    const created: FakeRecord[] = [];
+    stores.set(name, created);
+    return created;
+  };
 
   if (seed.owner) {
     ownerRecords.push({
@@ -202,12 +276,59 @@ function createFakePb(
       };
     }
 
-    // Generic base collections (accounts, transactions, invoices, ...) used by
-    // legacy-mode use cases and by the probe business route below.
-    const genericRecords: FakeRecord[] = [];
+    // Generic base collections (accounts, transactions, invoices, ... and the
+    // sync metadata ledger) keep one persistent store per collection.
+    const genericRecords = storeOf(name);
+    const createRecord = (data: Record<string, unknown>): FakeRecord => {
+      const record: FakeRecord = {
+        ...data,
+        id: typeof data.id === 'string' ? data.id : `${name}_${idCounter++}`,
+      } as unknown as FakeRecord;
+      genericRecords.push(record);
+      return { ...record };
+    };
+    const updateRecord = (id: string, data: Record<string, unknown>): FakeRecord => {
+      const record = genericRecords.find((candidate) => candidate.id === id);
+      if (!record) throw pbError(404, 'Missing record.');
+      Object.assign(record, data);
+      return { ...record };
+    };
+    const deleteRecord = (id: string): true => {
+      const at = genericRecords.findIndex((candidate) => candidate.id === id);
+      if (at === -1) throw pbError(404, 'Missing record.');
+      genericRecords.splice(at, 1);
+      return true;
+    };
     return {
-      async getFullList() {
-        return genericRecords.map((record) => ({ ...record }));
+      async getFullList(options?: { sort?: string; filter?: string }) {
+        const rows = genericRecords
+          .filter((record) => matchesFilter(record, options?.filter))
+          .map((record) => ({ ...record }));
+        return sortRecords(rows, options?.sort);
+      },
+      async getList(
+        page: number,
+        perPage: number,
+        options?: { sort?: string; filter?: string },
+      ) {
+        const all = sortRecords(
+          genericRecords
+            .filter((record) => matchesFilter(record, options?.filter))
+            .map((record) => ({ ...record })),
+          options?.sort,
+        );
+        return {
+          page,
+          perPage,
+          totalItems: all.length,
+          totalPages: Math.ceil(all.length / perPage),
+          items: all.slice((page - 1) * perPage, page * perPage),
+        };
+      },
+      async getFirstListItem(filter: string) {
+        const rows = await this.getFullList({ filter });
+        if (rows.length === 0) throw pbError(404, 'Missing record.');
+        return rows[0]!;
       },
       async getOne(id: string) {
         const record = genericRecords.find((candidate) => candidate.id === id);
@@ -215,21 +336,13 @@ function createFakePb(
         return { ...record };
       },
       async create(data: Record<string, unknown>) {
-        const record: FakeRecord = { id: `${name}_${idCounter++}`, ...data } as unknown as FakeRecord;
-        genericRecords.push(record);
-        return { ...record };
+        return createRecord(data);
       },
       async update(id: string, data: Record<string, unknown>) {
-        const record = genericRecords.find((candidate) => candidate.id === id);
-        if (!record) throw pbError(404, 'Missing record.');
-        Object.assign(record, data);
-        return { ...record };
+        return updateRecord(id, data);
       },
       async delete(id: string) {
-        const at = genericRecords.findIndex((candidate) => candidate.id === id);
-        if (at === -1) throw pbError(404, 'Missing record.');
-        genericRecords.splice(at, 1);
-        return true;
+        return deleteRecord(id);
       },
     };
   }
@@ -238,6 +351,69 @@ function createFakePb(
     baseUrl: 'http://127.0.0.1:8090',
     authStore: FAKE_SUPERUSER,
     collection: fakeCollection,
+    filter(raw: string, params: Record<string, unknown> = {}) {
+      return raw.replace(/\{:([A-Za-z0-9_]+)\}/g, (_match, key: string) => {
+        const value = params[key];
+        if (typeof value === 'number' || typeof value === 'boolean') {
+          return String(value);
+        }
+        return `'${String(value ?? '').replace(/'/g, "\\'")}'`;
+      });
+    },
+    createBatch() {
+      const operations: Array<{
+        method: 'create' | 'update' | 'delete';
+        collection: string;
+        id?: string;
+        body?: Record<string, unknown>;
+      }> = [];
+      return {
+        collection(name: string) {
+          return {
+            create(body: Record<string, unknown>) {
+              operations.push({ method: 'create', collection: name, body });
+            },
+            update(id: string, body: Record<string, unknown>) {
+              operations.push({ method: 'update', collection: name, id, body });
+            },
+            delete(id: string) {
+              operations.push({ method: 'delete', collection: name, id });
+            },
+          };
+        },
+        async send() {
+          const results: Array<{ status: number; body: unknown }> = [];
+          for (const operation of operations) {
+            const records = storeOf(operation.collection);
+            if (operation.method === 'create') {
+              const body = operation.body ?? {};
+              const record: FakeRecord = {
+                ...body,
+                id:
+                  typeof body.id === 'string'
+                    ? body.id
+                    : `${operation.collection}_${idCounter++}`,
+              } as unknown as FakeRecord;
+              records.push(record);
+              results.push({ status: 200, body: { ...record } });
+              continue;
+            }
+            const index = records.findIndex(
+              (candidate) => candidate.id === operation.id,
+            );
+            if (index === -1) throw pbError(404, 'Missing record.');
+            if (operation.method === 'update') {
+              Object.assign(records[index]!, operation.body);
+              results.push({ status: 200, body: { ...records[index]! } });
+              continue;
+            }
+            records.splice(index, 1);
+            results.push({ status: 204, body: null });
+          }
+          return results;
+        },
+      };
+    },
   };
 
   return {
@@ -584,7 +760,10 @@ describe('setup state on the real composition (D3/D4/D8)', () => {
     expect((await bodyJson(loserStatus)).code).toBe('FORBIDDEN');
 
     expect(fake.ownerRecords).toHaveLength(1);
-    expect(['alice@obol.cash', 'bob@obol.cash']).toContain(fake.ownerRecords[0].email);
+    const winnerEmail = fake.ownerRecords[0].email;
+    expect(typeof winnerEmail).toBe('string');
+    if (typeof winnerEmail !== 'string') throw new Error('winning owner email must be a string');
+    expect(['alice@obol.cash', 'bob@obol.cash']).toContain(winnerEmail);
 
     const finalStatus = await handle(jsonRequest('/api/setup/status', 'GET'));
     expect((await bodyJson(finalStatus)).setupRequired).toBeFalse();

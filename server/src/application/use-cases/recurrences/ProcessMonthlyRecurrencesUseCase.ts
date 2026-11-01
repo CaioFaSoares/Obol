@@ -1,8 +1,24 @@
 import { RecurrenceRepository } from '../../../domain/interfaces/RecurrenceRepository';
 import { TransactionRepository } from '../../../domain/interfaces/TransactionRepository';
+import { CardRepository } from '../../../domain/interfaces/CardRepository';
 import { SyncInvoiceUseCase } from '../invoices/SyncInvoiceUseCase';
-import { getCurrentMonthBoundaries, calculateClampedDate } from '../../../domain/utils/dateUtils';
+import { NotFoundError } from '../../../domain/errors';
+import {
+  calculateCardDueDate,
+  calculateClampedDate,
+  dayKey,
+  getCurrentMonthBoundaries,
+  monthKey
+} from '../../../domain/utils/dateUtils';
+import {
+  recurrenceCadence,
+  recurrenceChildKey,
+  recurrenceOccurrence,
+  recurrencePeriodKey
+} from '../../../domain/recurrence/cadence';
+import { roundCurrency } from '../../../domain/utils/mathUtils';
 import { Transaction } from '../../../domain/entities/Transaction';
+import { SyncClock, systemSyncClock } from '../../../domain/sync/MutationContext';
 
 export interface ProcessRecurrencesResult {
   success: boolean;
@@ -13,124 +29,139 @@ export interface ProcessRecurrencesResult {
   error?: string;
 }
 
+/**
+ * Daily cron materialization of the current period.
+ *
+ * The monthly branch is the historical rule table: clamped `payday` of the
+ * current UTC month, `YYYY-MM` keys and `purchase_date`/`expected_date` month
+ * idempotency. The weekly branch is the same table over UTC ISO weeks
+ * ([D019]): the chosen weekday of the current ISO week, exact dates, and the
+ * occurrence day `YYYY-MM-DD` for skip keys and idempotency.
+ */
 export class ProcessMonthlyRecurrencesUseCase {
   constructor(
     private readonly recurrenceRepository: RecurrenceRepository,
     private readonly transactionRepository: TransactionRepository,
-    private readonly syncInvoiceUseCase: SyncInvoiceUseCase
+    private readonly syncInvoiceUseCase: SyncInvoiceUseCase,
+    private readonly cardRepository: CardRepository,
+    private readonly clock: SyncClock = systemSyncClock
   ) {}
 
   async execute(): Promise<ProcessRecurrencesResult> {
-    console.log(`⏳ [CRON] Iniciando varredura de contratos recorrentes...`);
     let processed = 0;
     let skipped = 0;
     const generatedNames: string[] = [];
 
-    try {
-      const { startOfMonth, endOfMonth, year, month, lastDay } = getCurrentMonthBoundaries();
-      const now = new Date();
+    const now = new Date(this.clock.now());
+    const { year, month, lastDay } = getCurrentMonthBoundaries(now);
+    const activeRecurrences = await this.recurrenceRepository.listAll();
+    const transactions = await this.transactionRepository.listAll();
 
-      // 1. Busca todos os contratos ativos
-      const activeRecurrences = await this.recurrenceRepository.listAll({
-        filter: "status = 'active'"
-      });
+    for (const rec of activeRecurrences) {
+      if (rec.status !== 'active') continue;
 
-      for (const rec of activeRecurrences) {
-        // 2. Verifica se o contrato já expirou
-        if (rec.end_date && now > new Date(rec.end_date)) {
-          await this.recurrenceRepository.update(rec.id, { status: 'ended' });
-          console.log(`⏸️  Contrato [${rec.name}] expirado. Ignorando.`);
-          continue;
-        }
+      const cadence = recurrenceCadence(rec);
+      const occurrence =
+        cadence === 'weekly'
+          ? recurrenceOccurrence(rec, now)
+          : calculateClampedDate(year, month, rec.payday, lastDay);
 
-        // LÓGICA DE PARCELAMENTO FINITO
-        let transactionTitle = `${rec.name} - ${month + 1}/${year}`;
-
-        if (rec.total_installments && rec.total_installments > 0) {
-          const history = await this.transactionRepository.list({
-            page: 1,
-            perPage: 1,
-            filter: `recurrence_id = '${rec.id}'`
-          });
-          
-          const currentInstallment = history.totalItems + 1;
-
-          if (currentInstallment > rec.total_installments) {
-            await this.recurrenceRepository.update(rec.id, { status: 'ended' });
-            console.log(`⏸️  Parcelamento [${rec.name}] concluído. Contrato encerrado.`);
-            continue; 
-          }
-
-          transactionTitle = `${rec.name} - Parcela ${currentInstallment}/${rec.total_installments}`;
-        }
-
-        // 3. A Regra de Idempotência: Já geramos essa transação este mês?
-        const existingTxns = await this.transactionRepository.listAll({
-          filter: `recurrence_id = '${rec.id}' && ( (purchase_date != "" && purchase_date >= '${startOfMonth}' && purchase_date <= '${endOfMonth}') || (purchase_date = "" && expected_date >= '${startOfMonth}' && expected_date <= '${endOfMonth}') )`
-        });
-
-        if (existingTxns.length > 0) {
-          skipped++;
-          continue;
-        }
-
-        // Verifica se o usuário pulou manualmente esta competência
-        const periodStr = `${year}-${String(month + 1).padStart(2, '0')}`;
-        if (rec.skipped_periods && rec.skipped_periods.includes(periodStr)) {
-          console.log(`⏸️  Recorrência [${rec.name}] pulada manualmente neste mês (${periodStr}).`);
-          skipped++;
-          continue;
-        }
-
-        // 4. Clamping de Calendário
-        const expectedDate = calculateClampedDate(year, month, rec.payday, lastDay);
-
-        // 5. Geração da Transação
-        const txnPayload: Partial<Transaction> = {
-          title: transactionTitle,
-          amount: rec.amount,
-          type: rec.type,
-          status: 'pending',
-          expected_date: expectedDate,
-          purchase_date: expectedDate,
-          is_recurring: true,
-          recurrence_id: rec.id,
-          account_id: rec.account_id || undefined,
-          card_id: rec.card_id || undefined
-        };
-
-        // 5b. Se for cartão de crédito, sincroniza com a fatura física
-        if (rec.card_id) {
-          const invoice = await this.syncInvoiceUseCase.execute(
-            rec.card_id,
-            expectedDate,
-            rec.amount,
-            rec.type
-          );
-          txnPayload.invoice_id = invoice.id;
-          txnPayload.expected_date = invoice.due_date;
-        }
-
-        await this.transactionRepository.create(txnPayload);
-
-        processed++;
-        generatedNames.push(`${rec.name}`);
-        console.log(`✅ Transação gerada: [${rec.name}] para ${expectedDate.split('T')[0]}`);
+      // Expiry compares the occurrence with end_date, not the current instant.
+      if (rec.end_date && new Date(occurrence) > new Date(rec.end_date)) {
+        await this.recurrenceRepository.update(rec.id, { status: 'ended' });
+        skipped += 1;
+        continue;
       }
 
-      console.log(`🏁 [CRON] Varredura concluída: ${processed} criadas | ${skipped} ignoradas.`);
-      
-      return { 
-        success: true, 
-        processed,
-        skipped,
-        generatedNames,
-        message: 'Motor de recorrências executado com sucesso.' 
+      const period = recurrencePeriodKey(cadence, occurrence);
+      const skippedPeriods = rec.skipped_periods || [];
+      if (skippedPeriods.includes(period)) {
+        skipped += 1;
+        continue;
+      }
+
+      // The monthly card rule also honors a skipped invoice month. A weekly
+      // row is keyed by its occurrence day only (the invoice-level skip keys
+      // weekly deletions write are day keys, not month keys).
+      if (cadence === 'monthly' && rec.card_id) {
+        const card = await this.cardRepository.findById(rec.card_id);
+        if (!card) throw new NotFoundError(`Card ${rec.card_id} was not found.`);
+        const invoicePeriod = monthKey(
+          calculateCardDueDate(occurrence, card.closing_day, card.due_day)
+        );
+        if (skippedPeriods.includes(invoicePeriod)) {
+          skipped += 1;
+          continue;
+        }
+      }
+
+      const existingChildren = transactions.filter(t => t.recurrence_id === rec.id);
+
+      if (
+        rec.total_installments &&
+        rec.total_installments > 0 &&
+        existingChildren.length + 1 > rec.total_installments
+      ) {
+        await this.recurrenceRepository.update(rec.id, { status: 'ended' });
+        skipped += 1;
+        continue;
+      }
+
+      const launched = existingChildren.some(txn => {
+        if (cadence === 'weekly') return recurrenceChildKey(rec, txn) === period;
+        const purchaseMonth = txn.purchase_date ? monthKey(txn.purchase_date) : null;
+        const expectedMonth = monthKey(txn.expected_date);
+        if (rec.card_id) return (purchaseMonth ?? expectedMonth) === period;
+        return purchaseMonth === period || expectedMonth === period;
+      });
+      if (launched) {
+        skipped += 1;
+        continue;
+      }
+
+      const installmentLabel =
+        rec.total_installments && rec.total_installments > 0
+          ? `Parcela ${existingChildren.length + 1}/${rec.total_installments}`
+          : cadence === 'weekly'
+            ? dayKey(occurrence)
+            : `${month + 1}/${year}`;
+
+      const payload: Partial<Transaction> = {
+        title: `${rec.name} - ${installmentLabel}`,
+        amount: roundCurrency(rec.amount),
+        type: rec.type,
+        status: 'pending',
+        expected_date: occurrence,
+        purchase_date: occurrence,
+        is_recurring: true,
+        recurrence_id: rec.id,
+        account_id: rec.account_id || undefined,
+        card_id: rec.card_id || undefined,
+        category_id: rec.category_id || undefined
       };
 
-    } catch (error: any) {
-      console.error(`❌ [CRON ERROR] Falha no motor de recorrência:`, error);
-      return { success: false, error: error.message, processed, skipped, generatedNames, message: 'Falha no motor de recorrência.' };
+      if (rec.card_id) {
+        const invoice = await this.syncInvoiceUseCase.execute(
+          rec.card_id,
+          occurrence,
+          rec.amount,
+          rec.type
+        );
+        payload.invoice_id = invoice.id;
+        payload.expected_date = invoice.due_date;
+      }
+
+      await this.transactionRepository.create(payload);
+      processed += 1;
+      generatedNames.push(rec.name);
     }
+
+    return {
+      success: true,
+      processed,
+      skipped,
+      generatedNames,
+      message: 'Recurrence engine completed.'
+    };
   }
 }

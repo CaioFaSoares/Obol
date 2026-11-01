@@ -123,10 +123,13 @@ services:
   # Hosted web client (Nuxt 3 SSR): serves the Obol UI that the password-reset
   # mail links back to (/?resetToken=... -> RemoteAuthGate) and that browser
   # users sign in to with the httpOnly session cookie. The image is built by
-  # app/Dockerfile.self-hosted, which bakes NUXT_PUBLIC_API_BASE=
-  # http://obol-bff:8080 into the client bundle and routeRules so the Nitro
-  # runtime knows the internal BFF address. No runtime environment at all:
-  # nothing sensitive to pass through, and no PocketBase secret is embedded.
+  # app/Dockerfile.self-hosted as a two-stage build: a pinned Node 22 builder
+  # runs npm ci + `npm run build` and bakes NUXT_PUBLIC_API_BASE=
+  # http://obol-bff:8080 into the client bundle and routeRules, then a non-root
+  # runner copies only the self-contained Nitro `.output` (node-server preset)
+  # - no npm, no dev dependency tree, no repository source at runtime. No
+  # runtime environment at all: nothing sensitive to pass through, and no
+  # PocketBase secret is embedded.
   obol-web:
     build:
       context: ./app
@@ -146,6 +149,8 @@ services:
       # for real sign-in.
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
+      # busybox wget from the Alpine base image: the runner installs nothing,
+      # so the probe must stay on an applet the base already ships.
       test:
         - CMD
         - wget

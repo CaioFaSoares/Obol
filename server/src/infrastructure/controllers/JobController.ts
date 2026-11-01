@@ -1,29 +1,28 @@
 import { Elysia } from 'elysia';
 import { AwilixContainer } from 'awilix';
-import { resolveUseCase } from '../use-case-routes';
+import { executeJobUseCase } from '../use-case-routes';
 
-// The background job endpoints compose two use cases into one report payload,
-// so they resolve the classes with the typed resolver instead of the single
-// `executeUseCase` dispatch. The cron scheduler resolves the same classes
-// directly from Awilix and shares nothing with these HTTP routes.
+// The background job endpoints run the same financial maintenance use cases
+// as the cron scheduler, but every one of them routes through the shared
+// FIFO mutation runtime (origin `job`): one gate slot, one unit of work and
+// one atomic PocketBase batch per use case, with local roles recording real
+// canonical child intents instead of an opaque pseudo-job. They never
+// resolve raw writers.
 export const jobController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/jobs' })
     // POST /api/jobs/recurrence
     .post('/recurrence', async () => {
-      const reconcileUseCase = resolveUseCase(container, 'reconcileInvoicesUseCase');
-      const processRecurrencesUseCase = resolveUseCase(container, 'processMonthlyRecurrencesUseCase');
-      const reconciliationReport = await reconcileUseCase.execute();
-      const recurrenceReport = await processRecurrencesUseCase.execute();
+      const reconciliationReport = await executeJobUseCase(container, 'reconcileInvoicesUseCase');
+      const recurrenceReport = await executeJobUseCase(container, 'processMonthlyRecurrencesUseCase');
       return { reconciliation: reconciliationReport, recurrence: recurrenceReport };
     })
 
     // POST /api/jobs/reconcile
     .post('/reconcile', async () => {
-      const reconcileUseCase = resolveUseCase(container, 'reconcileInvoicesUseCase');
-      const report = await reconcileUseCase.execute();
-      return { 
-        success: true, 
-        message: 'Reconciliação executada com sucesso.',
-        report 
+      const report = await executeJobUseCase(container, 'reconcileInvoicesUseCase');
+      return {
+        success: true,
+        message: 'Reconciliation executed successfully.',
+        report
       };
     });

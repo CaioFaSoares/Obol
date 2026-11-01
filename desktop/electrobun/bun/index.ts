@@ -9,11 +9,19 @@ import type { ElectrobunEvent } from 'electrobun/main/events';
 import appConfig from '../../app.json';
 import { createServer } from '../../../server/src/index';
 import { createPocketBaseClient } from '../../../server/src/infrastructure/plugins/pocketbase';
+import { FinancialMutationRuntime } from '../../../server/src/infrastructure/sync/FinancialMutationRuntime';
+import { PocketbaseStationReplicaRepository } from '../../../server/src/infrastructure/repositories/PocketbaseStationReplicaRepository';
 import { createLocalAccount, parseLocalAccountProfile, verifyLocalAccount } from './local-auth';
 import type { LocalAccountProfile } from './local-auth';
+import { DesktopStationSyncService } from './station-sync';
 import type {
   ApiFetchRequest,
   ApiFetchResponse,
+  DesktopAcknowledgeRejectedRequest,
+  DesktopConfirmConnectionRequest,
+  DesktopConnectionPreviewRequest,
+  DesktopResolveConflictRequest,
+  DesktopStationStatus,
   DesktopUpdaterState,
   LocalAccountSummary,
   LocalAuthSetupRequest,
@@ -39,6 +47,7 @@ const localProfilePath = join(dataRoot, 'local_profile.json');
 const legacyPasswordPath = join(dataRoot, 'pb_admin_password');
 let pocketBaseProcess: Bun.Subprocess | undefined;
 let apiServer: ReturnType<typeof createServer> | undefined;
+let stationService: DesktopStationSyncService | undefined;
 let shuttingDown = false;
 let runtimeReady = false;
 let authenticationInProgress = false;
@@ -62,7 +71,12 @@ async function waitForPocketBase(child: Bun.Subprocess): Promise<void> {
       throw new Error(`PocketBase exited before becoming healthy (code ${child.exitCode})`);
     }
     try {
-      const response = await fetch(`${pocketBaseUrl}/api/health`);
+      const response = await fetch(`${pocketBaseUrl}/api/health`, {
+        redirect: 'error',
+        signal: AbortSignal.timeout(5_000)
+      });
+      // Release the response body; the health check does not read it.
+      await response.body?.cancel().catch(() => undefined);
       if (response.ok) return;
     } catch {
       // The PocketBase child is still starting.
@@ -171,10 +185,51 @@ async function startLocalBackend(password: string): Promise<void> {
       retries: 5,
       retryDelayMs: 500
     });
-    const server = createServer(pb, null);
-    server.listen({ hostname: '127.0.0.1', port: 13080 });
-    if (!server.server) throw new Error('Could not bind Obol BFF to 127.0.0.1:13080');
+    // One local mutation runtime owns the FIFO gate, the unit of work and the
+    // durable station identity. It finishes initialization (identity plus
+    // journal prerequisites) before the profile is declared unlocked.
+    const runtime = new FinancialMutationRuntime(pb, {
+      role: 'local',
+      serverName: 'Obol local'
+    });
+    await runtime.initialize();
+    // The local BFF is consumed through `app.handle` only: no TCP listener is
+    // required. Construction registers the standalone scheduler cron and
+    // exposes its typed stop lifecycle on the server; shutdown stops that
+    // timer and drains a scheduled run before PocketBase is killed. The cron
+    // stays correct for an unpaired local profile, and a paired station skips
+    // automatic shared recurrence generation through the runtime role check.
+    const server = createServer(pb, null, runtime);
     apiServer = server;
+    const station = new DesktopStationSyncService(
+      new PocketbaseStationReplicaRepository(pb),
+      {
+        serviceName: identifier,
+        deviceLabel: `${appConfig.title} on ${process.platform}`,
+        platform: process.platform === 'win32' ? 'windows' : 'macos',
+        emit: status => {
+          try {
+            mainRpc?.send['station.state'](status);
+            mainRpc?.send['station.status'](status);
+          } catch {
+            // The webview transport is not connected; the next RPC status
+            // call returns the same truthful state.
+          }
+        }
+      }
+    );
+    stationService = station;
+    try {
+      await station.start();
+    } catch (stationError) {
+      // A corrupt station metadata row must never lock the user out of the
+      // local finance that still opens; the station reports the failure on
+      // its own surface instead.
+      console.error(
+        'Desktop station synchronization could not start:',
+        stationError instanceof Error ? stationError.message : stationError
+      );
+    }
     runtimeReady = true;
     console.log(`Obol local profile unlocked (${identifier})`);
   } catch (error) {
@@ -214,19 +269,70 @@ async function unlockLocalAccount(request: LocalAuthUnlockRequest): Promise<Loca
   });
 }
 
+/**
+ * Ordered, best-effort teardown shared by normal quit and the updater handoff.
+ *
+ * Sequence: stop and await the replicator, stop and await the scheduler (it
+ * stops the registered cron handle and drains the job already inside the FIFO
+ * mutation gate), then the Elysia surface, then the PocketBase child. Each
+ * step is isolated so a failing resource cannot leave the others running next
+ * to a backend that a failed update tries to restore. A stopped scheduler
+ * handle is permanent, so a restored backend always gets a fresh one.
+ */
 async function stopBackend(): Promise<void> {
+  // Detach the handles first: nothing new may attach to the resources that
+  // are about to be torn down.
+  const station = stationService;
+  stationService = undefined;
   const server = apiServer;
   apiServer = undefined;
-  server?.server?.stop(true);
-
   const child = pocketBaseProcess;
   pocketBaseProcess = undefined;
-  if (child && child.exitCode === null) {
-    child.kill('SIGTERM');
-    await Promise.race([child.exited, Bun.sleep(3000)]);
-    if (child.exitCode === null) child.kill('SIGKILL');
-  }
   runtimeReady = false;
+
+  if (station !== undefined) {
+    // Abort and await replication before the scheduler/PocketBase disappear;
+    // a frozen in-flight row stays durable for an exact retry after restart.
+    try {
+      await station.stop();
+    } catch (error) {
+      console.error('Desktop station replication did not stop cleanly:', error);
+    }
+  }
+
+  if (server !== undefined) {
+    // The cron handle belongs to this server instance; stop the timer and
+    // wait for a scheduled job that already queued a financial mutation.
+    try {
+      await server.decorator.schedulerLifecycle.stop();
+    } catch (error) {
+      console.error('Desktop scheduler did not stop cleanly:', error);
+    }
+    try {
+      const rawServer = server.server;
+      if (rawServer !== undefined && rawServer !== null) {
+        rawServer.stop(true);
+      }
+    } catch (error) {
+      console.error('Desktop API surface did not stop cleanly:', error);
+    }
+  }
+
+  if (child && child.exitCode === null) {
+    try {
+      child.kill('SIGTERM');
+    } catch (error) {
+      console.error('Could not ask PocketBase to stop gracefully:', error);
+    }
+    await Promise.race([child.exited, Bun.sleep(3000)]);
+    if (child.exitCode === null) {
+      try {
+        child.kill('SIGKILL');
+      } catch (error) {
+        console.error('Could not force PocketBase to stop:', error);
+      }
+    }
+  }
 }
 
 async function stopRuntime(): Promise<void> {
@@ -244,6 +350,8 @@ async function stopRuntime(): Promise<void> {
 interface UpdaterStatePublisher {
   send: {
     'updater.state': (state: DesktopUpdaterState) => void | PromiseLike<void>;
+    'station.state': (state: DesktopStationStatus) => void | PromiseLike<void>;
+    'station.status': (state: DesktopStationStatus) => void | PromiseLike<void>;
   };
 }
 
@@ -291,10 +399,13 @@ async function installUpdate(): Promise<void> {
   updateHandoffPending = true;
   updateHandoffApproved = false;
   try {
-    // Stop Elysia and PocketBase before the native handoff so no backend
-    // process survives the update replacement.
-    await stopBackend();
+    // Stop the replicator, scheduler, Elysia surface and PocketBase before the
+    // native handoff so no backend resource survives the update replacement.
+    // From here on the old resources are dismantled; a failure must restore
+    // exactly ONE fresh set, and the stopped cron/scheduler handle is never
+    // reused.
     backendWasStopped = true;
+    await stopBackend();
     await Updater.applyUpdate();
     // Approval of the native before-quit request means the updater owns the
     // restart; this process must not restore the backend.
@@ -404,13 +515,34 @@ function apiRequest(request: ApiFetchRequest): Request {
 async function dispatchApiRequest(request: ApiFetchRequest): Promise<ApiFetchResponse> {
   if (!apiServer) throw new Error('Obol API is not ready');
   if (isDev) console.log(`[desktop api] ${request.method} ${request.path}`);
+  const method = request.method.toUpperCase();
   const response = await apiServer.handle(apiRequest(request));
-  return {
+  const result: ApiFetchResponse = {
     status: response.status,
     statusText: response.statusText,
     headers: Array.from(response.headers.entries()),
     body: await response.text()
   };
+  // A successful financial write is a real local change; ask the station to
+  // replicate it after a short debounce. The station itself never copies
+  // finance: the local runtime already recorded the durable intent.
+  if (
+    response.status >= 200 &&
+    response.status < 300 &&
+    method !== 'GET' &&
+    method !== 'HEAD'
+  ) {
+    stationService?.noteLocalChange();
+  }
+  return result;
+}
+
+/** Station RPCs reject honestly until the local profile is unlocked. */
+function requireStationService(): DesktopStationSyncService {
+  if (stationService === undefined) {
+    throw new Error('Unlock the local Obol profile before using station synchronization.');
+  }
+  return stationService;
 }
 
 async function main(): Promise<void> {
@@ -435,7 +567,23 @@ async function main(): Promise<void> {
         'auth.unlock': unlockLocalAccount,
         'updater.status': () => updaterPublishedState(),
         'updater.check': updaterCheckRequest,
-        'updater.install': updaterInstallRequest
+        'updater.install': updaterInstallRequest,
+        'station.status': () => requireStationService().status(),
+        'station.synchronize': () => requireStationService().synchronize(),
+        'station.previewConnection': (request: DesktopConnectionPreviewRequest) =>
+          requireStationService().previewConnection(request),
+        'station.confirmConnection': (request: DesktopConfirmConnectionRequest) =>
+          requireStationService().confirmConnection(request),
+        'station.cancelConnectionPreview': () => requireStationService().cancelConnectionPreview(),
+        'station.disconnect': () => requireStationService().disconnect(),
+        'station.signOut': () => requireStationService().signOut(),
+        'station.outbox': () => requireStationService().outbox(),
+        'station.conflicts': () => requireStationService().conflicts(),
+        'station.resolveConflict': (request: DesktopResolveConflictRequest) =>
+          requireStationService().resolveConflict(request),
+        'station.acknowledgeRejected': (request: DesktopAcknowledgeRejectedRequest) =>
+          requireStationService().acknowledgeRejected(request),
+        'station.exportSnapshot': () => requireStationService().exportSnapshot()
       },
       messages: {}
     }

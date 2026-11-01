@@ -584,6 +584,16 @@ export function deriveServerName(publicUrl: string): string {
   }
 }
 
+/**
+ * The one server-name resolution every surface shares: an explicit
+ * `serverName` option wins; otherwise the public URL's host is derived.
+ * Sync handshake identity and HTTP auth metadata must never disagree, so
+ * `startHostedServer` feeds this exact result into the mutation runtime.
+ */
+export function resolveServerName(options: RemoteAuthOptions): string {
+  return options.serverName ?? deriveServerName(options.publicUrl);
+}
+
 /** Uniformly random 32-hex-character setup token (D4). */
 export function createSetupToken(): string {
   const bytes = new Uint8Array(SETUP_TOKEN_BYTES);
@@ -705,7 +715,7 @@ export function createRemoteAuthPlugin(deps: RemoteAuthDeps) {
       return client as unknown as CredentialsClient;
     });
 
-  const serverName = options.serverName ?? deriveServerName(options.publicUrl);
+  const serverName = resolveServerName(options);
 
   const loginIpLimiter = new SlidingWindowRateLimiter({
     limit: LOGIN_IP_FAILURE_LIMIT,

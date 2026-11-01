@@ -14,11 +14,14 @@ Every domain term with its canonical meaning and the synonyms agents must avoid.
 | `expected_date` | Commitment date; for card purchases equals the invoice `due_date` | "due date" (outside invoices) |
 | `invoice` | A card billing month row: `card_id` + `period` (`YYYY-MM`) + `due_date` + `status`/amounts | "bill", "fatura" |
 | `period` | `YYYY-MM` string keying invoices and `skipped_periods` | "month", "cycle" |
-| `recurrence` | The rule (parent); generates transaction facts on `payday`, clamped to month length | "subscription" (it covers salaries too), "recorrencia" |
-| `skipped_periods` | Recurrence periods whose generated transaction was deleted/manual; blocks regeneration | "skip list" |
-| `launch` (lançar agora) | `LaunchRecurrenceUseCase`: generate the *next* month's transaction manually | "realize", "create transaction" |
-| idempotency rule | Monthly generation skips if a transaction already exists for that month | "dedup" |
-| clamping | `payday` beyond month length is pulled to the last day | "date fix" |
+| `recurrence` | The rule (parent); generates transaction facts monthly on `payday` (clamped to month length) or weekly on `weekday` (UTC ISO week, exact date) | "subscription" (it covers salaries too), "recorrencia" |
+| `frequency` | Recurrence cadence: `monthly` (absent/default) or `weekly` (D019) | "interval", "periodicity" |
+| `weekday` | ISO weekday 1-7 (Monday first) anchoring a weekly recurrence; `0`/absent for monthly | "day of week index", "dia da semana" as an identifier |
+| `occurrence` | The dated fact a recurrence generates for one cadence period: `YYYY-MM` monthly, `YYYY-MM-DD` weekly | "instance", "slot" |
+| `skipped_periods` | Recurrence periods whose generated transaction was deleted/manual; blocks regeneration; holds both key shapes | "skip list" |
+| `launch` (lançar agora) | `LaunchRecurrenceUseCase`: generate the *next* month's or next ISO week's transaction manually | "realize", "create transaction" |
+| idempotency rule | Generation skips if a transaction already exists for that month (monthly) or that occurrence day (weekly) | "dedup" |
+| clamping | `payday` beyond month length is pulled to the last day; weekly dates are never clamped | "date fix" |
 | `closing_day` / `due_day` | Card cycle boundaries; invoice math via `calculateCardDueDate` | "close date", "vencimento" |
 | forecast | Daily balance timeline: past rollback + forward projection, `roundCurrency` math | "projection" (when naming the use case), "budget" |
 | budget | Category `monthly_budget`, consumed accrually on `purchase_date`/`expected_date` | "pot", "pote" |
