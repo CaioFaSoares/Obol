@@ -1167,7 +1167,22 @@ async function main(): Promise<void> {
   const stopApp = async (): Promise<void> => {
     if (app === null) return;
     const processes = await listProcesses();
-    const owned = descendantProcessIds(app.rootPid, processes);
+    // The central pair reuses the app's bundled PocketBase executable, so its
+    // PIDs are excluded even though they live under the install path.
+    const centralPids = new Set(
+      [pids.centralPocketBase, pids.centralBff].filter(
+        (pid): pid is number => typeof pid === 'number'
+      )
+    );
+    // Every remaining process selected by the isolated install path belongs to
+    // this run: a helper that outlived a relaunch is no longer a descendant of
+    // the current launcher, and leaving it behind blocks the settle check.
+    const owned = Array.from(
+      new Set([
+        ...descendantProcessIds(app.rootPid, processes),
+        ...processesUnder(appDir, processes)
+      ])
+    ).filter(pid => !centralPids.has(pid));
     await killOwnedProcess(app.rootPid, join(appDir, 'bin', 'launcher.exe'));
     for (const pid of owned) {
       if (await pidExists(pid)) await killProcessTree(pid);
@@ -1175,7 +1190,10 @@ async function main(): Promise<void> {
     await waitForNoProcess(
       async () => {
         const current = await listProcesses();
-        return current.every(entry => !owned.includes(entry.processId)) && processesUnder(appDir, current).length === 0;
+        return (
+          current.every(entry => !owned.includes(entry.processId)) &&
+          processesUnder(appDir, current).every(pid => !centralPids.has(pid))
+        );
       },
       30_000,
       'The owned Obol app process tree'
@@ -1327,7 +1345,11 @@ async function main(): Promise<void> {
         PB_ADMIN_EMAIL: pbAdminEmail,
         PB_ADMIN_PASSWORD: pbAdminPassword,
         OBOL_SESSION_SECRET: sessionSecret,
-        OBOL_SETUP_TOKEN: setupToken
+        OBOL_SETUP_TOKEN: setupToken,
+        // The central defaults fail closed without a public https origin, and
+        // the desktop webview fetches from this exact origin.
+        OBOL_PUBLIC_URL: `https://127.0.0.1:${centralBffPort}`,
+        OBOL_CLIENT_ORIGINS: 'views://mainview'
       },
       stdin: 'ignore',
       stdout: 'pipe',
