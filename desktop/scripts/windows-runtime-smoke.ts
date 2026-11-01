@@ -33,7 +33,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { SYNC_PROTOCOL_VERSION } from '../../server/src/domain/sync/SyncProtocol';
 import {
   parseLocalAccountProfile,
@@ -1199,17 +1199,32 @@ async function main(): Promise<void> {
       }
       await Bun.sleep(2_000);
     }
-    await waitForNoProcess(
-      async () => {
-        const current = await listProcesses();
-        return (
-          current.every(entry => !owned.includes(entry.processId)) &&
-          processesUnder(appDir, current).every(pid => !centralPids.has(pid))
-        );
-      },
-      30_000,
-      'The owned Obol app process tree'
-    );
+    const settled = async (): Promise<boolean> => {
+      const current = await listProcesses();
+      return (
+        current.every(entry => !owned.includes(entry.processId)) &&
+        processesUnder(appDir, current).every(pid => !centralPids.has(pid))
+      );
+    };
+    try {
+      await waitForNoProcess(settled, 60_000, 'The owned Obol app process tree');
+    } catch (error) {
+      // Name what survived (executable base names only) so the evidence says
+      // which helper ignored the kill instead of only "did not settle".
+      const survivors = (await listProcesses())
+        .filter(
+          entry =>
+            owned.includes(entry.processId) ||
+            (processesUnder(appDir, [entry]).length > 0 && !centralPids.has(entry.processId))
+        )
+        .map(entry => {
+          const path = entry.executablePath;
+          return `${entry.processId}:${path === null ? 'unknown' : basename(path)}`;
+        });
+      throw new Error(
+        `${errorMessage(error)} (survivors: ${survivors.length === 0 ? 'none listed' : survivors.join(', ')})`
+      );
+    }
     app = null;
     localPbToken = null;
     await flushAppLogs();
