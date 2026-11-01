@@ -343,6 +343,19 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * A descendant that inherited a pipe keeps it open after its parent exits, so
+ * waiting for EOF can wedge the whole step. Give the pipes a bounded window and
+ * keep whatever text arrived; the exit code is already known at this point.
+ */
+async function drainPumps(
+  pumps: Promise<unknown>,
+  label: string,
+  timeoutMs = 10_000
+): Promise<void> {
+  await withTimeout(pumps, timeoutMs, `${label} output`).catch(() => undefined);
+}
+
 function recordOf(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${label} is not a JSON object`);
@@ -451,7 +464,7 @@ async function runCommand(
       options.timeoutMs ?? 120_000,
       options.label
     );
-    await pumps;
+    await drainPumps(pumps, options.label);
     const stdout = stdoutSink.finish();
     const stderr = stderrSink.finish();
     if (options.logPath) {
@@ -465,7 +478,7 @@ async function runCommand(
   } catch (error) {
     await killOwnedProcess(child.pid, argv[0]);
     await child.exited.catch(() => undefined);
-    await pumps.catch(() => undefined);
+    await drainPumps(pumps, options.label);
     throw error;
   }
 }
@@ -1175,7 +1188,7 @@ async function main(): Promise<void> {
   const stopService = async (service: CentralService | null): Promise<void> => {
     if (service === null) return;
     await killOwnedProcess(service.child.pid, service.executablePath);
-    await service.pumps.catch(() => undefined);
+    await drainPumps(service.pumps, service.label);
     await writeFile(
       service.path,
       `# ${service.label}\n[stdout]\n${service.stdout.finish()}\n[stderr]\n${service.stderr.finish()}\n`,
@@ -1474,7 +1487,7 @@ async function main(): Promise<void> {
         try {
           await withTimeout(child.exited, 120_000, 'The installed Windows uninstaller');
         } finally {
-          await pumps.catch(() => undefined);
+          await drainPumps(pumps, 'The installed Windows uninstaller');
           await writeFile(
             join(logsDirectory, 'uninstaller.log'),
             `# Installed Windows uninstaller\n[stdout]\n${stdoutSink.finish()}\n[stderr]\n${stderrSink.finish()}\n`,
@@ -1635,10 +1648,10 @@ async function main(): Promise<void> {
         code = await withTimeout(child.exited, 180_000, 'The Windows setup executable');
       } catch (error) {
         await killProcessTree(child.pid);
-        await pumps.catch(() => undefined);
+        await drainPumps(pumps, 'The Windows setup executable');
         throw error;
       }
-      await pumps;
+      await drainPumps(pumps, 'The Windows setup executable');
       await writeFile(
         join(logsDirectory, 'installer-run.log'),
         `# Windows setup executable\n[stdout]\n${stdoutSink.finish()}\n[stderr]\n${stderrSink.finish()}\n`,
@@ -2330,4 +2343,16 @@ function refusalReason(): string | null {
   return null;
 }
 
-await main();
+// Spawned descendants can inherit a pipe and keep the event loop alive after
+// the evidence is written, which would let the CI step hang instead of
+// reporting. Every observation is already on disk, so exit with the recorded
+// status explicitly.
+let exitCode = 1;
+try {
+  await main();
+  exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+} finally {
+  process.exit(exitCode);
+}
