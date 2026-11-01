@@ -81,6 +81,9 @@ jobs:
     name: build ${{ matrix.target }}
     needs: prepare
     runs-on: ${{ matrix.os }}
+    # A platform leg that wedges (installer, UI automation, a leaked child on the pipe) must fail
+    # the matrix instead of occupying the default six-hour job budget.
+    timeout-minutes: 60
     strategy:
       # Every leg runs to the end so one failure does not hide another; the release job still needs
       # all of them.
@@ -139,6 +142,9 @@ jobs:
       # is published or skipped instead.
       - name: smoke the installed Windows app
         if: runner.os == 'Windows'
+        # The UI smoke drives a real installer, app window and CDP bridge. Bound it so a missing
+        # observation fails the leg quickly; the evidence upload below still runs.
+        timeout-minutes: 20
         env:
           OBOL_WINDOWS_SMOKE_ISOLATED: '1'
           OBOL_WINDOWS_SMOKE_OUT: ${{ runner.temp }}/obol-windows-smoke
