@@ -55,6 +55,10 @@ export async function createPocketBaseClient(options: PocketBaseClientOptions): 
   // Operator settings run after the retry loop: a rejected settings update is
   // not an authentication failure and must not trigger repeated re-login.
   await applyPocketBaseOperatorSettings(pb);
+  // Atomic multi-collection commits are a hard requirement (D016 D10, canon
+  // §12.4). Configure and verify the capability before any caller receives the
+  // client, so no request path can start with a non-atomic fallback.
+  await applyPocketBaseBatchCapability(pb);
   return pb;
 }
 
@@ -195,4 +199,85 @@ async function applyPocketBaseOperatorSettings(pb: PocketBase): Promise<void> {
       `✅ PocketBase SMTP configured for ${patch.smtp.host}:${patch.smtp.port} (authMethod ${patch.smtp.authMethod}${patch.smtp.tls ? ', enforced TLS' : ', StartTLS allowed'})`,
     );
   }
+}
+
+/**
+ * Required PocketBase atomic-batch capability (D016 D10, canon §12.4).
+ *
+ * Verified pinned baseline on PocketBase 0.40.6: `batch` defaults to
+ * `{ enabled: false, maxRequests: 50, timeout: 3, maxBodySize: 0 }`
+ * (`timeout` in seconds, `maxBodySize` in bytes). The BFF must patch only this
+ * subset through the authenticated settings API and fail closed when the
+ * capability cannot be verified. There is no non-atomic fallback: every sync
+ * commit, station mutation, and seed is a multi-collection batch.
+ *
+ * The values cover the contract bounds: one commit has at most 10,000 entity
+ * events, a push holds at most 100 operations, and a seed is at most 10 MiB.
+ * None of these fields is a secret.
+ */
+interface PocketBaseBatchSettings {
+  enabled: boolean;
+  maxRequests: number;
+  timeout: number;
+  maxBodySize: number;
+}
+
+const REQUIRED_BATCH_SETTINGS: PocketBaseBatchSettings = {
+  enabled: true,
+  maxRequests: 60000,
+  timeout: 30,
+  maxBodySize: 50331648,
+};
+
+const REQUIRED_BATCH_KEYS = Object.keys(
+  REQUIRED_BATCH_SETTINGS,
+) as Array<keyof PocketBaseBatchSettings>;
+
+function describeBatchSettings(settings: Partial<PocketBaseBatchSettings> | null | undefined): string {
+  const observed: Partial<Record<keyof PocketBaseBatchSettings, number | boolean | null>> = {};
+  for (const key of REQUIRED_BATCH_KEYS) {
+    observed[key] = settings?.[key] ?? null;
+  }
+  return JSON.stringify(observed);
+}
+
+/**
+ * Patches only `batch` so unrelated SMTP/meta settings are preserved, then
+ * reads the settings back and compares every required value. A rejected or
+ * silently ignored update aborts startup with a clear, non-secret error
+ * instead of letting a caller assume atomic batches exist.
+ */
+async function applyPocketBaseBatchCapability(pb: PocketBase): Promise<void> {
+  try {
+    await pb.settings.update({ batch: REQUIRED_BATCH_SETTINGS });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `PocketBase atomic batch settings (${describeBatchSettings(REQUIRED_BATCH_SETTINGS)}) were rejected; refusing to start because sync requires atomic multi-collection commits (fail closed): ${details}`,
+    );
+  }
+
+  let applied: Partial<PocketBaseBatchSettings> | null | undefined;
+  try {
+    const settings = await pb.settings.getAll();
+    applied = settings.batch as Partial<PocketBaseBatchSettings> | null | undefined;
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Could not verify PocketBase atomic batch settings; refusing to start because sync requires atomic multi-collection commits (fail closed): ${details}`,
+    );
+  }
+
+  const mismatched = REQUIRED_BATCH_KEYS.filter(
+    (key) => applied?.[key] !== REQUIRED_BATCH_SETTINGS[key],
+  );
+  if (mismatched.length > 0) {
+    throw new Error(
+      `PocketBase atomic batch settings are not active (${mismatched.join(', ')}); observed ${describeBatchSettings(applied)}, required ${describeBatchSettings(REQUIRED_BATCH_SETTINGS)}. Refusing to start (fail closed).`,
+    );
+  }
+
+  console.log(
+    `✅ PocketBase atomic batch capability verified (${describeBatchSettings(REQUIRED_BATCH_SETTINGS)})`,
+  );
 }

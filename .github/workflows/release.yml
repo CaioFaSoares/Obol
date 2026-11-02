@@ -81,6 +81,9 @@ jobs:
     name: build ${{ matrix.target }}
     needs: prepare
     runs-on: ${{ matrix.os }}
+    # A platform leg that wedges (installer, UI automation, a leaked child on the pipe) must fail
+    # the matrix instead of occupying the default six-hour job budget.
+    timeout-minutes: 60
     strategy:
       # Every leg runs to the end so one failure does not hide another; the release job still needs
       # all of them.
@@ -130,6 +133,34 @@ jobs:
       - name: verify the desktop bundle
         run: bun run eb:verify
         working-directory: desktop
+
+      # REL-05: the static setup-ZIP check above proves only that the installer
+      # payload exists. This native step runs the real setup executable, drives
+      # the installed app's real UI and bridge, and stands up a dedicated central
+      # BFF + PocketBase pair on loopback. A missing observation fails this leg,
+      # which fails the release job through the existing `needs` chain; nothing
+      # is published or skipped instead.
+      - name: smoke the installed Windows app
+        if: runner.os == 'Windows'
+        # The UI smoke drives a real installer, app window and CDP bridge. Bound it so a missing
+        # observation fails the leg quickly; the evidence upload below still runs.
+        timeout-minutes: 20
+        env:
+          OBOL_WINDOWS_SMOKE_ISOLATED: '1'
+          OBOL_WINDOWS_SMOKE_OUT: ${{ runner.temp }}/obol-windows-smoke
+        run: bun scripts/windows-runtime-smoke.ts
+        working-directory: desktop
+
+      # The report and screenshots are sanitized by the script (no password,
+      # token or session value) and are uploaded even when the smoke fails.
+      - name: upload Windows smoke evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-smoke-${{ matrix.target }}
+          path: ${{ runner.temp }}/obol-windows-smoke/
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: verify the shipped signature
         if: runner.os == 'macOS'

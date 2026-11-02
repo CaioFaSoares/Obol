@@ -1,6 +1,7 @@
 import { ProjectRepository } from '../../../domain/interfaces/ProjectRepository';
 import { AccountRepository } from '../../../domain/interfaces/AccountRepository';
 import { TransactionRepository } from '../../../domain/interfaces/TransactionRepository';
+import { roundCurrency } from '../../../domain/utils/mathUtils';
 
 interface EnrichedProject {
   id: string;
@@ -8,6 +9,7 @@ interface EnrichedProject {
   total_value: number;
   status: 'active' | 'completed';
   received: number;
+  remaining: number;
   accounts_breakdown: {
     account_name: string;
     amount: number;
@@ -25,47 +27,44 @@ export class ListProjectsUseCase {
     const projects = await this.projectRepository.listAll();
     const accounts = await this.accountRepository.listAll();
     const accountMap = new Map(accounts.map(a => [a.id, a.name]));
+    const transactions = await this.transactionRepository.listAll();
 
-    const enriched = await Promise.all(
-      projects.map(async (project) => {
-        // Soma todas as receitas vinculadas ao projeto
-        const payments = await this.transactionRepository.listAll({
-          filter: `project_id = '${project.id}' && type = 'income'`
-        });
+    return projects.map(project => {
+      // Paid totals count realized, non-simulated incomes only. Pending
+      // linked income is not money received yet.
+      const payments = transactions.filter(
+        t =>
+          t.project_id === project.id &&
+          t.type === 'income' &&
+          t.status === 'realized' &&
+          t.is_simulated !== true
+      );
 
-        let received = 0;
-        const breakdownMap = new Map<string, number>();
+      let received = 0;
+      const breakdownMap = new Map<string, number>();
 
-        for (const t of payments) {
-          const amt = t.amount || 0;
-          received += amt;
-          
-          if (t.account_id) {
-            const accName = accountMap.get(t.account_id) || 'Conta Desconhecida';
-            const curr = breakdownMap.get(accName) || 0;
-            breakdownMap.set(accName, curr + amt);
-          } else {
-            const curr = breakdownMap.get('Outros/Dinheiro') || 0;
-            breakdownMap.set('Outros/Dinheiro', curr + amt);
-          }
-        }
+      for (const payment of payments) {
+        const amount = roundCurrency(payment.amount || 0);
+        received = roundCurrency(received + amount);
 
-        const accounts_breakdown = Array.from(breakdownMap.entries()).map(([account_name, amount]) => ({
+        const accountName = payment.account_id
+          ? accountMap.get(payment.account_id) || 'Conta Desconhecida'
+          : 'Outros/Dinheiro';
+        breakdownMap.set(accountName, roundCurrency((breakdownMap.get(accountName) ?? 0) + amount));
+      }
+
+      return {
+        id: project.id,
+        name: project.name,
+        total_value: project.total_value,
+        status: project.status,
+        received,
+        remaining: roundCurrency(project.total_value - received),
+        accounts_breakdown: Array.from(breakdownMap.entries()).map(([account_name, amount]) => ({
           account_name,
           amount
-        }));
-
-        return {
-          id: project.id,
-          name: project.name,
-          total_value: project.total_value,
-          status: project.status,
-          received,
-          accounts_breakdown
-        };
-      })
-    );
-
-    return enriched;
+        }))
+      };
+    });
   }
 }

@@ -4,15 +4,18 @@
 // `deviceLabel` (text). All rules null: the collection is created, read,
 // updated and deleted only by the BFF superuser at runtime; clients never
 // reach PocketBase directly.
+//
+// The collection is created bare because PocketBase 0.40.6
+// nondeterministically failed the inline-field create on fresh installs;
+// migration 0017 adds the fields and index, which is the schema every
+// successfully migrated deployment already has, see D017.
 migrate((app) => {
   try {
     app.findCollectionByNameOrId("sessions");
     return;
   } catch (_) {
-    // First run: create the collection below.
+    // First run: create the bare collection below.
   }
-
-  const ownerCollection = app.findCollectionByNameOrId("owner");
 
   const sessions = new Collection({
     name: "sessions",
@@ -23,27 +26,6 @@ migrate((app) => {
     createRule: null,
     updateRule: null,
     deleteRule: null,
-    fields: [
-      new RelationField({
-        name: "userId",
-        required: true,
-        collectionId: ownerCollection.id,
-        cascadeDelete: true,
-        maxSelect: 1,
-      }),
-      new DateField({
-        name: "expiresAt",
-        required: true,
-      }),
-      new TextField({
-        name: "deviceLabel",
-        required: false,
-        max: 100,
-      }),
-    ],
-    indexes: [
-      "CREATE INDEX idx_sessions_expiresAt ON sessions (expiresAt)",
-    ],
   });
 
   app.save(sessions);

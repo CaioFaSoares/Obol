@@ -1,8 +1,8 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { ValidationError } from '../../domain/errors';
-import { TransactionDTO } from '../validators/transactionSchemas';
-import { executeUseCase } from '../use-case-routes';
+import { TransactionDTO, TransactionUpdatePatchDTO } from '../validators/transactionSchemas';
+import { executeMutationUseCase, executeUseCase } from '../use-case-routes';
 import { TransactionListQueryDTO, TransactionQueryFiltersDTO } from '../validators/transactionQuerySchemas';
 
 const FILTER_QUERY_KEYS = Object.keys(TransactionQueryFiltersDTO.properties);
@@ -20,7 +20,7 @@ export const transactionController = (container: AwilixContainer) =>
   new Elysia({ prefix: '/api/transactions' })
     // POST /api/transactions
     .post('/', async ({ body, set }) => {
-      const transaction = await executeUseCase(container, 'createTransactionUseCase', body);
+      const transaction = await executeMutationUseCase(container, 'createTransactionUseCase', body);
       set.status = 201;
       return transaction;
     }, {
@@ -52,19 +52,19 @@ export const transactionController = (container: AwilixContainer) =>
 
     // DELETE /api/transactions/:id
     .delete('/:id', async ({ params }) => {
-      return await executeUseCase(container, 'deleteTransactionUseCase', params.id);
+      return await executeMutationUseCase(container, 'deleteTransactionUseCase', params.id);
     })
 
     // PATCH /api/transactions/:id
     .patch('/:id', async ({ params, body }) => {
-      return await executeUseCase(container, 'updateTransactionUseCase', params.id, body);
+      return await executeMutationUseCase(container, 'updateTransactionUseCase', params.id, body);
     }, {
-      body: t.Partial(TransactionDTO)
+      body: TransactionUpdatePatchDTO
     })
 
     // PATCH /api/transactions/:id/realize
     .patch('/:id/realize', async ({ params, body }) => {
-      return await executeUseCase(container, 'realizeTransactionUseCase', params.id, body);
+      return await executeMutationUseCase(container, 'realizeTransactionUseCase', params.id, body);
     }, {
       body: t.Object({
         update_balance: t.Optional(t.Boolean({ default: true }))

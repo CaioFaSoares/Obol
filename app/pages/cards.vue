@@ -4,9 +4,35 @@
       <h1 class="text-2xl sm:text-3xl font-bold text-white">Cartões de Crédito</h1>
     </div>
 
+    <!-- Erro de carregamento dos dados básicos -->
+    <UAlert
+      v-if="financeStore.loadError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="soft"
+      title="Financial data could not be fully loaded"
+      :description="financeStore.loadError"
+    >
+      <template #actions>
+        <UButton
+          label="Retry"
+          icon="i-heroicons-arrow-path"
+          color="red"
+          size="sm"
+          :loading="financeStore.isLoading"
+          @click="retryBaseData"
+        />
+      </template>
+    </UAlert>
+
     <!-- Seletor Mestre de Cartão -->
     <div class="w-full md:w-1/3">
+      <USkeleton
+        v-if="financeStore.isLoading && !financeStore.cards.length"
+        class="h-9 w-full rounded-md bg-zinc-800"
+      />
       <USelectMenu
+        v-else
         v-model="selectedCardId"
         :options="financeStore.cards"
         value-attribute="id"
@@ -28,6 +54,27 @@
         class="capitalize shrink-0 whitespace-nowrap"
       />
     </div>
+
+    <!-- Erro ao carregar faturas -->
+    <UAlert
+      v-if="invoicesError"
+      icon="i-heroicons-exclamation-triangle"
+      color="red"
+      variant="soft"
+      title="Could not load invoices"
+      :description="invoicesError"
+    >
+      <template #actions>
+        <UButton
+          label="Retry"
+          icon="i-heroicons-arrow-path"
+          color="red"
+          size="sm"
+          :loading="isLoadingInvoices"
+          @click="loadInvoices(selectedCardId)"
+        />
+      </template>
+    </UAlert>
 
     <!-- Corpo da Fatura -->
     <div v-if="currentInvoice" class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-6">
@@ -95,7 +142,7 @@
               {{ formatCurrency(Math.abs(txn.amount)) }}
             </p>
             <UDropdown v-if="txn.status !== 'projected'" :items="getTransactionItems(txn)" :popper="{ placement: 'bottom-end' }">
-              <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-vertical" class="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-50 hover:opacity-100 transition-opacity" />
+              <UButton color="gray" variant="ghost" icon="i-heroicons-ellipsis-vertical" aria-label="Transaction actions" class="min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-50 hover:opacity-100 transition-opacity" />
             </UDropdown>
             <UBadge v-else color="blue" variant="subtle" size="xs">Estimado</UBadge>
           </div>
@@ -103,13 +150,14 @@
       </div>
     </div>
     
-    <div v-else-if="selectedCardId && !isLoadingInvoices" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
+    <div v-else-if="selectedCardId && !isLoadingInvoices && !invoicesError" class="flex flex-col items-center py-16 text-zinc-500 gap-2">
       <UIcon name="i-heroicons-document-text" class="w-10 h-10" />
       <p>Nenhuma fatura encontrada para este cartão.</p>
     </div>
 
-    <div v-if="isLoadingInvoices" class="flex justify-center py-12">
-      <UIcon name="i-heroicons-arrow-path" class="w-8 h-8 animate-spin text-primary" />
+    <div v-if="isLoadingInvoices" class="flex justify-center py-12" role="status" aria-live="polite">
+      <UIcon name="i-heroicons-arrow-path" class="w-8 h-8 animate-spin text-primary" aria-hidden="true" />
+      <span class="sr-only">Loading invoices</span>
     </div>
 
     <!-- Seleção de Conta para Pagamento -->
@@ -185,15 +233,72 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { useFinanceStore } from '~/stores/finance'
 import { api } from '~/utils/api'
 import { formatCurrency, getStatusProps, formatDate, parseCurrencyInput } from '~/utils/formatters'
+import { useRefresh } from '~/composables/useRefresh'
 
 const financeStore = useFinanceStore()
+const { globalRefreshTrigger } = useRefresh()
 const toast = useToast()
 const route = useRoute()
 
 const selectedCardId = ref<string>('')
 const invoices = ref<any[]>([])
+const invoicesCardId = ref<string>('')
 const selectedPeriod = ref<string>('')
 const isLoadingInvoices = ref(false)
+const invoicesError = ref<string | null>(null)
+
+let invoiceRequestId = 0
+
+const INVOICES_ERROR = 'Could not load this card\'s invoices. Check your connection and try again.'
+
+async function loadInvoices(cardId: string) {
+  if (!cardId) return
+
+  const requestId = ++invoiceRequestId
+  const isSameCard = invoicesCardId.value === cardId
+
+  isLoadingInvoices.value = true
+  invoicesError.value = null
+
+  // Keep the last good list only when refreshing the card it belongs to.
+  if (!isSameCard) {
+    invoices.value = []
+    selectedPeriod.value = ''
+  }
+
+  try {
+    const res = await api.api.cards({ id: cardId }).invoices.get()
+
+    // A newer selection owns the state now; discard this response.
+    if (requestId !== invoiceRequestId) return
+
+    if (res.error) {
+      invoicesError.value = INVOICES_ERROR
+      return
+    }
+
+    const data = Array.isArray(res.data) ? res.data : []
+    invoices.value = data
+    invoicesCardId.value = cardId
+
+    if (data.length === 0) {
+      selectedPeriod.value = ''
+      return
+    }
+
+    if (isSameCard && data.some(inv => inv.period === selectedPeriod.value)) return
+
+    // Prefer the current open/closed invoice, then fall back to the newest.
+    const current = data.find(inv => inv.status === 'OPEN' || inv.status === 'CLOSED')
+    selectedPeriod.value = current ? current.period : data[0].period
+  } catch (error) {
+    if (requestId !== invoiceRequestId) return
+    console.error('Falha ao carregar faturas', error)
+    invoicesError.value = INVOICES_ERROR
+  } finally {
+    if (requestId === invoiceRequestId) isLoadingInvoices.value = false
+  }
+}
 
 const isPaymentModalOpen = ref(false)
 const paymentAccountId = ref<string>('')
@@ -204,46 +309,37 @@ const isPaying = ref(false)
 // Carrega os cartões ao montar
 onMounted(async () => {
   await financeStore.loadBaseData()
-  if (route.query.card_id) {
-    selectedCardId.value = route.query.card_id as string
+  const routeCardId = typeof route.query.card_id === 'string' ? route.query.card_id : ''
+  if (routeCardId) {
+    selectedCardId.value = routeCardId
   } else if (financeStore.cards.length > 0) {
     selectedCardId.value = financeStore.cards[0].id
   }
 })
 
-// Reatividade pura: Bate na API sempre que o cartão mudar
-watch(selectedCardId, async (newId) => {
-  if (!newId) return
-  
-  isLoadingInvoices.value = true
-  invoices.value = []
-  selectedPeriod.value = ''
+async function retryBaseData() {
+  await financeStore.loadBaseData(true)
+  if (selectedCardId.value || financeStore.cards.length === 0) return
 
-  try {
-    const res = await api.api.cards({ id: newId }).invoices.get()
-    
-    if (res.data && Array.isArray(res.data)) {
-      invoices.value = res.data
-      
-      // Lógica super inteligente para selecionar o mês atual automaticamente
-      // Tenta achar a primeira aberta ou fechada
-      const current = res.data.find(inv => inv.status === 'OPEN' || inv.status === 'CLOSED')
-      if (current) {
-        selectedPeriod.value = current.period
-      } else if (res.data.length > 0) {
-        selectedPeriod.value = res.data[0].period // Fallback para a mais recente
-      }
-    }
-  } catch (error) {
-    console.error('Falha ao carregar faturas', error)
-    toast.add({ title: 'Erro', description: 'Não foi possível carregar as faturas deste cartão.', color: 'red' })
-  } finally {
-    isLoadingInvoices.value = false
-  }
+  const routeCardId = typeof route.query.card_id === 'string' ? route.query.card_id : ''
+  selectedCardId.value = routeCardId || financeStore.cards[0].id
+}
+
+// Reatividade pura: Bate na API sempre que o cartão mudar
+watch(selectedCardId, (newId) => {
+  void loadInvoices(newId)
+})
+
+// A station-driven refresh re-reads the base cache and the currently selected
+// card; `loadInvoices` already discards responses from superseded requests.
+watch(globalRefreshTrigger, () => {
+  void financeStore.loadBaseData(true)
+  if (selectedCardId.value) void loadInvoices(selectedCardId.value)
 })
 
 // Ponte reativa para o Corpo da Fatura
 const currentInvoice = computed(() => {
+  if (invoicesCardId.value !== selectedCardId.value) return undefined
   return invoices.value.find(inv => inv.period === selectedPeriod.value)
 })
 
@@ -274,11 +370,17 @@ const payInvoice = () => {
 }
 
 const confirmPayment = async () => {
+  if (isPaying.value) return
   if (!currentInvoice.value || (!isSilentPayment.value && !paymentAccountId.value)) return
   
   isPaying.value = true
   try {
-    const payload: any = {
+    const payload: {
+      period: string
+      ignore_balance: boolean
+      account_id?: string
+      amount_paid?: number
+    } = {
       period: currentInvoice.value.period,
       ignore_balance: isSilentPayment.value
     }
@@ -301,12 +403,8 @@ const confirmPayment = async () => {
     // Atualiza os dados recarregando a store (para atualizar o saldo da conta globalmente)
     await financeStore.loadBaseData(true)
     
-    // Dispara o re-fetch das faturas reciclando a reatividade do watch
-    const currentId = selectedCardId.value
-    selectedCardId.value = '' // Reseta temporariamente
-    setTimeout(() => {
-      selectedCardId.value = currentId // Re-atribui para acionar o watch
-    }, 50)
+    // Re-fetch the invoice list for the card that was just paid.
+    await loadInvoices(selectedCardId.value)
 
   } catch (error) {
     console.error('Falha ao pagar', error)
@@ -339,10 +437,8 @@ const saveEdit = async () => {
     toast.add({ title: 'Gasto atualizado!', color: 'emerald' })
     isEditModalOpen.value = false
     
-    // Recarrega as faturas do cartão (Truque rápido do Watcher)
-    const tempId = selectedCardId.value
-    selectedCardId.value = ''
-    setTimeout(() => selectedCardId.value = tempId, 10)
+    // Recarrega as faturas do cartão
+    await loadInvoices(selectedCardId.value)
   } catch (err) {
     toast.add({ title: 'Erro', description: 'Não foi possível salvar as alterações', color: 'red' })
   }
@@ -388,9 +484,7 @@ const realizeCardTransaction = async (id: string) => {
 
     toast.add({ title: 'Gasto resolvido!', description: 'Fatura recalculada.', color: 'emerald' });
     
-    const tempId = selectedCardId.value;
-    selectedCardId.value = '';
-    setTimeout(() => selectedCardId.value = tempId, 10);
+    await loadInvoices(selectedCardId.value);
   } catch (err) {
     console.error(err);
     toast.add({ title: 'Erro', description: 'Falha ao processar a baixa.', color: 'red' });
@@ -406,10 +500,8 @@ const deleteTransaction = async (id: string) => {
 
     toast.add({ title: 'Excluído com sucesso', color: 'gray' });
     
-    // Simula recarregamento rápido do watch para recalcular os subtotais na tela
-    const tempId = selectedCardId.value;
-    selectedCardId.value = '';
-    setTimeout(() => selectedCardId.value = tempId, 10);
+    // Recarrega a fatura para recalcular os subtotais na tela
+    await loadInvoices(selectedCardId.value);
   } catch (err) {
     toast.add({ title: 'Erro ao excluir', description: 'Tente novamente.', color: 'red' });
   }

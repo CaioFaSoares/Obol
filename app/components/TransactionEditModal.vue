@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import type { TransactionUpdatePatch } from '../../server/src/domain/entities/Transaction'
 
 const { isOpen, close, editingTransaction } = useTransactionEdit()
 const { triggerRefresh } = useRefresh()
@@ -64,46 +65,99 @@ function readEdenErrorDetail(error: { value?: unknown }): string | undefined {
   return undefined
 }
 
+/**
+ * Builds the PATCH body from the form.
+ *
+ * An omitted field keeps the stored value and `null` clears it, so switching
+ * or removing an origin sends an explicit clear instead of an empty-string
+ * sentinel. Card rows send the effective purchase date: the server derives it
+ * from `expected_date` when it is missing, and the date input shows the stored
+ * due date, so an untouched input must not re-route the invoice.
+ */
+function buildUpdatePatch(input: {
+  title: string
+  amount: number
+  type: 'income' | 'expense' | 'transfer'
+  status: 'pending' | 'realized'
+  expectedDate: string
+  realizedDate: string
+  source: 'account' | 'card'
+  sourceId: string
+  destinationAccountId: string
+  categoryId: string
+  purchaseDate: string | undefined
+  hadCard: boolean
+}): TransactionUpdatePatch {
+  const base: TransactionUpdatePatch = {
+    title: input.title,
+    amount: input.amount,
+    type: input.type,
+    status: input.status,
+    expected_date: input.expectedDate ? new Date(input.expectedDate).toISOString() : new Date().toISOString(),
+    ...(input.status === 'realized' && input.realizedDate
+      ? { realized_date: new Date(input.realizedDate).toISOString() }
+      : {})
+  }
+
+  if (input.type === 'transfer') {
+    return {
+      ...base,
+      account_id: input.sourceId || null,
+      destination_account_id: input.destinationAccountId || null,
+      card_id: null,
+      category_id: null
+    }
+  }
+
+  if (input.source === 'card') {
+    return {
+      ...base,
+      card_id: input.sourceId || null,
+      account_id: null,
+      category_id: input.categoryId || null,
+      destination_account_id: null,
+      ...(input.purchaseDate !== undefined ? { purchase_date: input.purchaseDate } : {})
+    }
+  }
+
+  return {
+    ...base,
+    account_id: input.sourceId || null,
+    card_id: null,
+    category_id: input.categoryId || null,
+    destination_account_id: null,
+    ...(input.hadCard ? { purchase_date: null } : {})
+  }
+}
+
 const submit = async () => {
   if (!editingTransaction.value) return
   isSubmitting.value = true
   try {
-    const payload: any = {
+    const original = editingTransaction.value
+    const storedExpectedDay = typeof original.expected_date === 'string' ? original.expected_date.split('T')[0] : ''
+    const dateChanged = !storedExpectedDay || expectedDate.value !== storedExpectedDay
+    const purchaseDate = dateChanged
+      ? (expectedDate.value ? new Date(expectedDate.value).toISOString() : undefined)
+      : (typeof original.purchase_date === 'string' && original.purchase_date
+        ? new Date(original.purchase_date).toISOString()
+        : undefined)
+    const patch = buildUpdatePatch({
       title: title.value,
       amount: parseCurrencyInput(amount.value ?? 0),
       type: type.value,
       status: status.value,
-      expected_date: expectedDate.value ? new Date(expectedDate.value).toISOString() : new Date().toISOString()
-    }
-    
-    if (status.value === 'realized' && realizedDate.value) {
-      payload.realized_date = new Date(realizedDate.value).toISOString()
-    }
+      expectedDate: expectedDate.value,
+      realizedDate: realizedDate.value,
+      source: source.value,
+      sourceId: sourceId.value,
+      destinationAccountId: destinationAccountId.value,
+      categoryId: categoryId.value,
+      purchaseDate,
+      hadCard: Boolean(original.card_id)
+    })
 
-    if (type.value === 'transfer') {
-      payload.account_id = sourceId.value
-      payload.destination_account_id = destinationAccountId.value
-      payload.card_id = null
-      payload.category_id = null
-    } else {
-      if (source.value === 'account' && sourceId.value) {
-        payload.account_id = sourceId.value
-        payload.card_id = ""
-      } else if (source.value === 'card' && sourceId.value) {
-        payload.card_id = sourceId.value
-        payload.account_id = ""
-      }
-
-      if (categoryId.value) {
-        payload.category_id = categoryId.value
-      } else {
-        payload.category_id = ""
-      }
-      payload.destination_account_id = ""
-    }
-
-    const transactionId = editingTransaction.value.id as string
-    const res = await api.api.transactions({ id: transactionId }).patch(payload)
+    const res = await api.api.transactions({ id: original.id }).patch(patch)
     if (res.error) {
       console.error('API Error:', res.error)
       throw new Error(readEdenErrorDetail(res.error) || 'Erro ao atualizar a transação')

@@ -37,6 +37,19 @@ function rejectingUseCase(error: Error) {
 }
 
 function bootApp(container: AwilixContainer) {
+  // The controller write path resolves the shared mutation runtime; this
+  // double executes the registered use case exactly once, without a unit of
+  // work, so the HTTP boundary assertions stay focused on dispatch.
+  container.register({
+    syncRuntime: asValue({
+      execute: async (token: string, args: readonly unknown[]) => {
+        const useCase = container.resolve(token) as {
+          execute: (...input: readonly unknown[]) => Promise<unknown>;
+        };
+        return await useCase.execute(...args);
+      },
+    }),
+  });
   return new Elysia()
     .use(errorPlugin)
     .use(accountController(container))

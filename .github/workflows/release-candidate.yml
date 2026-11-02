@@ -142,6 +142,26 @@ jobs:
         run: bun run eb:verify
         working-directory: desktop
 
+      # REL-05 on the candidate channel: same real install and runtime proof as
+      # release.yml, with the candidate app's own embedded channel. A failed
+      # observation fails this leg and therefore the candidate publish job.
+      - name: smoke the installed Windows app
+        if: runner.os == 'Windows'
+        env:
+          OBOL_WINDOWS_SMOKE_ISOLATED: '1'
+          OBOL_WINDOWS_SMOKE_OUT: ${{ runner.temp }}/obol-windows-smoke
+        run: bun scripts/windows-runtime-smoke.ts
+        working-directory: desktop
+
+      - name: upload Windows smoke evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-smoke-${{ matrix.target }}
+          path: ${{ runner.temp }}/obol-windows-smoke/
+          if-no-files-found: warn
+          retention-days: 3
+
       - name: verify the shipped signature
         if: runner.os == 'macOS'
         run: codesign --verify --strict --deep "build/stable-macos-${{ matrix.runtime_arch }}/Obol.app"

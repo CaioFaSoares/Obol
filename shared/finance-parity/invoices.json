@@ -1,0 +1,1362 @@
+{
+  "protocol": 1,
+  "file": "invoices",
+  "title": "Card invoices, payments, deletion, and projected debt",
+  "cases": [
+    {
+      "id": "inv-card-purchase-boundary",
+      "purpose": "A purchase before the closing day lands in the current invoice; a purchase on the closing day lands in the next one.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001"
+          },
+          "capture": {
+            "invmar": {
+              "collection": "invoices",
+              "where": {
+                "card_id": "card00000000001",
+                "period": "2026-03"
+              }
+            },
+            "txmar": {
+              "collection": "transactions",
+              "where": {
+                "card_id": "card00000000001",
+                "amount": "100.00",
+                "purchase_date": "2026-03-05T00:00:00.000Z"
+              }
+            }
+          }
+        },
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Dining",
+            "amount": "50.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-15T00:00:00.000Z",
+            "card_id": "card00000000001"
+          },
+          "capture": {
+            "invapr": {
+              "collection": "invoices",
+              "where": {
+                "card_id": "card00000000001",
+                "period": "2026-04"
+              }
+            },
+            "txapr": {
+              "collection": "transactions",
+              "where": {
+                "card_id": "card00000000001",
+                "amount": "50.00",
+                "purchase_date": "2026-03-15T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "$invmar",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00"
+            },
+            {
+              "id": "$invapr",
+              "card_id": "card00000000001",
+              "period": "2026-04",
+              "due_date": "2026-04-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "50.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$txmar",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "$invmar"
+            },
+            {
+              "id": "$txapr",
+              "title": "Dining",
+              "amount": "50.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-04-20T00:00:00.000Z",
+              "purchase_date": "2026-03-15T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "$invapr"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-year-rollover",
+      "purpose": "A December 31 purchase on a card closing on the 25th with due day 5 lands in February 2027.",
+      "clock": {
+        "now": "2026-12-31T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 25,
+            "due_day": 5,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Year end",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-12-31T00:00:00.000Z",
+            "card_id": "card00000000001"
+          },
+          "capture": {
+            "inv": {
+              "collection": "invoices",
+              "where": {
+                "card_id": "card00000000001",
+                "period": "2027-02"
+              }
+            },
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "card_id": "card00000000001",
+                "amount": "100.00"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 25,
+              "due_day": 5,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "$inv",
+              "card_id": "card00000000001",
+              "period": "2027-02",
+              "due_date": "2027-02-05T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "Year end",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2027-02-05T00:00:00.000Z",
+              "purchase_date": "2026-12-31T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "$inv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-partial-payment",
+      "purpose": "Paying 40.00 of 100.00 debits the account, records the payment, and leaves the child pending.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "100.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.pay",
+          "card_id": "card00000000001",
+          "period": "2026-03",
+          "account_id": "acc000000000001",
+          "amount_paid": "40.00",
+          "ignore_balance": false,
+          "capture": {
+            "pay": {
+              "collection": "transactions",
+              "where": {
+                "account_id": "acc000000000001",
+                "amount": "40.00",
+                "status": "realized"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "460.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00",
+              "paid_amount": "40.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            },
+            {
+              "id": "$pay",
+              "title": "*generated*",
+              "amount": "40.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-full-payment",
+      "purpose": "Paying 100.00 in full debits the account, marks the invoice PAID, and realizes its child.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "100.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.pay",
+          "card_id": "card00000000001",
+          "period": "2026-03",
+          "account_id": "acc000000000001",
+          "amount_paid": "100.00",
+          "ignore_balance": false,
+          "capture": {
+            "pay": {
+              "collection": "transactions",
+              "where": {
+                "account_id": "acc000000000001",
+                "amount": "100.00",
+                "status": "realized"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "400.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "PAID",
+              "total_amount": "100.00",
+              "paid_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            },
+            {
+              "id": "$pay",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "account_id": "acc000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-silent-payoff",
+      "purpose": "A silent payoff marks the invoice PAID and realizes children without touching the account or paid_amount.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "100.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.pay",
+          "card_id": "card00000000001",
+          "period": "2026-03",
+          "ignore_balance": true
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "500.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "PAID",
+              "total_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "realized",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-payment-exceeds-debt",
+      "purpose": "Paying 120.00 against 100.00 of debt is rejected and changes nothing.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "100.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.pay",
+          "card_id": "card00000000001",
+          "period": "2026-03",
+          "account_id": "acc000000000001",
+          "amount_paid": "120.00",
+          "ignore_balance": false
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "validation"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "500.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-child-delete",
+      "purpose": "Deleting a card child reduces the invoice total by 100.00 and skips the recurrence period 2026-03.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "150.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Streaming",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "card_id": "card00000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Streaming",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001",
+            "recurrence_id": "rec000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Dining",
+            "amount": "50.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-12T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.delete",
+          "id": "txn000000000001"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "50.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Streaming",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "card_id": "card00000000001",
+              "skipped_periods": [
+                "2026-03"
+              ]
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn000000000002",
+              "title": "Dining",
+              "amount": "50.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-12T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inv-delete-invoice",
+      "purpose": "Deleting the invoice removes both children and appends the invoice period to the recurrence skip list.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "150.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Streaming",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "card_id": "card00000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Streaming",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001",
+            "recurrence_id": "rec000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Dining",
+            "amount": "50.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-12T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.delete",
+          "card_id": "card00000000001",
+          "period": "2026-03"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Streaming",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "card_id": "card00000000001",
+              "skipped_periods": [
+                "2026-03"
+              ]
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "inv-projection-no-double-count",
+      "purpose": "The invoice timeline projects the recurrence into 2026-04 and the virtual 2026-05 invoice but not into 2026-03, where a real child already exists.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "30.00"
+          },
+          {
+            "id": "inv000000000002",
+            "card_id": "card00000000001",
+            "period": "2026-04",
+            "due_date": "2026-04-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "0.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Streaming",
+            "amount": "30.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "card_id": "card00000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Streaming",
+            "amount": "30.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.summaries",
+          "card_id": "card00000000001"
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "invoice_timeline",
+            "card_id": "card00000000001",
+            "invoices": [
+              {
+                "period": "2026-05",
+                "due_date": "2026-05-20T00:00:00.000Z",
+                "status": "PROJECTED",
+                "debt": "30.00",
+                "paid_amount": "0.00",
+                "total_spent": "30.00",
+                "lines": [
+                  {
+                    "amount": "30.00",
+                    "status": "projected",
+                    "expected_date": "2026-05-10T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  }
+                ]
+              },
+              {
+                "period": "2026-04",
+                "due_date": "2026-04-20T00:00:00.000Z",
+                "status": "OPEN",
+                "debt": "30.00",
+                "paid_amount": "0.00",
+                "total_spent": "30.00",
+                "lines": [
+                  {
+                    "amount": "30.00",
+                    "status": "projected",
+                    "expected_date": "2026-04-10T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  }
+                ]
+              },
+              {
+                "period": "2026-03",
+                "due_date": "2026-03-20T00:00:00.000Z",
+                "status": "OPEN",
+                "debt": "30.00",
+                "paid_amount": "0.00",
+                "total_spent": "30.00",
+                "lines": [
+                  {
+                    "id": "txn000000000001",
+                    "amount": "30.00",
+                    "status": "pending",
+                    "expected_date": "2026-03-20T00:00:00.000Z",
+                    "purchase_date": "2026-03-10T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requires": [
+        "invoice_projection"
+      ]
+    },
+    {
+      "id": "inv-payment-atomic-failure",
+      "purpose": "A storage failure while updating the invoice rolls back the account debit, the payment row, and the invoice.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "500.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-03",
+            "due_date": "2026-03-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "100.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Groceries",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-20T00:00:00.000Z",
+            "purchase_date": "2026-03-05T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.pay",
+          "card_id": "card00000000001",
+          "period": "2026-03",
+          "account_id": "acc000000000001",
+          "amount_paid": "40.00",
+          "ignore_balance": false,
+          "fault": {
+            "on_write": {
+              "collection": "invoices",
+              "record_id": "inv000000000001"
+            },
+            "error": "storage_failure"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "storage_failure"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "500.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "inv000000000001",
+              "card_id": "card00000000001",
+              "period": "2026-03",
+              "due_date": "2026-03-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Groceries",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-05T00:00:00.000Z",
+              "card_id": "card00000000001",
+              "invoice_id": "inv000000000001"
+            }
+          ]
+        }
+      },
+      "requires": [
+        "atomic_compound_writes"
+      ],
+      "divergence": {
+        "against": "server",
+        "policy": "compound_write_all_or_nothing",
+        "source": "server/src/application/use-cases/cards/PayInvoiceUseCase.ts",
+        "note": "The server writes account, payment row, invoice, and children as separate repository calls."
+      }
+    },
+    {
+      "id": "inv-weekly-card-projection",
+      "purpose": "A weekly card recurrence projects one line per occurrence into the invoice whose due date covers it, and the totals sum every line.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [
+          {
+            "id": "inv000000000001",
+            "card_id": "card00000000001",
+            "period": "2026-11",
+            "due_date": "2026-11-20T00:00:00.000Z",
+            "status": "OPEN",
+            "total_amount": "50.00"
+          }
+        ],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Gym",
+            "amount": "50.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "card_id": "card00000000001",
+            "frequency": "weekly",
+            "weekday": 2
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Gym - 2026-10-20",
+            "amount": "50.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-11-20T00:00:00.000Z",
+            "purchase_date": "2026-10-20T00:00:00.000Z",
+            "card_id": "card00000000001",
+            "invoice_id": "inv000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "invoice.summaries",
+          "card_id": "card00000000001"
+        }
+      ],
+      "expect": {
+        "projections": [
+          {
+            "kind": "invoice_timeline",
+            "card_id": "card00000000001",
+            "invoices": [
+              {
+                "period": "2026-12",
+                "due_date": "2026-12-20T00:00:00.000Z",
+                "status": "PROJECTED",
+                "debt": "200.00",
+                "paid_amount": "0.00",
+                "total_spent": "200.00",
+                "lines": [
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-11-17T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-11-24T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-12-01T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-12-08T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  }
+                ]
+              },
+              {
+                "period": "2026-11",
+                "due_date": "2026-11-20T00:00:00.000Z",
+                "status": "OPEN",
+                "debt": "200.00",
+                "paid_amount": "0.00",
+                "total_spent": "200.00",
+                "lines": [
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-10-27T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-11-03T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "amount": "50.00",
+                    "status": "projected",
+                    "expected_date": "2026-11-10T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  },
+                  {
+                    "id": "txn000000000001",
+                    "amount": "50.00",
+                    "status": "pending",
+                    "expected_date": "2026-11-20T00:00:00.000Z",
+                    "purchase_date": "2026-10-20T00:00:00.000Z",
+                    "recurrence_id": "rec000000000001"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requires": [
+        "invoice_projection"
+      ]
+    }
+  ]
+}

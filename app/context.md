@@ -10,8 +10,10 @@ The UI layer of the Triad (`canon.md §2`). Talks only to the BFF via the typed 
 | `composables/useRefresh.ts` | Global refresh counter (`triggerRefresh()`); every mutation calls it |
 | `composables/useFastEntry.ts`, `useTransactionEdit.ts`, `useRecurrenceModal.ts` | Modal orchestration |
 | `utils/api.ts` | Typed Eden client bound to `server/src/index` `App`; hosted web uses Nuxt same-origin proxy, Electrobun uses `window.obol` RPC fetcher |
-| `ios/` | Capacitor 8 Xcode project; `npm run ios:generate`/`ios:sync` build and copy the static SPA |
-| `scripts/ios-testflight.sh` | Release archive, App Store IPA export, and TestFlight upload; also invoked by `.github/workflows/ios-testflight.yml` |
+| `ios/` | Native SwiftUI app (no web shell); Xcode project `App/App.xcodeproj`, built on the local Swift packages `ObolNativeRuntime` (`Package.swift`) and `ObolCore` |
+| `ios/Tests/FinanceParityTests` | Swift parity suite over `ObolCore` and `ObolNativeRuntime`; run `swift test` from `app/ios` |
+| `scripts/ios-run.sh` | Builds and launches the app in the iOS Simulator; `npm run ios:run` |
+| `scripts/ios-testflight.sh` | Release archive, App Store IPA export, and TestFlight upload; `npm run ios:testflight`, also invoked by `.github/workflows/ios-testflight.yml` |
 | `nuxt.config.ts` | Hosted SSR by default; `OBOL_DESKTOP_STATIC=true` generates the relative-asset desktop SPA |
 | `utils/formatters.ts` | `formatCurrency`, `formatDate` |
 

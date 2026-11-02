@@ -1,0 +1,1609 @@
+{
+  "protocol": 1,
+  "file": "recurrences",
+  "title": "Recurrence generation, clamping, idempotency, and termination",
+  "cases": [
+    {
+      "id": "rec-payday-clamp-february",
+      "purpose": "Payday 31 in February generates the pending occurrence on February 28.",
+      "clock": {
+        "now": "2026-02-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 31,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-02-28T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 31,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001"
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-02-28T00:00:00.000Z",
+              "purchase_date": "2026-02-28T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-month-idempotency",
+      "purpose": "Cron skips an existing month and manual launch conflicts on the existing next month.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent March",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Rent April",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-04-10T00:00:00.000Z",
+            "purchase_date": "2026-04-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        },
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "conflict",
+          "entity": "Recurrence",
+          "entity_id": "rec000000000001"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001"
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent March",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-10T00:00:00.000Z",
+              "purchase_date": "2026-03-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            },
+            {
+              "id": "txn000000000002",
+              "title": "Rent April",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-04-10T00:00:00.000Z",
+              "purchase_date": "2026-04-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-pause-resume",
+      "purpose": "A paused recurrence does not generate; after resuming, the same month generates once.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 20,
+            "type": "expense",
+            "status": "paused",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        },
+        {
+          "kind": "recurrence.set_status",
+          "id": "rec000000000001",
+          "status": "active"
+        },
+        {
+          "kind": "recurrence.process_month",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 20,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001"
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-20T00:00:00.000Z",
+              "purchase_date": "2026-03-20T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-end-date-expiry",
+      "purpose": "An occurrence after end_date ends the recurrence and generates nothing.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 20,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "end_date": "2026-03-15T00:00:00.000Z"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 20,
+              "type": "expense",
+              "status": "ended",
+              "account_id": "acc000000000001",
+              "end_date": "2026-03-15T00:00:00.000Z"
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "rec-finite-installments",
+      "purpose": "A three-installment recurrence generates only the third row and then ends.",
+      "clock": {
+        "now": "2026-04-05T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Loan",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "total_installments": 3
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Loan 1",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-02-10T00:00:00.000Z",
+            "purchase_date": "2026-02-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          },
+          {
+            "id": "txn000000000002",
+            "title": "Loan 2",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month",
+          "capture": {
+            "tx3": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-04-10T00:00:00.000Z"
+              }
+            }
+          }
+        },
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Loan",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "ended",
+              "account_id": "acc000000000001",
+              "total_installments": 3
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Loan 1",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-02-10T00:00:00.000Z",
+              "purchase_date": "2026-02-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            },
+            {
+              "id": "txn000000000002",
+              "title": "Loan 2",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-03-10T00:00:00.000Z",
+              "purchase_date": "2026-03-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            },
+            {
+              "id": "$tx3",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-04-10T00:00:00.000Z",
+              "purchase_date": "2026-04-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-launch-next-month",
+      "purpose": "Manual launch creates April 30 for payday 31, and a second launch conflicts.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 31,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-04-30T00:00:00.000Z"
+              }
+            }
+          }
+        },
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "conflict",
+          "entity": "Recurrence",
+          "entity_id": "rec000000000001"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 31,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001"
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-04-30T00:00:00.000Z",
+              "purchase_date": "2026-04-30T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-launch-card-invoice",
+      "purpose": "A card recurrence launch creates the April invoice and sets the child due date to April 20.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Streaming",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "card_id": "card00000000001"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001",
+          "capture": {
+            "inv": {
+              "collection": "invoices",
+              "where": {
+                "card_id": "card00000000001",
+                "period": "2026-04"
+              }
+            },
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-04-10T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [
+            {
+              "id": "$inv",
+              "card_id": "card00000000001",
+              "period": "2026-04",
+              "due_date": "2026-04-20T00:00:00.000Z",
+              "status": "OPEN",
+              "total_amount": "100.00"
+            }
+          ],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Streaming",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "card_id": "card00000000001"
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-04-20T00:00:00.000Z",
+              "purchase_date": "2026-04-10T00:00:00.000Z",
+              "is_recurring": true,
+              "card_id": "card00000000001",
+              "invoice_id": "$inv",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-skipped-period",
+      "purpose": "Cron does not generate a month listed in skipped_periods.",
+      "clock": {
+        "now": "2026-04-05T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "skipped_periods": [
+              "2026-04"
+            ]
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "skipped_periods": [
+                "2026-04"
+              ]
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "rec-deleted-child-skips",
+      "purpose": "Deleting a generated child records 2026-03 as skipped so cron does not regenerate it.",
+      "clock": {
+        "now": "2026-03-20T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent March",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-03-10T00:00:00.000Z",
+            "purchase_date": "2026-03-10T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "transaction.delete",
+          "id": "txn000000000001"
+        },
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "skipped_periods": [
+                "2026-03"
+              ]
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "rec-ended-launch-error",
+      "purpose": "Cron ignores an ended recurrence and manual launch returns invalid_state.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 10,
+            "type": "expense",
+            "status": "ended",
+            "account_id": "acc000000000001"
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        },
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_state",
+          "entity": "Recurrence",
+          "entity_id": "rec000000000001"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 10,
+              "type": "expense",
+              "status": "ended",
+              "account_id": "acc000000000001"
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "rec-invalid-account-and-card",
+      "purpose": "A recurrence cannot use both a bank account and a card.",
+      "clock": {
+        "now": "2026-03-10T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [
+          {
+            "id": "card00000000001",
+            "name": "Visa",
+            "closing_day": 15,
+            "due_day": 20,
+            "limit": "5000.00"
+          }
+        ],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.create",
+          "record": {
+            "name": "Bad",
+            "amount": "10.00",
+            "payday": 10,
+            "type": "expense",
+            "account_id": "acc000000000001",
+            "card_id": "card00000000001"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "validation"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [
+            {
+              "id": "card00000000001",
+              "name": "Visa",
+              "closing_day": 15,
+              "due_day": 20,
+              "limit": "5000.00"
+            }
+          ],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [],
+          "transactions": []
+        }
+      },
+      "requires": [
+        "relation_validation"
+      ]
+    },
+    {
+      "id": "rec-weekly-current-week",
+      "purpose": "A weekly recurrence materializes the current ISO week's chosen weekday, not the monthly payday.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-11-03T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 15,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 2
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-11-03T00:00:00.000Z",
+              "purchase_date": "2026-11-03T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-weekly-same-week-idempotent",
+      "purpose": "A second weekly run inside the same ISO week does not generate a duplicate child.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent - 2026-11-03",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-11-03T00:00:00.000Z",
+            "purchase_date": "2026-11-03T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 15,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 2
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent - 2026-11-03",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-11-03T00:00:00.000Z",
+              "purchase_date": "2026-11-03T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-weekly-skip-key",
+      "purpose": "A weekly occurrence day stored in skipped_periods suppresses generation for that ISO week.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2,
+            "skipped_periods": [
+              "2026-11-03"
+            ]
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 15,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 2,
+              "skipped_periods": [
+                "2026-11-03"
+              ]
+            }
+          ],
+          "transactions": []
+        }
+      }
+    },
+    {
+      "id": "rec-weekly-launch-next-week",
+      "purpose": "A weekly manual launch targets the next ISO week's occurrence, not the next month.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-11-10T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 15,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 2
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "*generated*",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-11-10T00:00:00.000Z",
+              "purchase_date": "2026-11-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-weekly-installments",
+      "purpose": "A weekly installment plan numbers its next child from the weekly child count and keeps its exact title.",
+      "clock": {
+        "now": "2026-11-04T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 15,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 2,
+            "total_installments": 2
+          }
+        ],
+        "transactions": [
+          {
+            "id": "txn000000000001",
+            "title": "Rent - Parcela 1/2",
+            "amount": "100.00",
+            "type": "expense",
+            "status": "pending",
+            "expected_date": "2026-11-03T00:00:00.000Z",
+            "purchase_date": "2026-11-03T00:00:00.000Z",
+            "is_recurring": true,
+            "account_id": "acc000000000001",
+            "recurrence_id": "rec000000000001"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "kind": "recurrence.launch",
+          "id": "rec000000000001",
+          "capture": {
+            "tx2": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-11-10T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 15,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 2,
+              "total_installments": 2
+            }
+          ],
+          "transactions": [
+            {
+              "id": "txn000000000001",
+              "title": "Rent - Parcela 1/2",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-11-03T00:00:00.000Z",
+              "purchase_date": "2026-11-03T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            },
+            {
+              "id": "$tx2",
+              "title": "Rent - Parcela 2/2",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-11-10T00:00:00.000Z",
+              "purchase_date": "2026-11-10T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "rec-weekly-week-crosses-month",
+      "purpose": "A weekly occurrence dated in the previous month still materializes while its ISO week contains the clock date.",
+      "clock": {
+        "now": "2027-01-01T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [],
+        "recurrences": [
+          {
+            "id": "rec000000000001",
+            "name": "Rent",
+            "amount": "100.00",
+            "payday": 20,
+            "type": "expense",
+            "status": "active",
+            "account_id": "acc000000000001",
+            "frequency": "weekly",
+            "weekday": 4
+          }
+        ],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "recurrence.process_month",
+          "capture": {
+            "tx": {
+              "collection": "transactions",
+              "where": {
+                "recurrence_id": "rec000000000001",
+                "purchase_date": "2026-12-31T00:00:00.000Z"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [],
+          "recurrences": [
+            {
+              "id": "rec000000000001",
+              "name": "Rent",
+              "amount": "100.00",
+              "payday": 20,
+              "type": "expense",
+              "status": "active",
+              "account_id": "acc000000000001",
+              "frequency": "weekly",
+              "weekday": 4
+            }
+          ],
+          "transactions": [
+            {
+              "id": "$tx",
+              "title": "Rent - 2026-12-31",
+              "amount": "100.00",
+              "type": "expense",
+              "status": "pending",
+              "expected_date": "2026-12-31T00:00:00.000Z",
+              "purchase_date": "2026-12-31T00:00:00.000Z",
+              "is_recurring": true,
+              "account_id": "acc000000000001",
+              "recurrence_id": "rec000000000001"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

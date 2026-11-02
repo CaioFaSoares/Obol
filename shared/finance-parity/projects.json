@@ -1,0 +1,233 @@
+{
+  "protocol": 1,
+  "file": "projects",
+  "title": "Project payments, completion, and total value",
+  "cases": [
+    {
+      "id": "project-payment-lifecycle",
+      "purpose": "Two payments record 500.00 of realized income, a pending linked income is excluded, and completion leaves total_value at 1000.00.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [
+          {
+            "id": "prj000000000001",
+            "name": "Website",
+            "total_value": "1000.00",
+            "status": "active"
+          }
+        ],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "project.payment",
+          "project_id": "prj000000000001",
+          "amount": "300.00",
+          "description": "Advance",
+          "capture": {
+            "pay1": {
+              "collection": "transactions",
+              "where": {
+                "project_id": "prj000000000001",
+                "amount": "300.00"
+              }
+            }
+          }
+        },
+        {
+          "kind": "project.payment",
+          "project_id": "prj000000000001",
+          "amount": "200.00",
+          "capture": {
+            "pay2": {
+              "collection": "transactions",
+              "where": {
+                "project_id": "prj000000000001",
+                "amount": "200.00"
+              }
+            }
+          }
+        },
+        {
+          "kind": "transaction.create",
+          "record": {
+            "title": "Pending invoice",
+            "amount": "400.00",
+            "type": "income",
+            "status": "pending",
+            "expected_date": "2026-04-01T00:00:00.000Z",
+            "account_id": "acc000000000001",
+            "project_id": "prj000000000001"
+          },
+          "capture": {
+            "txp": {
+              "collection": "transactions",
+              "where": {
+                "project_id": "prj000000000001",
+                "status": "pending"
+              }
+            }
+          }
+        },
+        {
+          "kind": "project.complete",
+          "id": "prj000000000001"
+        },
+        {
+          "kind": "project.summaries"
+        }
+      ],
+      "expect": {
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [
+            {
+              "id": "prj000000000001",
+              "name": "Website",
+              "total_value": "1000.00",
+              "status": "completed"
+            }
+          ],
+          "recurrences": [],
+          "transactions": [
+            {
+              "id": "$pay1",
+              "title": "Advance",
+              "amount": "300.00",
+              "type": "income",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "project_id": "prj000000000001"
+            },
+            {
+              "id": "$pay2",
+              "title": "*generated*",
+              "amount": "200.00",
+              "type": "income",
+              "status": "realized",
+              "expected_date": "2026-03-08T12:00:00.000Z",
+              "realized_date": "2026-03-08T12:00:00.000Z",
+              "project_id": "prj000000000001"
+            },
+            {
+              "id": "$txp",
+              "title": "Pending invoice",
+              "amount": "400.00",
+              "type": "income",
+              "status": "pending",
+              "expected_date": "2026-04-01T00:00:00.000Z",
+              "account_id": "acc000000000001",
+              "project_id": "prj000000000001"
+            }
+          ]
+        },
+        "projections": [
+          {
+            "kind": "projects",
+            "projects": [
+              {
+                "project_id": "prj000000000001",
+                "status": "completed",
+                "total_value": "1000.00",
+                "paid": "500.00",
+                "remaining": "500.00"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "project-payment-missing",
+      "purpose": "A payment against an unknown project returns not_found and writes nothing.",
+      "clock": {
+        "now": "2026-03-08T12:00:00.000Z"
+      },
+      "initial": {
+        "accounts": [
+          {
+            "id": "acc000000000001",
+            "name": "Checking",
+            "type": "checking",
+            "initial_balance": "1000.00"
+          }
+        ],
+        "cards": [],
+        "categories": [],
+        "invoices": [],
+        "projects": [
+          {
+            "id": "prj000000000001",
+            "name": "Website",
+            "total_value": "1000.00",
+            "status": "active"
+          }
+        ],
+        "recurrences": [],
+        "transactions": []
+      },
+      "commands": [
+        {
+          "kind": "project.payment",
+          "project_id": "prj000000000099",
+          "amount": "100.00"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "not_found",
+          "entity": "Project",
+          "entity_id": "prj000000000099"
+        },
+        "snapshot": {
+          "accounts": [
+            {
+              "id": "acc000000000001",
+              "name": "Checking",
+              "type": "checking",
+              "initial_balance": "1000.00"
+            }
+          ],
+          "cards": [],
+          "categories": [],
+          "invoices": [],
+          "projects": [
+            {
+              "id": "prj000000000001",
+              "name": "Website",
+              "total_value": "1000.00",
+              "status": "active"
+            }
+          ],
+          "recurrences": [],
+          "transactions": []
+        }
+      }
+    }
+  ]
+}

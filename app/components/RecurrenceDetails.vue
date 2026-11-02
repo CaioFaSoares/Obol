@@ -114,6 +114,22 @@ function getBadgeLabel(status: string) {
   if (status === 'paused') return 'Pausada'
   return 'Encerrada'
 }
+
+/** ISO weekdays, Monday = 1 through Sunday = 7 (pt-BR labels). */
+const WEEKDAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+
+/**
+ * Cadence label for the recurrence header: monthly rows show their
+ * day-of-month anchor, weekly rows their ISO weekday. A weekly row never
+ * renders a bare day number.
+ */
+function cadenceLabel(rec: { frequency?: string | null; weekday?: number | null; payday?: number | null }) {
+  if (rec.frequency === 'weekly') {
+    const weekdayName = WEEKDAY_NAMES[(rec.weekday ?? 0) - 1]
+    return weekdayName ? `Semanal — ${weekdayName}` : 'Semanal — dia da semana não definido'
+  }
+  return `Mensal — dia ${rec.payday ?? 'não definido'}`
+}
 </script>
 
 <template>
@@ -133,7 +149,7 @@ function getBadgeLabel(status: string) {
           <div class="flex justify-between items-start mb-4">
             <div>
               <h3 class="text-lg font-medium text-white">{{ recurrence.name }}</h3>
-              <p class="text-sm text-zinc-400">Dia de cobrança: {{ recurrence.payday }}</p>
+              <p class="text-sm text-zinc-400">{{ cadenceLabel(recurrence) }}</p>
             </div>
             <div class="flex items-center gap-2">
               <UBadge v-if="recurrence.total_installments > 0" color="blue" variant="subtle">

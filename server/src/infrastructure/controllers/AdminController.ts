@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { ValidationError } from '../../domain/errors';
-import { executeUseCase } from '../use-case-routes';
+import { executeAdminUseCase } from '../use-case-routes';
 
 /** The exact phrase the client must echo before a destructive reset runs. */
 export const RESET_CONFIRMATION = 'LIMPAR';
@@ -17,7 +17,7 @@ export const adminController = (container: AwilixContainer) =>
             `Confirmação inválida. Digite ${RESET_CONFIRMATION} para apagar os dados.`,
           );
         }
-        return await executeUseCase(container, 'resetFinancialDataUseCase');
+        return await executeAdminUseCase(container, 'resetFinancialDataUseCase');
       },
       {
         body: t.Object({

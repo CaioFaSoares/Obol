@@ -34,6 +34,22 @@ function badgeLabel(type: string) {
   return type === 'income' ? 'Receita' : 'Despesa'
 }
 
+/** ISO weekdays, Monday = 1 through Sunday = 7 (pt-BR labels). */
+const WEEKDAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+
+/**
+ * Cadence label for a recurrence row: monthly rows show their day-of-month
+ * anchor, weekly rows their ISO weekday. A weekly row never renders a bare day
+ * number.
+ */
+function cadenceLabel(rec: { frequency?: string | null; weekday?: number | null; payday?: number | null }) {
+  if (rec.frequency === 'weekly') {
+    const weekdayName = WEEKDAY_NAMES[(rec.weekday ?? 0) - 1]
+    return weekdayName ? `Semanal — ${weekdayName}` : 'Semanal — dia da semana não definido'
+  }
+  return `Mensal — dia ${rec.payday ?? 'não definido'}`
+}
+
 function getSourceName(rec: any) {
   if (rec.type === 'income') {
     const acc = financeStore.accounts.find(a => a.id === rec.account_id)
@@ -91,7 +107,7 @@ function getCategoryName(rec: any) {
                 <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
               </p>
               <p class="text-xs text-zinc-500">
-                Entra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
+                {{ cadenceLabel(rec) }} • {{ getSourceName(rec) }}
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
                 <span v-else-if="rec.status === 'paused'" class="ml-1 text-yellow-400">(pausada)</span>
               </p>
@@ -126,7 +142,7 @@ function getCategoryName(rec: any) {
                 <UBadge v-if="rec.total_installments > 0" color="blue" variant="subtle" size="xs">{{ rec.total_installments }}x</UBadge>
               </p>
               <p class="text-xs text-zinc-500">
-                Cobra todo dia {{ rec.payday }} • {{ getSourceName(rec) }}
+                {{ cadenceLabel(rec) }} • {{ getSourceName(rec) }}
                 <template v-if="getCategoryName(rec)"> • {{ getCategoryName(rec) }}</template>
                 <span v-if="rec.status === 'ended'" class="ml-1 text-red-400">(encerrada)</span>
                 <span v-else-if="rec.status === 'paused'" class="ml-1 text-yellow-400">(pausada)</span>

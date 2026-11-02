@@ -2,6 +2,16 @@ import { Electroview } from 'electrobun/view';
 import type {
   ApiFetchRequest,
   ApiFetchResponse,
+  DesktopAcknowledgeRejectedRequest,
+  DesktopConflictEntry,
+  DesktopConfirmConnectionRequest,
+  DesktopConnectionPreviewRequest,
+  DesktopExportResult,
+  DesktopOutboxEntry,
+  DesktopPairingPreview,
+  DesktopResolveConflictRequest,
+  DesktopSignOutResult,
+  DesktopStationStatus,
   DesktopUpdaterState,
   LocalAccountSummary,
   LocalAuthSetupRequest,
@@ -22,6 +32,21 @@ interface ObolViewBridge {
     check(): Promise<DesktopUpdaterState>;
     install(): Promise<void>;
     subscribe(callback: (state: DesktopUpdaterState) => void): () => void;
+  };
+  sync: {
+    status(): Promise<DesktopStationStatus>;
+    synchronize(): Promise<DesktopStationStatus>;
+    previewConnection(request: DesktopConnectionPreviewRequest): Promise<DesktopPairingPreview>;
+    confirmConnection(request: DesktopConfirmConnectionRequest): Promise<DesktopStationStatus>;
+    cancelConnectionPreview(): Promise<void>;
+    disconnect(): Promise<DesktopStationStatus>;
+    signOut(): Promise<DesktopSignOutResult>;
+    outbox(): Promise<DesktopOutboxEntry[]>;
+    conflicts(): Promise<DesktopConflictEntry[]>;
+    resolveConflict(request: DesktopResolveConflictRequest): Promise<DesktopStationStatus>;
+    acknowledgeRejected(request: DesktopAcknowledgeRejectedRequest): Promise<DesktopStationStatus>;
+    exportSnapshot(): Promise<DesktopExportResult>;
+    subscribe(callback: (state: DesktopStationStatus) => void): () => void;
   };
 }
 
@@ -52,6 +77,29 @@ view.obol = {
       rpc.addMessageListener('updater.state', listener);
       return () => {
         rpc.removeMessageListener('updater.state', listener);
+      };
+    }
+  },
+  sync: {
+    status: () => rpc.request['station.status']({}),
+    synchronize: () => rpc.request['station.synchronize']({}),
+    previewConnection: request => rpc.request['station.previewConnection'](request),
+    confirmConnection: request => rpc.request['station.confirmConnection'](request),
+    cancelConnectionPreview: () => rpc.request['station.cancelConnectionPreview']({}),
+    disconnect: () => rpc.request['station.disconnect']({}),
+    signOut: () => rpc.request['station.signOut']({}),
+    outbox: () => rpc.request['station.outbox']({}),
+    conflicts: () => rpc.request['station.conflicts']({}),
+    resolveConflict: request => rpc.request['station.resolveConflict'](request),
+    acknowledgeRejected: request => rpc.request['station.acknowledgeRejected'](request),
+    exportSnapshot: () => rpc.request['station.exportSnapshot']({}),
+    subscribe: callback => {
+      const listener = (state: DesktopStationStatus) => {
+        callback(state);
+      };
+      rpc.addMessageListener('station.state', listener);
+      return () => {
+        rpc.removeMessageListener('station.state', listener);
       };
     }
   }

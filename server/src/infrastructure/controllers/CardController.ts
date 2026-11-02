@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { AwilixContainer } from 'awilix';
 import { CardDTO, CardInvoicesResponseDTO, PayInvoiceDTO } from '../validators/cardSchemas';
-import { executeUseCase } from '../use-case-routes';
+import { executeMutationUseCase, executeUseCase } from '../use-case-routes';
 import type { Card } from '../../domain/entities/Card';
 
 export const cardController = (container: AwilixContainer) =>
@@ -13,7 +13,7 @@ export const cardController = (container: AwilixContainer) =>
 
     // POST /api/cards
     .post('/', async ({ body, set }) => {
-      const card = await executeUseCase(container, 'createCardUseCase', body);
+      const card = await executeMutationUseCase(container, 'createCardUseCase', body);
       set.status = 201;
       return card;
     }, {
@@ -22,7 +22,7 @@ export const cardController = (container: AwilixContainer) =>
 
     // PATCH /api/cards/:id
     .patch('/:id', async ({ params, body }) => {
-      return await executeUseCase(container, 'updateCardUseCase', params.id, body as Partial<Card>);
+      return await executeMutationUseCase(container, 'updateCardUseCase', params.id, body as Partial<Card>);
     })
 
     // GET /api/cards/:id/invoices
@@ -37,7 +37,7 @@ export const cardController = (container: AwilixContainer) =>
 
     // POST /api/cards/:id/pay-invoice
     .post('/:id/pay-invoice', async ({ params, body }) => {
-      return await executeUseCase(container, 'payInvoiceUseCase', {
+      return await executeMutationUseCase(container, 'payInvoiceUseCase', {
         cardId: params.id,
         period: body.period,
         accountId: body.account_id,
@@ -50,5 +50,5 @@ export const cardController = (container: AwilixContainer) =>
 
     // DELETE /api/cards/:id/invoices/:period
     .delete('/:id/invoices/:period', async ({ params }) => {
-      return await executeUseCase(container, 'deleteInvoiceUseCase', params.id, params.period);
+      return await executeMutationUseCase(container, 'deleteInvoiceUseCase', params.id, params.period);
     });

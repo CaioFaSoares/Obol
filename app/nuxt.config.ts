@@ -6,6 +6,18 @@ const desktopSpa = desktopStaticBuild || desktopLocalDev
 export default defineNuxtConfig({
   // Local Electrobun also disables SSR so the login gate runs before desktop API access.
   ssr: !desktopSpa,
+  $development: desktopLocalDev
+    ? {
+        experimental: {
+          // SPA dev still loads Nuxt's client manifest through the Vite Node IPC server.
+          // Without the environment API, Nuxt only starts that server from the SSR Vite
+          // server, which `ssr: false` never creates, so the app document returns 500.
+          // Only desktop-local dev opts in; hosted SSR dev and release builds keep the
+          // serial Vite pipeline.
+          viteEnvironmentApi: true
+        }
+      }
+    : {},
   // Keep Nuxt's static build metadata path short enough for Electrobun's macOS self-extractor.
   ...(desktopStaticBuild ? { buildId: 'obol' } : {}),
   app: {

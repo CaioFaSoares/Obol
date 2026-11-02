@@ -1,7 +1,16 @@
 # Dedicated production image for the self-hosted deployment
-# (docker-compose.self-hosted.yml -> obol-web). It stays separate from
-# app/Dockerfile so the dev compose and Coolify keep building their image
-# untouched. Keep Nuxt in SSR mode: no OBOL_DESKTOP_STATIC, no static build.
+# (docker-compose.self-hosted.yml -> obol-web). Two stages:
+#   builder - pinned Node 22 LTS, full lockfile install, the SSR build;
+#   runner  - same pinned base, unprivileged user, only the self-contained
+#             Nitro output.
+# It stays separate from app/Dockerfile so the dev compose and Coolify keep
+# building their image untouched. Keep Nuxt in SSR mode: no
+# OBOL_DESKTOP_STATIC, no static build.
+#
+# Node 22 LTS is the production runtime: the installed Capacitor CLI,
+# file-type, and visualizer tooling declare Node >= 22, so the build must not
+# run on Node 20. The runtime only needs the Node binary; npm and the build
+# toolchain stay in the builder.
 #
 # NUXT_PUBLIC_API_BASE is injected BEFORE `npm run build`: Nuxt bakes it into
 # runtimeConfig.public.apiBase and into the generated routeRules
@@ -11,17 +20,27 @@
 # forwards /api/* to the BFF.
 #
 # Tested with the build recipe of app/package.json only (`build` = `nuxt build`).
+#
+# node:22-alpine, pinned to the multi-arch OCI index digest
+# sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+# (verified with `docker buildx imagetools inspect node:22-alpine`: a
+# 10-platform index, Node 22 LTS on Alpine 3.24, base revision
+# 80f02a542da739e6a662451d1db66456a0dea253). Major bumps need a new digest
+# here; do not reuse this one for a different Node major.
 
-# node:20-alpine, same major as app/Dockerfile, pinned to the multi-arch index
-# digest (node:20-alpine on Alpine 3.23, verified with `docker buildx
-# imagetools inspect node:20-alpine`; major bumps need a new digest here).
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+ARG NODE_IMAGE=node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+
+# ---------------------------------------------------------------------------
+# Builder: install the committed lockfile and produce .output
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
 # Reproducible dependency install from the committed lockfile (npm ci, never
 # npm install). Only the manifests are copied first so source edits do not
-# invalidate the npm cache layer.
+# invalidate the npm cache layer. Dev dependencies are required by
+# `nuxt build`, so NODE_ENV stays unset here (production would skip them).
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -31,13 +50,50 @@ COPY . .
 ENV NUXT_PUBLIC_API_BASE=http://obol-bff:8080
 RUN npm run build
 
-# Production SSR server (node-server preset runtime in .output/server/).
+# ---------------------------------------------------------------------------
+# Runner: production SSR server only
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runner
+
+WORKDIR /app
+
+# The Nitro node-server output is self-contained: .output/server bundles the
+# application and the runtime dependencies it resolved, and .output/public
+# holds the built assets. Copying only .output is what keeps npm, the dev
+# dependency tree, the lockfile, and the repository source out of production.
+COPY --from=builder --chown=node:node /app/.output ./.output
+
+# The node base image ships npm, npx, corepack, and yarn next to the Node
+# binary; yarn's installation payload lives in the pinned /opt/yarn-v1.22.22
+# directory that the /usr/local/bin/yarn and /usr/local/bin/yarnpkg wrappers
+# point at. The Nitro runtime needs only node, so strip all four.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg \
+           /opt/yarn-v1.22.22
+
+# HOST=0.0.0.0 is required for the listener to be reachable from outside the
+# container; what actually reaches it is decided by the Compose port
+# publication and the operator's reverse proxy, not by this file.
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000
 EXPOSE 3000
 
+# Non-root: the official node image ships the unprivileged `node` user
+# (uid/gid 1000). Nothing in the runtime needs to write inside /app.
+USER node
+
 # Health check lives at the compose-service level (docker-compose.self-hosted.yml),
-# next to the obol-bff/obol-pb checks.
+# next to the obol-bff/obol-pb checks. It calls the busybox `wget` applet of the
+# Alpine base image (`wget --no-verbose --tries=1 --spider`). Alpine builds
+# busybox with CONFIG_DESKTOP=y and FEATURE_WGET_LONG_OPTIONS=y, so
+# --no-verbose/--tries/--spider are accepted; this stage installs no packages,
+# so that applet must keep existing in the base image. If a future base drops
+# busybox, replace the probe with a Node one-liner instead of adding curl.
 
 CMD ["node", ".output/server/index.mjs"]

@@ -9,10 +9,46 @@ import type {
   LocalAccountSummary,
   LocalAuthSetupRequest,
   LocalAuthStatus,
-  LocalAuthUnlockRequest
+  LocalAuthUnlockRequest,
+  ObolBridgeSchema
 } from '../../desktop/electrobun/shared-rpc'
 
 export type DesktopUpdaterUnsubscribe = () => void
+
+// ---- Desktop station bridge ------------------------------------------------
+// `window.obol.sync` is the desktop-local replication surface (E007/D016). Its
+// data shapes are declared once in `desktop/electrobun/shared-rpc`; the app
+// imports them from there and never redefines them. This module only names the
+// callable window view over that schema, so a producer change cannot silently
+// drift from the consumer. No shape here carries a password, token or secret.
+
+type StationRequests = ObolBridgeSchema['bun']['requests']
+
+export interface DesktopStationBridge {
+  status(): Promise<StationRequests['station.status']['response']>
+  synchronize(): Promise<StationRequests['station.synchronize']['response']>
+  previewConnection(
+    request: StationRequests['station.previewConnection']['params']
+  ): Promise<StationRequests['station.previewConnection']['response']>
+  confirmConnection(
+    request: StationRequests['station.confirmConnection']['params']
+  ): Promise<StationRequests['station.confirmConnection']['response']>
+  cancelConnectionPreview(): Promise<void>
+  disconnect(): Promise<StationRequests['station.disconnect']['response']>
+  signOut(): Promise<StationRequests['station.signOut']['response']>
+  outbox(): Promise<StationRequests['station.outbox']['response']>
+  conflicts(): Promise<StationRequests['station.conflicts']['response']>
+  resolveConflict(
+    request: StationRequests['station.resolveConflict']['params']
+  ): Promise<StationRequests['station.resolveConflict']['response']>
+  acknowledgeRejected(
+    request: StationRequests['station.acknowledgeRejected']['params']
+  ): Promise<StationRequests['station.acknowledgeRejected']['response']>
+  exportSnapshot(): Promise<StationRequests['station.exportSnapshot']['response']>
+  subscribe(
+    callback: (state: StationRequests['station.status']['response']) => void
+  ): DesktopUpdaterUnsubscribe
+}
 
 export interface ObolViewBridge {
   apiFetch(request: ApiFetchRequest): Promise<ApiFetchResponse>
@@ -27,6 +63,12 @@ export interface ObolViewBridge {
     install(): Promise<void>
     subscribe(callback: (state: DesktopUpdaterState) => void): DesktopUpdaterUnsubscribe
   }
+  /**
+   * Desktop-local station replication. Absent on hosted web, on remote-only
+   * desktop builds and on desktop builds older than the local sync runtime;
+   * callers must treat it as optional and never synthesize a fallback.
+   */
+  sync?: DesktopStationBridge
 }
 
 declare global {
@@ -124,9 +166,9 @@ export function apiClientFor(baseUrl: string): ObolApi {
 
 /**
  * The typed Eden client. The target URL is resolved per property access:
- * the remote bearer transport wins over the local `window.obol` RPC path, and
- * a Capacitor `capacitor://localhost` document origin is never used to reach
- * the central server.
+ * the remote bearer transport wins over the local `window.obol` RPC path, so
+ * the central server is always reached at the absolute origin declared by the
+ * selected transport.
  */
 export const api = new Proxy({} as ObolApi, {
   get(_target, prop) {
@@ -184,8 +226,8 @@ async function remoteFetch(request: Request): Promise<Response> {
     return relayRemoteFailure(globalThis.fetch(new Request(request, { credentials: 'include' })))
   }
 
-  // Bearer transport: retarget the request so a Capacitor `capacitor://localhost`
-  // document origin cannot leak into requests against the central server.
+  // Bearer transport: retarget the request at `transport.serverUrl` so the
+  // absolute deployment origin always wins over the document origin.
   const url = new URL(request.url)
   const target = new URL(`${url.pathname}${url.search}`, transport.serverUrl)
   const headers = new Headers(request.headers)

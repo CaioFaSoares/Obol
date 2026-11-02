@@ -2,7 +2,9 @@ import { TransactionRepository } from '../../../domain/interfaces/TransactionRep
 import { InvoiceRepository } from '../../../domain/interfaces/InvoiceRepository';
 import { RecurrenceRepository } from '../../../domain/interfaces/RecurrenceRepository';
 import { SyncInvoiceUseCase } from '../invoices/SyncInvoiceUseCase';
-import { sum, sub } from '../../../domain/utils/mathUtils';
+import { monthKey, startOfUtcMonth, addUtcMonths } from '../../../domain/utils/dateUtils';
+import { roundCurrency, sum } from '../../../domain/utils/mathUtils';
+import { SyncClock, systemSyncClock } from '../../../domain/sync/MutationContext';
 
 interface ReconciliationReport {
   orphansFixed: number;
@@ -17,12 +19,11 @@ export class ReconcileInvoicesUseCase {
     private readonly transactionRepository: TransactionRepository,
     private readonly invoiceRepository: InvoiceRepository,
     private readonly recurrenceRepository: RecurrenceRepository,
-    private readonly syncInvoiceUseCase: SyncInvoiceUseCase
+    private readonly syncInvoiceUseCase: SyncInvoiceUseCase,
+    private readonly clock: SyncClock = systemSyncClock
   ) {}
 
   async execute(): Promise<ReconciliationReport> {
-    console.log(`🔧 [RECONCILIAÇÃO] Iniciando varredura de integridade...`);
-
     const report: ReconciliationReport = {
       orphansFixed: 0,
       orphanDetails: [],
@@ -31,129 +32,84 @@ export class ReconcileInvoicesUseCase {
       skippedPeriodsCleaned: 0
     };
 
-    try {
-      // =========================================================================
-      // VARREDURA 1: Transações Órfãs (têm card_id mas invoice_id vazio)
-      // =========================================================================
-      console.log(`🔍 [VARREDURA 1] Buscando transações órfãs...`);
+    // Sweep 1: card transactions without an invoice. Their amount is not in
+    // any invoice yet, so attaching them charges the resolved invoice once.
+    const transactions = await this.transactionRepository.listAll();
+    const orphans = transactions.filter(
+      txn => txn.card_id && !txn.invoice_id && txn.is_simulated !== true
+    );
 
-      const orphans = await this.transactionRepository.listAll({
-        filter: `card_id != "" && (invoice_id = "" || invoice_id = null)`
-      });
+    for (const txn of orphans) {
+      const referenceDate = txn.purchase_date || txn.expected_date;
+      if (!referenceDate) continue;
 
-      for (const txn of orphans) {
-        try {
-          const referenceDate = txn.purchase_date || txn.expected_date;
+      const invoice = await this.syncInvoiceUseCase.execute(
+        txn.card_id as string,
+        referenceDate,
+        txn.amount,
+        txn.type
+      );
 
-          if (!referenceDate) {
-            console.warn(`⚠️  Transação [${txn.title}] sem data de referência. Pulando.`);
-            continue;
-          }
+      const updatePayload: Partial<typeof txn> = {
+        invoice_id: invoice.id,
+        expected_date: invoice.due_date
+      };
+      if (!txn.purchase_date) updatePayload.purchase_date = txn.expected_date;
 
-          // Descobre/cria a fatura correta usando o mesmo motor do sistema
-          const invoice = await this.syncInvoiceUseCase.execute(txn.card_id!, referenceDate, 0, txn.type);
+      await this.transactionRepository.update(txn.id, updatePayload);
 
-          // Vincula a transação à fatura encontrada
-          const updatePayload: any = {
-            invoice_id: invoice.id,
-            expected_date: invoice.due_date
-          };
-
-          if (!txn.purchase_date && txn.expected_date) {
-            updatePayload.purchase_date = txn.expected_date;
-          }
-
-          await this.transactionRepository.update(txn.id, updatePayload);
-
-          report.orphansFixed++;
-          report.orphanDetails.push(`${txn.title} → Fatura ${invoice.period}`);
-          console.log(`✅ Órfã curada: [${txn.title}] vinculada à fatura ${invoice.period}`);
-        } catch (err: any) {
-          console.error(`❌ Falha ao reconciliar órfã [${txn.title}]:`, err.message);
-        }
-      }
-
-      // =========================================================================
-      // VARREDURA 2: Recalcular Totais de Faturas (OPEN ou CLOSED)
-      // =========================================================================
-      console.log(`🔍 [VARREDURA 2] Verificando totais de faturas...`);
-
-      const invoices = await this.invoiceRepository.listAll({
-        filter: `status = 'OPEN' || status = 'CLOSED'`
-      });
-
-      for (const invoice of invoices) {
-        try {
-          // Busca TODAS as transações vinculadas a esta fatura
-          const txns = await this.transactionRepository.listAll({
-            filter: `invoice_id = '${invoice.id}'`
-          });
-
-          // Recalcula o total a partir do zero
-          let calculatedTotal = 0;
-          for (const txn of txns) {
-            if (txn.type === 'expense') {
-              calculatedTotal = sum(calculatedTotal, txn.amount);
-            } else if (txn.type === 'income') {
-              calculatedTotal = sub(calculatedTotal, txn.amount);
-            }
-          }
-
-          // Compara com o valor salvo na fatura
-          const currentTotal = invoice.total_amount;
-          const diff = Math.abs(currentTotal - calculatedTotal);
-
-          if (diff > 0.01) {
-            await this.invoiceRepository.update(invoice.id, {
-              total_amount: calculatedTotal
-            });
-
-            report.invoicesRecalculated++;
-            report.invoiceDetails.push(
-              `Fatura ${invoice.period}: R$ ${currentTotal.toFixed(2)} → R$ ${calculatedTotal.toFixed(2)} (Δ ${diff.toFixed(2)})`
-            );
-            console.log(`🔄 Fatura ${invoice.period} recalculada: ${currentTotal} → ${calculatedTotal}`);
-          }
-        } catch (err: any) {
-          console.error(`❌ Falha ao recalcular fatura ${invoice.period}:`, err.message);
-        }
-      }
-
-      // =========================================================================
-      // VARREDURA 3: Limpeza de skipped_periods antigos (> 3 meses)
-      // =========================================================================
-      console.log(`🔍 [VARREDURA 3] Limpando skipped_periods obsoletos...`);
-
-      const now = new Date();
-      const threeMonthsAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
-      const cutoffPeriod = `${threeMonthsAgo.getUTCFullYear()}-${String(threeMonthsAgo.getUTCMonth() + 1).padStart(2, '0')}`;
-
-      const recurrences = await this.recurrenceRepository.listAll({
-        filter: `status = 'active'`
-      });
-
-      for (const rec of recurrences) {
-        if (!rec.skipped_periods || rec.skipped_periods.length === 0) continue;
-
-        const freshPeriods = rec.skipped_periods.filter((p: string) => p >= cutoffPeriod);
-
-        if (freshPeriods.length < rec.skipped_periods.length) {
-          const removed = rec.skipped_periods.length - freshPeriods.length;
-          await this.recurrenceRepository.update(rec.id, {
-            skipped_periods: freshPeriods
-          });
-          report.skippedPeriodsCleaned += removed;
-          console.log(`🧹 Recorrência [${rec.name}]: ${removed} período(s) antigo(s) limpo(s)`);
-        }
-      }
-
-      console.log(`🏁 [RECONCILIAÇÃO] Concluída: ${report.orphansFixed} órfãs curadas | ${report.invoicesRecalculated} faturas recalculadas | ${report.skippedPeriodsCleaned} períodos limpos`);
-
-      return report;
-
-    } catch (error: any) {
-      console.error(`❌ [RECONCILIAÇÃO ERROR] Falha crítica:`, error);
-      throw error;
+      report.orphansFixed += 1;
+      report.orphanDetails.push(`${txn.title} -> invoice ${invoice.period}`);
     }
+
+    // Sweep 2: recompute OPEN/CLOSED invoice totals from their children.
+    const currentTransactions = await this.transactionRepository.listAll();
+    const invoices = await this.invoiceRepository.listAll();
+    for (const invoice of invoices) {
+      if (invoice.status !== 'OPEN' && invoice.status !== 'CLOSED') continue;
+
+      const children = currentTransactions.filter(txn => txn.invoice_id === invoice.id);
+
+      let calculatedTotal = 0;
+      for (const txn of children) {
+        if (txn.type === 'expense') calculatedTotal = sum(calculatedTotal, txn.amount);
+        if (txn.type === 'income') calculatedTotal = sum(calculatedTotal, -txn.amount);
+      }
+
+      const currentTotal = invoice.total_amount;
+      if (Math.abs(currentTotal - calculatedTotal) > 0.01) {
+        await this.invoiceRepository.update(invoice.id, {
+          total_amount: calculatedTotal
+        });
+        report.invoicesRecalculated += 1;
+        report.invoiceDetails.push(
+          `Invoice ${invoice.period}: ${roundCurrency(currentTotal).toFixed(2)} -> ${roundCurrency(calculatedTotal).toFixed(2)}`
+        );
+      }
+    }
+
+    // Sweep 3: prune skipped periods older than three months. Weekly rows key
+    // their skips by day (`YYYY-MM-DD`), so the comparison uses the month
+    // prefix of every key and treats both shapes identically.
+    const now = new Date(this.clock.now());
+    const cutoffPeriod = monthKey(addUtcMonths(startOfUtcMonth(now), -3));
+
+    const recurrences = await this.recurrenceRepository.listAll();
+    for (const rec of recurrences) {
+      if (rec.status !== 'active') continue;
+      if (!rec.skipped_periods || rec.skipped_periods.length === 0) continue;
+
+      const freshPeriods = rec.skipped_periods.filter(
+        period => period.slice(0, 7) >= cutoffPeriod
+      );
+      if (freshPeriods.length < rec.skipped_periods.length) {
+        await this.recurrenceRepository.update(rec.id, {
+          skipped_periods: freshPeriods
+        });
+        report.skippedPeriodsCleaned += rec.skipped_periods.length - freshPeriods.length;
+      }
+    }
+
+    return report;
   }
 }

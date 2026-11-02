@@ -74,6 +74,17 @@ const localGateMode = computed(() => {
   }
 })
 
+// The station surface belongs to the unlocked desktop-local profile only.
+// Hosted web and remote-only desktop keep their own auth/cache flows and never
+// mount it.
+const stationSyncVisible = computed(() =>
+  import.meta.client &&
+  desktopRuntime &&
+  authMode.value === 'unlocked' &&
+  !remoteModeRequested.value &&
+  remote.remoteStep.value === 'idle'
+)
+
 if (import.meta.server) {
   await useAsyncData('global-finance-data', async () => {
     // Auth-enabled deployments must not expose unauthenticated financial calls
@@ -186,9 +197,10 @@ onMounted(async () => {
       await readAuthState()
     }
   } else {
-    // Native iOS and hosted web run the same remote identity flow; legacy
-    // (auth-disabled) hosted deployments resolve to 'idle' inside the call
-    // and load the dashboard as before.
+    // Hosted web runs the remote identity flow; the local desktop client
+    // reaches it through the Electrobun auth bridge. Legacy (auth-disabled)
+    // hosted deployments resolve to 'idle' inside the call and load the
+    // dashboard as before.
     await remote.bootstrapRemote()
   }
 
@@ -242,6 +254,7 @@ onMounted(async () => {
     @connect="connectRemote"
   />
   <template v-else>
+    <StationSyncPanel v-if="stationSyncVisible" />
     <NuxtLayout>
       <NuxtRouteAnnouncer />
       <NuxtPage />

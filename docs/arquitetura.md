@@ -1,17 +1,18 @@
 # Architecture
 
-> Current behavior verified against source on 2026-10-29. Product rules are in [`canon.md`](canon.md); accepted decisions are in [`decisions/log.md`](decisions/log.md).
+> Current behavior verified against source on 2026-11-01. Product rules are in [`canon.md`](canon.md); accepted decisions are in [`decisions/log.md`](decisions/log.md).
 
 ## Runtime modes
 
 | | Hosted web | Local desktop | Central server clients |
 |---|---|---|---|
-| Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA | Existing Nuxt/Vue UI in Electrobun remote mode or the Capacitor iOS shell |
+| Window/UI | Nuxt 3 SSR web app | Electrobun 2.0.5 system WebView; Nuxt static SPA | Nuxt/Vue UI in Electrobun remote mode, or the native SwiftUI iOS app (no WebView) |
 | UI → BFF | Eden Treaty → same-origin Nuxt `/api/**` proxy → Elysia HTTP | `LocalAuthGate` unlocks through Electrobun RPC; Eden requests use `window.obol.apiFetch` → in-process Elysia `app.handle(Request)` | Typed Eden client → configured HTTPS server; remote desktop and iOS use Bearer sessions, hosted web uses its same-origin HttpOnly cookie |
-| BFF | Elysia on Bun behind the hosted proxy | Same Elysia app around local PocketBase; no remote auth secret, no public listener | Elysia BFF in the production Compose stack; D009 auth protects `/api/**` |
-| Data | PocketBase Compose service | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-profile `pb_data` plus `local_profile.json` | Central PocketBase volume, private to the BFF; one owner per deployment, shared data for every valid session |
+| BFF | Elysia on Bun behind the hosted proxy | Same Elysia app around local PocketBase; station mode records every local mutation into the outbox (`desktop/electrobun/bun/station-sync.ts`) | Elysia BFF in the production Compose stack; D009 auth protects `/api/**`, D016 sync routes included |
+| Data | PocketBase Compose service | PocketBase v0.40.6 child bound to `127.0.0.1:13090`; per-profile `pb_data` plus `local_profile.json`; station outbox in local PocketBase | Central PocketBase volume, private to the BFF; one owner per deployment, shared data for every valid session |
+| Native finance | — | — | iOS keeps its own SQLite store (`app/ios/App/App/Core/Store/ObolDatabase.swift`) with outbox, revisions and conflicts |
 
-The central server is an optional shared runtime, not a service operated by the Obol project. Remote desktop mode is selected explicitly and never imports, syncs, or overwrites the local profile. iOS packages the same Nuxt/Vue UI with Capacitor 8 and stores bearer credentials in the iOS Keychain. The hosted web uses an HttpOnly cookie; remote desktop/iOS use Bearer tokens and exact CORS origins (`views://mainview` and `capacitor://localhost`). See [D008](decisions/D008-central-server-clients.md), [D009](decisions/D009-remote-identity.md), [D014](decisions/D014-electrobun-cors-origin.md), and the [self-hosting runbook](self-hosting.md).
+The central server is an optional shared runtime, not a service operated by the Obol project. Remote desktop mode is selected explicitly and never imports, syncs, or overwrites the local profile. The iOS app is native SwiftUI over a SQLite store and a durable outbox, and stores its station identity and bearer session in the Keychain; it is paired explicitly and never merges automatically. The hosted web uses an HttpOnly cookie; remote desktop/iOS use Bearer tokens and exact CORS origins (`views://mainview`). Desktop station mode and iOS share the D016 wire contract: handshake, commit-group pull, bounded dependency-ordered push, explicit conflicts. See [D008](decisions/D008-central-server-clients.md), [D009](decisions/D009-remote-identity.md), [D014](decisions/D014-electrobun-cors-origin.md), [D016](decisions/D016-native-offline-sync.md), and the [self-hosting runbook](self-hosting.md).
 
 ## Server layering (`server/src`)
 
@@ -23,6 +24,7 @@ The central server is an optional shared runtime, not a service operated by the 
 | `infrastructure/use-case-routes/` | `executeUseCase` and typed `resolveUseCase`; maps Awilix tokens to concrete use-case classes | Infrastructure-only invocation boundary (D006) |
 | `infrastructure/repositories/` | PocketBase implementations; structured ledger query builder uses PocketBase's `filter()` parameter binding | Only layer that accesses PocketBase |
 | `infrastructure/validators/` | TypeBox request schemas | HTTP boundary validation |
+| `infrastructure/sync/` | Mutation gate and unit of work, operation executor, station recorder, journal backfill, boot-verified PocketBase batch config | Only writer path for financial mutations (D016) |
 | `infrastructure/scheduler/` | Daily cron plugin, injected with the Awilix container | Directly resolves use cases; bypasses HTTP dispatch |
 | `infrastructure/di/container.ts` | `createContainer(pb)`, Awilix `InjectionMode.CLASSIC` | Repositories singleton; use cases scoped |
 
@@ -36,7 +38,7 @@ The central server is an optional shared runtime, not a service operated by the 
 | `components/` | Domain tabs, modals, `ForecastChart`, daily `ForecastCalendar`, `DesktopUpdaterBanner` |
 | `stores/finance.ts` | Pinia cache of accounts/cards/categories/projects |
 | `composables/` | Global refresh and modal state |
-| `utils/api.ts` | Eden client typed from `server/src/index.ts`; hosted web uses the same-origin proxy, Electrobun uses local RPC or remote Bearer transport, and Capacitor iOS uses remote Bearer transport |
+| `utils/api.ts` | Eden client typed from `server/src/index.ts`; hosted web uses the same-origin proxy, and Electrobun uses local RPC or remote Bearer transport. The iOS app does not consume this client: it uses its own `Core/API/BFFClient.swift` over the sync routes. |
 | `app.vue` | Global `UNotifications` host (Nuxt UI v2) |
 
 The web app sends structured filters (`search`, status/type, simulation/scheduled, entity IDs, date range) to the transaction list and summary endpoints; it never constructs PocketBase filter expressions. The HTTP boundary rejects unknown query keys, and the repository applies the exact same server-side filter set to summary totals. See E001 and `canon.md §9`.
@@ -53,5 +55,5 @@ The web app sends structured filters (`search`, status/type, simulation/schedule
 - Desktop: `desktop/app.json` is the app identity/version source. `desktop/scripts/eb-build.ts` generates the static view and Electrobun bundle. `desktop/scripts/ensure-pocketbase.ts` downloads pinned, SHA-256-verified PocketBase binaries for macOS arm64/x86_64 and Windows x64. The main process integrates Electrobun `Updater` for release-channel checks, background downloads, and safe restarts.
 - Stable release: `.github/workflows/release-branch.yml` creates `release-<version>` after a merged release PR from `dev` or `pr/release-*`; `release.yml` validates native builds, publishes installers plus Electrobun updater metadata/full bundles, and updates the Homebrew cask from the macOS manifest.
 - Release candidates: a merged `rc/<version>` PR with `desktop/app.json` set to `X.Y.Z-rc.N` creates `rc-<version>` and dispatches `release-candidate.yml`. Each run publishes the candidate prerelease and refreshes the fixed `rc-channel` updater, while `rc-channel` stays isolated from stable `latest`, `/releases/latest/download`, and the cask. RCs built from `rc.2` onward update among themselves; `rc.1` needs one manual install of `rc.2`, and switching to stable remains manual.
-- iOS TestFlight: `app/scripts/ios-testflight.sh` regenerates the static web bundle, archives and exports the Capacitor target, and uploads the IPA with `altool`. `.github/workflows/ios-testflight.yml` runs the same script on a macOS runner with repository signing secrets.
+- iOS TestFlight: `app/scripts/ios-testflight.sh` archives the native SwiftUI target (local `ObolCore` and `ObolNativeRuntime` packages, no web bundle) and uploads the IPA with `altool`. `.github/workflows/ios-testflight.yml` runs the same script on a macOS runner with repository signing secrets; `.github/workflows/ios-swift-test.yml` runs `xcodebuild -list` and `swift test` on every `app/ios` change.
 - Nix/direnv: `flake.nix` supplies Node, Bun, Docker Compose, and unzip; `.envrc` activates the flake.

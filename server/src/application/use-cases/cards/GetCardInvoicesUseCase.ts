@@ -2,9 +2,28 @@ import { CardRepository } from '../../../domain/interfaces/CardRepository';
 import { InvoiceRepository } from '../../../domain/interfaces/InvoiceRepository';
 import { TransactionRepository } from '../../../domain/interfaces/TransactionRepository';
 import { RecurrenceRepository } from '../../../domain/interfaces/RecurrenceRepository';
-import { calculateCardDueDate } from '../../../domain/utils/dateUtils';
-import { sum, sub } from '../../../domain/utils/mathUtils';
-import { NotFoundError } from '../../../domain/errors';
+import { Card } from '../../../domain/entities/Card';
+import { Recurrence } from '../../../domain/entities/Recurrence';
+import { Transaction } from '../../../domain/entities/Transaction';
+import { NotFoundError, ValidationError } from '../../../domain/errors';
+import {
+  addMonthsToPeriod,
+  addUtcDays,
+  calculateCardDueDate,
+  calculateClampedDate,
+  dayKey,
+  daysInUtcMonth,
+  isoWeekOccurrence,
+  monthKey,
+  startOfIsoWeek
+} from '../../../domain/utils/dateUtils';
+import {
+  recurrenceCadence,
+  recurrenceChildKey,
+  recurrencePeriodKey
+} from '../../../domain/recurrence/cadence';
+import { roundCurrency, sum, sub } from '../../../domain/utils/mathUtils';
+import { SyncClock, systemSyncClock } from '../../../domain/sync/MutationContext';
 
 export interface GetCardInvoicesResponse {
   period: string;
@@ -29,237 +48,274 @@ export class GetCardInvoicesUseCase {
     private readonly cardRepository: CardRepository,
     private readonly invoiceRepository: InvoiceRepository,
     private readonly transactionRepository: TransactionRepository,
-    private readonly recurrenceRepository: RecurrenceRepository
+    private readonly recurrenceRepository: RecurrenceRepository,
+    private readonly clock: SyncClock = systemSyncClock
   ) {}
 
   async execute(cardId: string): Promise<GetCardInvoicesResponse[]> {
-    // 1. Busca as regras do cartão
     const card = await this.cardRepository.findById(cardId);
     if (!card) {
-      throw new NotFoundError('Cartão não encontrado');
+      throw new NotFoundError('Card was not found.');
     }
 
-    // 2. Busca todas as faturas físicas desse cartão
-    const invoices = await this.invoiceRepository.listAll({
-      filter: `card_id = '${card.id}'`,
-      sort: '-period' // Ordena da mais recente pra mais antiga
-    });
+    const allTransactions = await this.transactionRepository.listAll();
+    const allRecurrences = await this.recurrenceRepository.listAll();
+    const activeCardRecurrences = allRecurrences.filter(
+      rec => rec.status === 'active' && rec.card_id === card.id
+    );
 
-    // 3. Monta o DTO com as transações aninhadas
+    // Installment plans count generated children first, then the lines this
+    // projection adds across the whole timeline, so four weekly occurrences in
+    // one invoice cannot all claim the last slot.
+    const childCounts = new Map<string, number>();
+    for (const rec of activeCardRecurrences) {
+      childCounts.set(rec.id, allTransactions.filter(t => t.recurrence_id === rec.id).length);
+    }
+    const projectedCounts = new Map<string, number>();
+
+    const physicalInvoices = (await this.invoiceRepository.listAll())
+      .filter(inv => inv.card_id === card.id)
+      .sort((a, b) => (a.period < b.period ? 1 : a.period > b.period ? -1 : 0));
+
     const result: GetCardInvoicesResponse[] = [];
-    for (const inv of invoices) {
-      const txns = await this.transactionRepository.listAll({
-        filter: `invoice_id = '${inv.id}'`,
-        sort: 'expected_date'
-      });
 
-      // Calcula o gasto bruto (ignorando estornos para exibição)
+    for (const invoice of physicalInvoices) {
+      const children = allTransactions
+        .filter(t => t.invoice_id === invoice.id)
+        .sort((a, b) => (a.expected_date < b.expected_date ? -1 : a.expected_date > b.expected_date ? 1 : 0));
+
       let totalSpent = 0;
-      for (const txn of txns) {
+      for (const txn of children) {
         if (txn.type === 'expense') totalSpent = sum(totalSpent, txn.amount);
-        if (txn.type === 'income' && !txn.title.toLowerCase().includes('pagamento')) {
-          totalSpent = sub(totalSpent, txn.amount);
+        if (txn.type === 'income') totalSpent = sub(totalSpent, txn.amount);
+      }
+
+      const lines: GetCardInvoicesResponse['transactions'] = children.map(txn => ({
+        id: txn.id,
+        title: txn.title,
+        amount: txn.amount,
+        status: txn.status,
+        expected_date: txn.expected_date,
+        purchase_date: txn.purchase_date || null,
+        recurrence_id: txn.recurrence_id || null
+      }));
+
+      let projectedDelta = 0;
+      if (invoice.status === 'OPEN') {
+        for (const rec of activeCardRecurrences) {
+          const cadence = recurrenceCadence(rec);
+          // A monthly rule projects only when the invoice has no child of that
+          // recurrence. A weekly rule projects every occurrence the invoice
+          // covers, so a single real child never hides the remaining weeks.
+          if (cadence === 'monthly' && children.some(t => t.recurrence_id === rec.id)) continue;
+
+          const occurrences = this.occurrencesForInvoicePeriod(rec, card, invoice.period);
+          for (const occurrence of occurrences) {
+            if (!this.isProjectable(rec, occurrence, invoice.period, allTransactions)) continue;
+            if (!this.hasProjectionSlot(rec, childCounts, projectedCounts)) continue;
+
+            const delta = rec.type === 'expense' ? roundCurrency(rec.amount) : -roundCurrency(rec.amount);
+            projectedDelta = sum(projectedDelta, delta);
+
+            lines.push({
+              id: this.projectedLineId(rec, occurrence, invoice.period),
+              title: this.projectedTitle(rec, occurrence, childCounts, projectedCounts),
+              amount: roundCurrency(rec.amount),
+              status: 'projected',
+              expected_date: occurrence,
+              purchase_date: null,
+              recurrence_id: rec.id
+            });
+            projectedCounts.set(rec.id, (projectedCounts.get(rec.id) ?? 0) + 1);
+          }
         }
+        lines.sort((a, b) => {
+          if (a.expected_date !== b.expected_date) return a.expected_date < b.expected_date ? -1 : 1;
+          return (a.recurrence_id || '') < (b.recurrence_id || '') ? -1 : 1;
+        });
       }
 
       result.push({
-        period: inv.period,
-        dueDate: inv.due_date,
-        totalAmount: sub(inv.total_amount, inv.paid_amount || 0), // Saldo real devedor
-        paidAmount: inv.paid_amount || 0,
-        totalSpent: totalSpent,
-        status: inv.status,
-        transactions: txns.map(txn => ({
-          id: txn.id,
-          title: txn.title,
-          amount: txn.amount,
-          status: txn.status,
-          expected_date: txn.expected_date,
-          purchase_date: txn.purchase_date || null,
-          recurrence_id: txn.recurrence_id || null
-        }))
+        period: invoice.period,
+        dueDate: invoice.due_date,
+        totalAmount: sum(sub(invoice.total_amount, invoice.paid_amount ?? 0), projectedDelta),
+        paidAmount: invoice.paid_amount ?? 0,
+        totalSpent: sum(totalSpent, projectedDelta),
+        status: invoice.status,
+        transactions: lines
       });
     }
 
-    // 4. Projeção de Recorrências nas Faturas Abertas e na Próxima (virtual)
-    const recurrences = await this.recurrenceRepository.listAll({
-      filter: `card_id = '${card.id}' && status = 'active'`
-    });
+    // One virtual invoice for the next period, containing only projected
+    // recurrence lines. It never has a stored id or paid amount.
+    const currentPeriod = monthKey(this.clock.now());
+    const latestPeriod = physicalInvoices.length > 0 ? physicalInvoices[0].period : currentPeriod;
+    const nextPeriod = latestPeriod < currentPeriod ? currentPeriod : addMonthsToPeriod(latestPeriod, 1);
 
-    if (recurrences.length > 0) {
-      // A. Injeta as recorrências faltantes nas faturas físicas que estão ABERTAS
-      for (const inv of result) {
-        if (inv.status === 'OPEN') {
-          for (const rec of recurrences) {
-            // Verifica se já existe uma transação real para esta recorrência nesta fatura
-            const alreadyHas = inv.transactions.some((t: any) => t.recurrence_id === rec.id);
-            if (!alreadyHas) {
-              // Checa se o parcelamento já encerrou
-              let installmentLabel = '';
-              if (rec.total_installments && rec.total_installments > 0) {
-                // Rough estimation baseada na data esperada
-                const history = await this.transactionRepository.list({
-                  page: 1,
-                  perPage: 1,
-                  filter: `recurrence_id = '${rec.id}' && expected_date < '${inv.dueDate}'`
-                });
-                const nextInstallment = history.totalItems + 1;
-                if (nextInstallment > rec.total_installments) continue; // Parcelamento concluído antes dessa fatura
-                installmentLabel = ` - Parcela ${nextInstallment}/${rec.total_installments}`;
-              }
+    if (!physicalInvoices.some(inv => inv.period === nextPeriod)) {
+      const projectedLines: GetCardInvoicesResponse['transactions'] = [];
+      let projectedTotal = 0;
+      let projectedDueDate: string | null = null;
 
-              const [iy, im] = inv.period.split('-').map(Number);
-              
-              // Generates dates for current and previous month based on period
-              const d1 = new Date(Date.UTC(iy, im - 1, rec.payday));
-              const d2 = new Date(Date.UTC(iy, im - 2, rec.payday));
-              const d3 = new Date(Date.UTC(iy, im, rec.payday));
-              
-              const due1 = calculateCardDueDate(d1.toISOString(), card.closing_day, card.due_day);
-              const due2 = calculateCardDueDate(d2.toISOString(), card.closing_day, card.due_day);
-              const due3 = calculateCardDueDate(d3.toISOString(), card.closing_day, card.due_day);
+      for (const rec of activeCardRecurrences) {
+        const occurrences = this.occurrencesForInvoicePeriod(rec, card, nextPeriod);
+        for (const occurrence of occurrences) {
+          if (!this.isProjectable(rec, occurrence, nextPeriod, allTransactions)) continue;
+          if (!this.hasProjectionSlot(rec, childCounts, projectedCounts)) continue;
 
-              let recDateStr = '';
-              if (due1.substring(0,10) === inv.dueDate.substring(0,10)) {
-                recDateStr = d1.toISOString();
-              } else if (due2.substring(0,10) === inv.dueDate.substring(0,10)) {
-                recDateStr = d2.toISOString();
-              } else if (due3.substring(0,10) === inv.dueDate.substring(0,10)) {
-                recDateStr = d3.toISOString();
-              }
-
-              if (!recDateStr) continue; // This recurrence doesn't map to this invoice
-
-              // Check if user manually skipped this recurrence for this invoice period
-              if (rec.skipped_periods && rec.skipped_periods.includes(inv.period)) {
-                continue;
-              }
-
-              const amount = rec.amount;
-              const delta = rec.type === 'expense' ? amount : -amount;
-              
-              inv.totalAmount = sum(inv.totalAmount, delta);
-              inv.totalSpent = sum(inv.totalSpent, delta);
-              
-              inv.transactions.push({
-                id: `projected-${rec.id}-${inv.period}`,
-                title: `${rec.name}${installmentLabel}`,
-                amount: amount,
-                status: 'projected',
-                expected_date: recDateStr,
-                purchase_date: null,
-                recurrence_id: rec.id
-              });
-            }
-          }
-          // Reordena as transações por data para manter a visualização cronológica
-          inv.transactions.sort((a: any, b: any) => new Date(a.expected_date).getTime() - new Date(b.expected_date).getTime());
-        }
-      }
-
-      // B. Gera a PRÓXIMA fatura puramente virtual
-      const now = new Date();
-      const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      
-      // Se houver uma fatura física, pegamos o período dela. Senão, usamos o mês atual.
-      const latestPeriod = result.length > 0 ? result[0].period : currentPeriod;
-      let [ly, lm] = latestPeriod.split('-').map(Number);
-      
-      const latestPeriodVal = ly * 12 + lm;
-      const currentPeriodVal = now.getUTCFullYear() * 12 + (now.getUTCMonth() + 1);
-      
-      let nextMonth, nextYear;
-      if (latestPeriodVal < currentPeriodVal) {
-        nextYear = now.getUTCFullYear();
-        nextMonth = now.getUTCMonth() + 1;
-      } else {
-        nextMonth = lm === 12 ? 1 : lm + 1;
-        nextYear = lm === 12 ? ly + 1 : ly;
-      }
-
-      const nextPeriod = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
-
-      // Garante que não duplica
-      const alreadyExists = result.some(r => r.period === nextPeriod);
-      
-      if (!alreadyExists) {
-        const projectedTxns: any[] = [];
-        let projectedTotal = 0;
-
-        for (const rec of recurrences) {
-          let installmentLabel = '';
-          if (rec.total_installments && rec.total_installments > 0) {
-            const history = await this.transactionRepository.list({
-              page: 1,
-              perPage: 1,
-              filter: `recurrence_id = '${rec.id}'`
-            });
-            const nextInstallment = history.totalItems + 1;
-            if (nextInstallment > rec.total_installments) continue;
-            installmentLabel = ` - Parcela ${nextInstallment}/${rec.total_installments}`;
-          }
-
-          const amount = rec.amount;
-          const delta = rec.type === 'expense' ? amount : -amount;
-
-          // Encontrar data de projeção correta para a fatura virtual
-          const fakePurchaseDate = `${nextPeriod}-01T00:00:00.000Z`;
-          const projectedDueDate = calculateCardDueDate(fakePurchaseDate, card.closing_day, card.due_day);
-
-          const [ny, nm] = nextPeriod.split('-').map(Number);
-          const d1 = new Date(Date.UTC(ny, nm - 1, rec.payday));
-          const d2 = new Date(Date.UTC(ny, nm - 2, rec.payday));
-          const d3 = new Date(Date.UTC(ny, nm, rec.payday));
-          
-          const due1 = calculateCardDueDate(d1.toISOString(), card.closing_day, card.due_day);
-          const due2 = calculateCardDueDate(d2.toISOString(), card.closing_day, card.due_day);
-          const due3 = calculateCardDueDate(d3.toISOString(), card.closing_day, card.due_day);
-
-          let recDateStr = '';
-          if (due1.substring(0,10) === projectedDueDate.substring(0,10)) {
-            recDateStr = d1.toISOString();
-          } else if (due2.substring(0,10) === projectedDueDate.substring(0,10)) {
-            recDateStr = d2.toISOString();
-          } else if (due3.substring(0,10) === projectedDueDate.substring(0,10)) {
-            recDateStr = d3.toISOString();
-          }
-
-          if (!recDateStr) continue;
-
-          if (rec.skipped_periods && rec.skipped_periods.includes(nextPeriod)) {
-            continue;
-          }
-
+          const delta = rec.type === 'expense' ? roundCurrency(rec.amount) : -roundCurrency(rec.amount);
           projectedTotal = sum(projectedTotal, delta);
+          projectedDueDate ??= calculateCardDueDate(occurrence, card.closing_day, card.due_day);
 
-          projectedTxns.push({
-            id: `projected-${rec.id}`,
-            title: `${rec.name}${installmentLabel}`,
-            amount: amount,
+          projectedLines.push({
+            id: this.virtualProjectedLineId(rec, occurrence),
+            title: this.projectedTitle(rec, occurrence, childCounts, projectedCounts),
+            amount: roundCurrency(rec.amount),
             status: 'projected',
-            expected_date: recDateStr,
+            expected_date: occurrence,
             purchase_date: null,
             recurrence_id: rec.id
           });
+          projectedCounts.set(rec.id, (projectedCounts.get(rec.id) ?? 0) + 1);
         }
+      }
 
-        if (projectedTxns.length > 0) {
-          const fakePurchaseDate = `${nextPeriod}-01T00:00:00.000Z`;
-          const projectedDueDate = calculateCardDueDate(fakePurchaseDate, card.closing_day, card.due_day);
-
-          result.unshift({
-            period: nextPeriod,
-            dueDate: projectedDueDate,
-            totalAmount: projectedTotal,
-            paidAmount: 0,
-            totalSpent: projectedTotal,
-            status: 'PROJECTED',
-            transactions: projectedTxns
-          });
-        }
+      if (projectedLines.length > 0 && projectedDueDate) {
+        projectedLines.sort((a, b) => {
+          if (a.expected_date !== b.expected_date) return a.expected_date < b.expected_date ? -1 : 1;
+          return (a.recurrence_id || '') < (b.recurrence_id || '') ? -1 : 1;
+        });
+        result.unshift({
+          period: nextPeriod,
+          dueDate: projectedDueDate,
+          totalAmount: projectedTotal,
+          paidAmount: 0,
+          totalSpent: projectedTotal,
+          status: 'PROJECTED',
+          transactions: projectedLines
+        });
       }
     }
 
     return result;
+  }
+
+  /**
+   * Every occurrence of `rec` whose card due date falls in `period`, oldest
+   * first.
+   *
+   * A monthly rule has at most one: its clamped occurrence can land in the
+   * current, previous or two-months-earlier month depending on the closing and
+   * due days, so those three months are checked. A weekly rule has one
+   * occurrence per ISO week, so up to five land in one invoice.
+   */
+  private occurrencesForInvoicePeriod(rec: Recurrence, card: Card, period: string): string[] {
+    if (recurrenceCadence(rec) === 'weekly') {
+      const weekday = rec.weekday;
+      if (!Number.isInteger(weekday) || (weekday as number) < 1 || (weekday as number) > 7) {
+        throw new ValidationError(`Recurrence ${rec.id} has no valid weekday for its weekly cadence.`);
+      }
+      const [year, month] = period.split('-').map(Number);
+      const firstDay = new Date(Date.UTC(year, month - 3, 1));
+      const lastDay = new Date(Date.UTC(year, month - 1, daysInUtcMonth(year, month - 1)));
+      const occurrences: string[] = [];
+      let cursor = startOfIsoWeek(firstDay);
+      while (cursor <= lastDay) {
+        const occurrence = isoWeekOccurrence(cursor, weekday as number);
+        const duePeriod = monthKey(calculateCardDueDate(occurrence, card.closing_day, card.due_day));
+        if (duePeriod === period) occurrences.push(occurrence);
+        cursor = addUtcDays(cursor, 7);
+      }
+      return occurrences;
+    }
+
+    const [year, month] = period.split('-').map(Number);
+    for (let offset = 0; offset <= 2; offset += 1) {
+      const cursor = new Date(Date.UTC(year, month - 1 - offset, 1));
+      const cursorYear = cursor.getUTCFullYear();
+      const cursorMonth = cursor.getUTCMonth();
+      const occurrence = calculateClampedDate(
+        cursorYear,
+        cursorMonth,
+        rec.payday,
+        daysInUtcMonth(cursorYear, cursorMonth)
+      );
+      const dueDate = calculateCardDueDate(occurrence, card.closing_day, card.due_day);
+      if (dueDate.substring(0, 7) === period) return [occurrence];
+    }
+    return [];
+  }
+
+  /** End date, manual skips, and finite installment limits. */
+  private isProjectable(
+    rec: Recurrence,
+    occurrence: string,
+    invoicePeriod: string,
+    allTransactions: Transaction[]
+  ): boolean {
+    if (rec.end_date && new Date(occurrence) > new Date(rec.end_date)) return false;
+
+    const cadence = recurrenceCadence(rec);
+    const skipped = rec.skipped_periods || [];
+    if (cadence === 'weekly') {
+      if (skipped.includes(dayKey(occurrence))) return false;
+    } else if (skipped.includes(monthKey(occurrence)) || skipped.includes(invoicePeriod)) {
+      return false;
+    }
+
+    const periodKey = recurrencePeriodKey(cadence, occurrence);
+    const launched = allTransactions.some(txn => {
+      if (txn.recurrence_id !== rec.id) return false;
+      return recurrenceChildKey(rec, txn) === periodKey;
+    });
+    if (launched) return false;
+
+    return true;
+  }
+
+  /** A finite plan only projects its remaining installments. */
+  private hasProjectionSlot(
+    rec: Recurrence,
+    childCounts: ReadonlyMap<string, number>,
+    projectedCounts: ReadonlyMap<string, number>
+  ): boolean {
+    if (!rec.total_installments || rec.total_installments <= 0) return true;
+    const taken = (childCounts.get(rec.id) ?? 0) + (projectedCounts.get(rec.id) ?? 0);
+    return taken + 1 <= rec.total_installments;
+  }
+
+  /**
+   * Existing installment label, preserved for the invoice UI. Weekly lines are
+   * numbered by their 0-based position inside the invoice period.
+   */
+  private projectedTitle(
+    rec: Recurrence,
+    occurrence: string,
+    childCounts: ReadonlyMap<string, number>,
+    projectedCounts: ReadonlyMap<string, number>
+  ): string {
+    const weekly = recurrenceCadence(rec) === 'weekly';
+    if (!rec.total_installments || rec.total_installments <= 0) {
+      return weekly ? `${rec.name} - ${dayKey(occurrence)}` : rec.name;
+    }
+    const installment =
+      (childCounts.get(rec.id) ?? 0) + (projectedCounts.get(rec.id) ?? 0) + 1;
+    return `${rec.name} - Parcela ${installment}/${rec.total_installments}`;
+  }
+
+  /** One projected line id per occurrence; monthly keeps its period-only id. */
+  private projectedLineId(rec: Recurrence, occurrence: string, invoicePeriod: string): string {
+    if (recurrenceCadence(rec) === 'weekly') {
+      return `projected-${rec.id}-${dayKey(occurrence)}`;
+    }
+    return `projected-${rec.id}-${invoicePeriod}`;
+  }
+
+  /** The virtual invoice has no stored period, so monthly keeps its bare id. */
+  private virtualProjectedLineId(rec: Recurrence, occurrence: string): string {
+    if (recurrenceCadence(rec) === 'weekly') {
+      return `projected-${rec.id}-${dayKey(occurrence)}`;
+    }
+    return `projected-${rec.id}`;
   }
 }
